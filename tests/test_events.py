@@ -1,6 +1,6 @@
 from unittest.mock import Mock
 
-from agents.helpers.events import EventEmitter, EventType
+from daimos.agents.helpers.events import EventEmitter, EventType
 
 
 async def test_event_emitter_with_multiple_handlers():
