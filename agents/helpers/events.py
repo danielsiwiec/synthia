@@ -8,6 +8,7 @@ T = TypeVar("T")
 
 class EventType(Enum):
     TASK_AGENT_MESSAGE = "message_transformed"
+    DUMMY = "dummy"
 
 
 class EventEmitter[T]:

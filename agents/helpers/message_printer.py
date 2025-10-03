@@ -23,11 +23,14 @@ class Summarizer:
                 await self._analyze_similarities()
 
     async def _analyze_similarities(self) -> None:
+        logger.debug(f"Analyzing similarities for {len(self.completed_sessions)} sessions")
         if len(self.completed_sessions) < 3:
             return
 
         last_3_sessions = self.completed_sessions[-3:]
         analysis_prompt = self._build_analysis_prompt(last_3_sessions)
+
+        logger.debug(f"Analysis prompt: {analysis_prompt}")
 
         result = await run_for_result(analysis_prompt)
         if result:
