@@ -1,3 +1,4 @@
+import logging
 import sys
 from typing import Any
 
@@ -13,6 +14,10 @@ from agents.task import Result, process_objective
 from output import parse
 
 load_dotenv()
+
+logging.getLogger("uvicorn.access").disabled = True
+logging.getLogger("uvicorn.error").disabled = True
+logging.getLogger("uvicorn").disabled = True
 
 logger.remove()
 logger.add(
