@@ -8,7 +8,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 from agents.helpers.events import EventEmitter, EventType
-from agents.helpers.message_printer import log_message
+from agents.helpers.message_printer import MessageCounter, log_message
 from agents.task import Result, process_objective
 from output import parse
 
@@ -50,7 +50,10 @@ async def process_task(request: TaskRequest) -> TaskResponse:
     _validate_schema(request.response_schema)
 
     event_emitter = EventEmitter()
-    event_emitter.on(EventType.MESSAGE_TRANSFORMED, log_message)
+    event_emitter.on(EventType.CLAUDE_MESSAGE, log_message)
+
+    message_counter = MessageCounter()
+    event_emitter.on(EventType.CLAUDE_MESSAGE, message_counter.count_message)
     trace = []
     result_message = None
     async for message in process_objective(request.task, event_emitter):

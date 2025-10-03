@@ -1,13 +1,15 @@
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, ResultMessage, UserMessage
 from pydantic import BaseModel
 
-from agents.helpers.events import EventType
+from agents.helpers.events import EventEmitter, EventType
 
 
 class ToolCall(BaseModel):
+    session_id: str
     name: str
     input: dict
     output: str | None = None
@@ -15,15 +17,16 @@ class ToolCall(BaseModel):
 
 
 class Result(BaseModel):
+    session_id: str
     status: str
     result: str
 
 
-def _parse_message(message: Any, tool_calls: dict[str, ToolCall]) -> Any | None:
+def _parse_message(message: Any, tool_calls: dict[str, ToolCall], session_id: str) -> Any | None:
     if isinstance(message, ResultMessage):
         status = getattr(message, "subtype", "unknown")
         result = getattr(message, "result", "")
-        return Result(status=status, result=result)
+        return Result(session_id=session_id, status=status, result=result)
 
     elif isinstance(message, (UserMessage, AssistantMessage)):
         content_blocks = getattr(message, "content", [])
@@ -39,7 +42,7 @@ def _parse_message(message: Any, tool_calls: dict[str, ToolCall]) -> Any | None:
                 input_data = getattr(block, "input", {})
 
                 if tool_use_id:
-                    tool_calls[tool_use_id] = ToolCall(name=name, input=input_data)
+                    tool_calls[tool_use_id] = ToolCall(session_id=session_id, name=name, input=input_data)
 
             elif block_type == "ToolResultBlock":
                 tool_use_id = getattr(block, "tool_use_id", None)
@@ -50,7 +53,11 @@ def _parse_message(message: Any, tool_calls: dict[str, ToolCall]) -> Any | None:
                 if tool_use_id and tool_use_id in tool_calls:
                     tool_call = tool_calls[tool_use_id]
                     completed_tool_call = ToolCall(
-                        name=tool_call.name, input=tool_call.input, output=output, error=error
+                        session_id=tool_call.session_id,
+                        name=tool_call.name,
+                        input=tool_call.input,
+                        output=output,
+                        error=error,
                     )
                     del tool_calls[tool_use_id]
                     return completed_tool_call
@@ -58,9 +65,10 @@ def _parse_message(message: Any, tool_calls: dict[str, ToolCall]) -> Any | None:
     return None
 
 
-async def process_objective(objective: str, event_emitter=None) -> AsyncIterator[Any]:
+async def process_objective(objective: str, event_emitter: EventEmitter) -> AsyncIterator[Any]:
     options = ClaudeAgentOptions(permission_mode="bypassPermissions")
     client = ClaudeSDKClient(options)
+    session_id = str(uuid.uuid4())
 
     await client.connect()
     await client.query(objective)
@@ -68,11 +76,8 @@ async def process_objective(objective: str, event_emitter=None) -> AsyncIterator
     tool_calls = {}  # tool_use_id -> ToolCall
 
     async for message in client.receive_messages():
-        transformed = _parse_message(message, tool_calls)
-        if transformed is not None:
-            if event_emitter is not None:
-                event_emitter.emit(EventType.MESSAGE_TRANSFORMED, transformed)
+        if transformed := _parse_message(message, tool_calls, session_id):
+            event_emitter.emit(EventType.CLAUDE_MESSAGE, transformed)
             yield transformed
-
-        if isinstance(message, ResultMessage):
-            break
+            if isinstance(transformed, Result):
+                break
