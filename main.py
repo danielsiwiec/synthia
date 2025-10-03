@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from agents.claude import Result, run
 from agents.helpers.events import EventEmitter, EventType
-from agents.helpers.message_printer import MessageCounter, log_message
+from agents.helpers.message_printer import Summarizer, log_message
 from output import parse
 
 load_dotenv()
@@ -57,12 +57,12 @@ async def process_task(request: TaskRequest) -> TaskResponse:
     event_emitter = EventEmitter()
     event_emitter.on(EventType.TASK_AGENT_MESSAGE, log_message)
 
-    message_counter = MessageCounter()
-    event_emitter.on(EventType.TASK_AGENT_MESSAGE, message_counter.count_message)
+    summarizer = Summarizer()
+    event_emitter.on(EventType.TASK_AGENT_MESSAGE, summarizer.process_message)
     trace = []
     result_message = None
     async for message in run(request.task):
-        event_emitter.emit(EventType.TASK_AGENT_MESSAGE, message)
+        await event_emitter.emit(EventType.TASK_AGENT_MESSAGE, message)
         trace.append(message)
         if isinstance(message, Result):
             result_message = message

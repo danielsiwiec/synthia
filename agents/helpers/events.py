@@ -1,3 +1,4 @@
+import asyncio
 from enum import Enum
 
 
@@ -15,8 +16,15 @@ class EventEmitter:
             self._handlers[event_name] = []
         self._handlers[event_name].append(handler)
 
-    def emit(self, event_type: EventType, *args, **kwargs):
+    async def emit(self, event_type: EventType, *args, **kwargs):
         event_name = event_type.value
         if event_name in self._handlers:
+            tasks = []
             for handler in self._handlers[event_name]:
-                handler(*args, **kwargs)
+                if asyncio.iscoroutinefunction(handler):
+                    tasks.append(handler(*args, **kwargs))
+                else:
+                    handler(*args, **kwargs)
+
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)

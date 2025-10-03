@@ -78,3 +78,9 @@ async def run(objective: str) -> AsyncIterator[Any]:
             yield transformed
             if isinstance(transformed, Result):
                 break
+
+
+async def run_for_result(objective: str) -> AsyncIterator[Result]:
+    async for message in run(objective):
+        if isinstance(message, Result):
+            yield message
