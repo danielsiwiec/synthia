@@ -1,3 +1,4 @@
+import sys
 from typing import Any
 
 import jsonschema
@@ -14,12 +15,14 @@ load_dotenv()
 
 logger.remove()
 logger.add(
-    sink=lambda msg: print(msg, end=""),
-    format="<green>{time:HH:mm:ss}</green> | <level>{level}</level> | {message}",
+    sys.stdout,
+    format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | {message}",
     level="DEBUG",
+    colorize=True,
 )
 
 app = FastAPI(title="Daimos", description="FastAPI application with Claude Agent SDK integration")
+logger.info("Starting Daimos")
 
 
 class TaskRequest(BaseModel):
