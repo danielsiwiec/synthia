@@ -2,7 +2,7 @@ from enum import Enum
 
 
 class EventType(Enum):
-    CLAUDE_MESSAGE = "message_transformed"
+    TASK_AGENT_MESSAGE = "message_transformed"
 
 
 class EventEmitter:

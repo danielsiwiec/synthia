@@ -5,8 +5,6 @@ from typing import Any
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, ResultMessage, UserMessage
 from pydantic import BaseModel
 
-from agents.helpers.events import EventEmitter, EventType
-
 
 class ToolCall(BaseModel):
     session_id: str
@@ -65,7 +63,7 @@ def _parse_message(message: Any, tool_calls: dict[str, ToolCall], session_id: st
     return None
 
 
-async def process_objective(objective: str, event_emitter: EventEmitter) -> AsyncIterator[Any]:
+async def run(objective: str) -> AsyncIterator[Any]:
     options = ClaudeAgentOptions(permission_mode="bypassPermissions")
     client = ClaudeSDKClient(options)
     session_id = str(uuid.uuid4())
@@ -77,7 +75,6 @@ async def process_objective(objective: str, event_emitter: EventEmitter) -> Asyn
 
     async for message in client.receive_messages():
         if transformed := _parse_message(message, tool_calls, session_id):
-            event_emitter.emit(EventType.CLAUDE_MESSAGE, transformed)
             yield transformed
             if isinstance(transformed, Result):
                 break
