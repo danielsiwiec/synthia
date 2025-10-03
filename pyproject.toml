@@ -58,3 +58,6 @@ line-ending = "auto"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "smoke: marks tests as smoke tests (quick tests for basic functionality)"
+]

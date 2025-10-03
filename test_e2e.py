@@ -25,6 +25,7 @@ async def test_task_endpoint_basic_math(client):
     assert "4" in data["result"]
 
 
+@pytest.mark.smoke
 async def test_task_endpoint_with_schema(client):
     schema = {
         "type": "object",

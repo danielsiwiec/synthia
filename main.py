@@ -4,12 +4,20 @@ import jsonschema
 from claude_agent_sdk import ResultMessage
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from loguru import logger
 from pydantic import BaseModel
 
 from agents.task import process_objective
 from output import parse
 
 load_dotenv()
+
+logger.remove()
+logger.add(
+    sink=lambda msg: print(msg, end=""),
+    format="<green>{time:HH:mm:ss}</green> | <level>{level}</level> | {message}",
+    level="DEBUG"
+)
 
 app = FastAPI(title="Daimos", description="FastAPI application with Claude Agent SDK integration")
 
