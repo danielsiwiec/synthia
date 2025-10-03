@@ -1,13 +1,12 @@
 from typing import Any
 
 import jsonschema
-from claude_agent_sdk import ResultMessage
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from loguru import logger
 from pydantic import BaseModel
 
-from agents.task import process_objective
+from agents.task import Result, process_objective
 from output import parse
 
 load_dotenv()
@@ -41,7 +40,7 @@ def _validate_schema(schema: dict[str, Any] | None) -> None:
             raise HTTPException(status_code=400, detail=f"Invalid JSON schema: {str(e)}") from e
 
 
-def _process_messages(messages: list[Any]) -> tuple[list[Any] | None, ResultMessage | None]:
+def _process_messages(messages: list[Any]) -> tuple[list[Any] | None, Result | None]:
     result_message = None
     trace_messages = []
 
@@ -53,7 +52,7 @@ def _process_messages(messages: list[Any]) -> tuple[list[Any] | None, ResultMess
             message_dict["content"] = message.content
         trace_messages.append(message_dict)
 
-        if isinstance(message, ResultMessage):
+        if isinstance(message, Result):
             result_message = message
             break
 
