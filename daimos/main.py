@@ -61,11 +61,13 @@ async def process_task(request: TaskRequest) -> TaskResponse:
             detail="Timeout: No ResultMessage received within expected time",
         )
 
-    final_result = result_message.result
-    if request.response_schema is not None:
-        final_result = await parse(result_message.result, request.response_schema)
+    result = (
+        await parse(result_message.result, request.response_schema)
+        if request.response_schema
+        else result_message.result
+    )
 
-    return TaskResponse(result=final_result)
+    return TaskResponse(result=result)
 
 
 @app.get("/health")
