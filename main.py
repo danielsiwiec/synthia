@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from loguru import logger
 from pydantic import BaseModel
 
-from agents.claude import Result, run
+from agents.claude import Message, Result, run
 from agents.helpers.events import EventEmitter, EventType
 from agents.helpers.message_printer import Summarizer, log_message
 from output import parse
@@ -54,7 +54,7 @@ def _validate_schema(schema: dict[str, Any] | None) -> None:
 async def process_task(request: TaskRequest) -> TaskResponse:
     _validate_schema(request.response_schema)
 
-    event_emitter = EventEmitter()
+    event_emitter = EventEmitter[Message]()
     event_emitter.on(EventType.TASK_AGENT_MESSAGE, log_message)
 
     summarizer = Summarizer()
