@@ -2,8 +2,9 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, ResultMessage, UserMessage
-from loguru import logger
 from pydantic import BaseModel
+
+from agents.helpers.message_printer import EventType
 
 
 class ToolCall(BaseModel):
@@ -57,7 +58,7 @@ def _parse_message(message: Any, tool_calls: dict[str, ToolCall]) -> Any | None:
     return None
 
 
-async def process_objective(objective: str) -> AsyncIterator[Any]:
+async def process_objective(objective: str, event_emitter=None) -> AsyncIterator[Any]:
     options = ClaudeAgentOptions(permission_mode="bypassPermissions")
     client = ClaudeSDKClient(options)
 
@@ -67,10 +68,10 @@ async def process_objective(objective: str) -> AsyncIterator[Any]:
     tool_calls = {}  # tool_use_id -> ToolCall
 
     async for message in client.receive_messages():
-        logger.debug(f"Received message: {message}")
-
         transformed = _parse_message(message, tool_calls)
         if transformed is not None:
+            if event_emitter is not None:
+                event_emitter.emit(EventType.MESSAGE_TRANSFORMED, transformed)
             yield transformed
 
         if isinstance(message, ResultMessage):
