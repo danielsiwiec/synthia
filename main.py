@@ -40,11 +40,11 @@ def _validate_schema(schema: dict[str, Any] | None) -> None:
             raise HTTPException(status_code=400, detail=f"Invalid JSON schema: {str(e)}") from e
 
 
-def _process_messages(messages: list[Any]) -> tuple[list[Any] | None, Result | None]:
+async def _process_messages(message_iterator) -> tuple[list[Any] | None, Result | None]:
     result_message = None
     trace_messages = []
 
-    for message in messages:
+    async for message in message_iterator:
         message_dict = {"type": type(message).__name__, "content": str(message)}
         if hasattr(message, "result"):
             message_dict["result"] = message.result
@@ -63,7 +63,7 @@ def _process_messages(messages: list[Any]) -> tuple[list[Any] | None, Result | N
 async def process_task(request: TaskRequest) -> TaskResponse:
     _validate_schema(request.response_schema)
 
-    trace_messages, result_message = _process_messages(await process_objective(request.task))
+    trace_messages, result_message = await _process_messages(process_objective(request.task))
 
     if not result_message:
         raise HTTPException(
