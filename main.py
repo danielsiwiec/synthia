@@ -16,7 +16,7 @@ logger.remove()
 logger.add(
     sink=lambda msg: print(msg, end=""),
     format="<green>{time:HH:mm:ss}</green> | <level>{level}</level> | {message}",
-    level="DEBUG"
+    level="DEBUG",
 )
 
 app = FastAPI(title="Daimos", description="FastAPI application with Claude Agent SDK integration")
@@ -41,11 +41,11 @@ def _validate_schema(schema: dict[str, Any] | None) -> None:
             raise HTTPException(status_code=400, detail=f"Invalid JSON schema: {str(e)}") from e
 
 
-async def _process_messages(message_iterator) -> tuple[list[Any] | None, ResultMessage | None]:
+def _process_messages(messages: list[Any]) -> tuple[list[Any] | None, ResultMessage | None]:
     result_message = None
     trace_messages = []
 
-    async for message in message_iterator:
+    for message in messages:
         message_dict = {"type": type(message).__name__, "content": str(message)}
         if hasattr(message, "result"):
             message_dict["result"] = message.result
@@ -64,7 +64,7 @@ async def _process_messages(message_iterator) -> tuple[list[Any] | None, ResultM
 async def process_task(request: TaskRequest) -> TaskResponse:
     _validate_schema(request.response_schema)
 
-    trace_messages, result_message = await _process_messages(process_objective(request.task))
+    trace_messages, result_message = _process_messages(await process_objective(request.task))
 
     if not result_message:
         raise HTTPException(
