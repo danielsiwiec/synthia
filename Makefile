@@ -7,7 +7,7 @@ dev:
 	uv run uvicorn main:app --host 0.0.0.0 --port 8003 --reload
 
 test:
-	uv run pytest
+	uv run pytest -n auto --testmon
 
 lint: format
 	uv run ruff check . --fix --unsafe-fixes
