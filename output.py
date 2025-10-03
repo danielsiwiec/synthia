@@ -10,7 +10,7 @@ async def parse(input: str, schema: dict[str, Any]) -> dict[str, Any]:
         **schema,
     }
 
-    model = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    model = ChatOpenAI(model="gpt-4o-mini", temperature=0)  # type: ignore[arg-type]
 
     return await model.with_structured_output(structured_schema).ainvoke(
         f"Parse the following input into the given schema: {input}"
