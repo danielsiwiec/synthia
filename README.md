@@ -20,7 +20,7 @@ A FastAPI application with Claude Agent SDK integration for processing tasks.
    ```bash
    curl -X POST "http://localhost:8003/task" \
         -H "Content-Type: application/json" \
-        -d '{"task": "What is the capital of France?"}'
+        -d '{"task": "list files in current folder, then for each file smaller than 1MB count the number of words 'task' in it", "response_schema": {"type": "object", "properties": {"total_count": {"type": "integer"}}, "required": ["total_count"]}}'
    ```
 
 ## API Documentation

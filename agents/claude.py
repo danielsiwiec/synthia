@@ -2,7 +2,14 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
-from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, ResultMessage, UserMessage
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    ClaudeSDKClient,
+    ResultMessage,
+    SystemMessage,
+    UserMessage,
+)
 from pydantic import BaseModel
 
 
@@ -13,21 +20,48 @@ class ToolCall(BaseModel):
     output: str | None = None
     error: str | None = None
 
+    def render(self) -> str:
+        parts = ["🔧"]
+        parts.append(f"[{self.name}]")
+        parts.append(f"input={self.input}")
+        if self.output is not None:
+            parts.append(f"output='{self.output}'")
+        if self.error is not None:
+            parts.append(f"error='{self.error}'")
+        return " ".join(parts)
+
 
 class Result(BaseModel):
     session_id: str
-    status: str
+    success: bool
     result: str
+    error: str | None = None
+
+    def render(self) -> str:
+        parts = ["✅" if self.success else "🔴"]
+        parts.append(self.result if self.success else self.error)
+        return " ".join(parts)
 
 
-Message = ToolCall | Result
+class InitMessage(BaseModel):
+    session_id: str
+    prompt: str
+
+    def render(self) -> str:
+        parts = ["⚙️"]
+        parts.append(self.prompt)
+        return " ".join(parts)
 
 
-def _parse_message(message: Any, tool_calls: dict[str, ToolCall], session_id: str) -> Any | None:
-    if isinstance(message, ResultMessage):
-        status = getattr(message, "subtype", "unknown")
-        result = getattr(message, "result", "")
-        return Result(session_id=session_id, status=status, result=result)
+Message = ToolCall | Result | InitMessage
+
+
+def _parse_message(message: Any, tool_calls: dict[str, ToolCall], session_id: str, objective: str) -> Any | None:
+    if isinstance(message, SystemMessage):
+        return InitMessage(session_id=session_id, prompt=objective)
+
+    elif isinstance(message, ResultMessage):
+        return Result(session_id=session_id, success=message.subtype == "success", result=message.result)
 
     elif isinstance(message, (UserMessage, AssistantMessage)):
         content_blocks = getattr(message, "content", [])
@@ -77,7 +111,7 @@ async def run(objective: str) -> AsyncIterator[Any]:
     tool_calls = {}  # tool_use_id -> ToolCall
 
     async for message in client.receive_messages():
-        if transformed := _parse_message(message, tool_calls, session_id):
+        if transformed := _parse_message(message, tool_calls, session_id, objective):
             yield transformed
             if isinstance(transformed, Result):
                 break
