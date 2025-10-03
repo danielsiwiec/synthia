@@ -7,7 +7,8 @@ from fastapi import FastAPI, HTTPException
 from loguru import logger
 from pydantic import BaseModel
 
-from agents.helpers.message_printer import EventEmitter, EventType, log_message
+from agents.helpers.events import EventEmitter, EventType
+from agents.helpers.message_printer import log_message
 from agents.task import Result, process_objective
 from output import parse
 

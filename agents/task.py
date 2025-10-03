@@ -4,7 +4,7 @@ from typing import Any
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, ResultMessage, UserMessage
 from pydantic import BaseModel
 
-from agents.helpers.message_printer import EventType
+from agents.helpers.events import EventType
 
 
 class ToolCall(BaseModel):
