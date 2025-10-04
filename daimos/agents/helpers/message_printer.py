@@ -2,7 +2,7 @@ from collections import defaultdict
 
 from loguru import logger
 
-from agents.claude import Message, Result, run_for_result
+from daimos.agents.claude import Message, Result, run_for_result
 
 
 def log_message(message: Message) -> None:

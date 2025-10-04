@@ -2,16 +2,16 @@ import logging
 import sys
 from typing import Any
 
-import jsonschema
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from loguru import logger
 from pydantic import BaseModel
 
-from agents.claude import Message, Result, run
-from agents.helpers.events import EventEmitter, EventType
-from agents.helpers.message_printer import Summarizer, log_message
-from output import parse
+from daimos.agents.claude import Message, Result, run
+from daimos.agents.helpers.events import EventEmitter, EventType
+from daimos.agents.helpers.message_printer import Summarizer, log_message
+from daimos.helpers.schema import validate_schema
+from daimos.output import parse
 
 load_dotenv()
 
@@ -40,17 +40,9 @@ class TaskResponse(BaseModel):
     result: Any
 
 
-def _validate_schema(schema: dict[str, Any] | None) -> None:
-    if schema is not None:
-        try:
-            jsonschema.Draft7Validator.check_schema(schema)
-        except jsonschema.exceptions.SchemaError as e:
-            raise HTTPException(status_code=400, detail=f"Invalid JSON schema: {str(e)}") from e
-
-
 @app.post("/task", response_model=TaskResponse)
 async def process_task(request: TaskRequest) -> TaskResponse:
-    _validate_schema(request.response_schema)
+    validate_schema(request.response_schema)
 
     event_emitter = EventEmitter[Message]()
     event_emitter.on(EventType.TASK_AGENT_MESSAGE, log_message)

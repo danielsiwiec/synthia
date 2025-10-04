@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 
-from output import parse
+from daimos.output import parse
 
 load_dotenv()
 

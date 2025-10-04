@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from main import app
+from daimos.main import app
 
 
 @pytest.fixture(scope="session")
