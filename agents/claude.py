@@ -80,7 +80,7 @@ async def run(objective: str) -> AsyncIterator[Any]:
                 break
 
 
-async def run_for_result(objective: str) -> AsyncIterator[Result]:
+async def run_for_result(objective: str) -> Result | None:
     async for message in run(objective):
         if isinstance(message, Result):
-            yield message
+            return message

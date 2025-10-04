@@ -28,5 +28,6 @@ class Summarizer:
 
         session_summary += "\nPlease provide a concise summary of the key points and outcomes."
 
-        async for result in run_for_result(session_summary):
+        result = await run_for_result(session_summary)
+        if result:
             logger.info(f"Session summary: {result.result}")
