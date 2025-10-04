@@ -61,7 +61,7 @@ def _parse_message(message: Any, tool_calls: dict[str, ToolCall], session_id: st
         return InitMessage(session_id=session_id, prompt=objective)
 
     elif isinstance(message, ResultMessage):
-        return Result(session_id=session_id, success=message.subtype == "success", result=message.result)
+        return Result(session_id=session_id, success=message.subtype == "success", result=message.result.strip())
 
     elif isinstance(message, (UserMessage, AssistantMessage)):
         content_blocks = getattr(message, "content", [])
@@ -91,7 +91,7 @@ def _parse_message(message: Any, tool_calls: dict[str, ToolCall], session_id: st
                         session_id=tool_call.session_id,
                         name=tool_call.name,
                         input=tool_call.input,
-                        output=output,
+                        output=output.strip(),
                         error=error,
                     )
                     del tool_calls[tool_use_id]
