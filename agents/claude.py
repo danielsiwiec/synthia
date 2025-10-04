@@ -20,6 +20,9 @@ class Result(BaseModel):
     result: str
 
 
+Message = ToolCall | Result
+
+
 def _parse_message(message: Any, tool_calls: dict[str, ToolCall], session_id: str) -> Any | None:
     if isinstance(message, ResultMessage):
         status = getattr(message, "subtype", "unknown")
