@@ -33,13 +33,11 @@ logger.info("Starting Daimos")
 
 class TaskRequest(BaseModel):
     task: str
-    trace: bool = False
     response_schema: dict[str, Any] | None = None
 
 
 class TaskResponse(BaseModel):
     result: Any
-    trace: list[Any] | None = None
 
 
 def _validate_schema(schema: dict[str, Any] | None) -> None:
@@ -59,11 +57,9 @@ async def process_task(request: TaskRequest) -> TaskResponse:
 
     summarizer = Summarizer()
     event_emitter.on(EventType.TASK_AGENT_MESSAGE, summarizer.process_message)
-    trace = []
     result_message = None
     async for message in run(request.task):
         await event_emitter.emit(EventType.TASK_AGENT_MESSAGE, message)
-        trace.append(message)
         if isinstance(message, Result):
             result_message = message
 
@@ -77,7 +73,7 @@ async def process_task(request: TaskRequest) -> TaskResponse:
     if request.response_schema is not None:
         final_result = await parse(result_message.result, request.response_schema)
 
-    return TaskResponse(result=final_result, trace=trace if request.trace else None)
+    return TaskResponse(result=final_result)
 
 
 @app.get("/health")
