@@ -10,5 +10,8 @@ always add and remove packages using uv add/uv remove
 - run all tests only after larger code changes. When running all tests, add
 
 ## Code style
-- never add comments
-- use `_` prefix for all internal functions that are not consumed outside of the module
+- never add comments or docstrings
+- use `_` prefix for all internal functions and fields that are not consumed outside of the module
+
+## Tests
+- when writing tests, do not use any mocks or patches, unless instructed to

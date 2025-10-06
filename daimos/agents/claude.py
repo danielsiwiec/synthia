@@ -10,6 +10,7 @@ from claude_agent_sdk import (
     SystemMessage,
     UserMessage,
 )
+from loguru import logger
 from pydantic import BaseModel
 
 
@@ -111,6 +112,7 @@ async def run(objective: str) -> AsyncIterator[Any]:
     tool_calls = {}  # tool_use_id -> ToolCall
 
     async for message in client.receive_messages():
+        logger.debug(f"Received message: {message}")
         if transformed := _parse_message(message, tool_calls, session_id, objective):
             yield transformed
             if isinstance(transformed, Result):

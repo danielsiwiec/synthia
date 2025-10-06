@@ -12,22 +12,20 @@ def log_message(message: Message) -> None:
 class Summarizer:
     def __init__(self):
         self.sessions = defaultdict(list)
-        self.completed_sessions = []
 
     async def process_message(self, message: Message) -> None:
         session_id = message.session_id
         self.sessions[session_id].append(message)
         if isinstance(message, Result):
-            self.completed_sessions.append(session_id)
-            if len(self.completed_sessions) >= 3:
+            if len(self.sessions) >= 3:
                 await self._analyze_similarities()
 
     async def _analyze_similarities(self) -> None:
-        logger.debug(f"Analyzing similarities for {len(self.completed_sessions)} sessions")
-        if len(self.completed_sessions) < 3:
+        logger.debug(f"Analyzing similarities for {len(self.sessions)} sessions")
+        if len(self.sessions) < 3:
             return
 
-        last_3_sessions = self.completed_sessions[-3:]
+        last_3_sessions = list(self.sessions.keys())[-3:]
         analysis_prompt = self._build_analysis_prompt(last_3_sessions)
 
         logger.debug(f"Analysis prompt: {analysis_prompt}")
