@@ -34,10 +34,12 @@ logger.info("Starting Daimos")
 class TaskRequest(BaseModel):
     task: str
     response_schema: dict[str, Any] | None = None
+    resume: str | None = None
 
 
 class TaskResponse(BaseModel):
     result: Any
+    session_id: str
 
 
 @app.post("/task", response_model=TaskResponse)
@@ -50,7 +52,7 @@ async def process_task(request: TaskRequest) -> TaskResponse:
     summarizer = Summarizer()
     event_emitter.on(EventType.TASK_AGENT_MESSAGE, summarizer.process_message)
     result_message = None
-    async for message in run(request.task):
+    async for message in run(objective=request.task, resume=request.resume):
         await event_emitter.emit(EventType.TASK_AGENT_MESSAGE, message)
         if isinstance(message, Result):
             result_message = message
@@ -66,8 +68,7 @@ async def process_task(request: TaskRequest) -> TaskResponse:
         if request.response_schema
         else result_message.result
     )
-
-    return TaskResponse(result=result)
+    return TaskResponse(result=result, session_id=result_message.session_id)
 
 
 @app.get("/health")

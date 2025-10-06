@@ -21,6 +21,7 @@ async def test_task_endpoint_basic_math(client):
     assert response.status_code == 200
     data = response.json()
     assert "result" in data
+    assert "session_id" in data
     assert "4" in data["result"]
 
 
@@ -32,6 +33,7 @@ async def test_task_endpoint_with_schema(client):
         "required": ["number_of_files"],
     }
 
+    # First request
     response = await client.post(
         "/task", json={"task": "count the number of files in the current directory", "response_schema": schema}
     )
@@ -39,8 +41,23 @@ async def test_task_endpoint_with_schema(client):
     assert response.status_code == 200
     data = response.json()
     assert "result" in data
+    assert "session_id" in data
     assert isinstance(data["result"], dict)
     assert data["result"]["number_of_files"] > 1
+
+    session_id = data["session_id"]
+
+    # Test that resume parameter is accepted (even if session doesn't exist)
+    # This verifies the resume functionality is properly integrated
+    follow_up_response = await client.post(
+        "/task", json={"task": "what was that number again?", "response_schema": schema, "resume": session_id}
+    )
+
+    assert follow_up_response.status_code == 200
+    follow_up_data = follow_up_response.json()
+    assert "result" in follow_up_data
+    assert "session_id" in follow_up_data
+    assert follow_up_data["result"]["number_of_files"] == data["result"]["number_of_files"]
 
 
 async def test_task_endpoint_with_invalid_schema(client):

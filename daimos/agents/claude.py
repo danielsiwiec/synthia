@@ -1,4 +1,3 @@
-import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -10,7 +9,6 @@ from claude_agent_sdk import (
     SystemMessage,
     UserMessage,
 )
-from loguru import logger
 from pydantic import BaseModel
 
 
@@ -57,12 +55,11 @@ class InitMessage(BaseModel):
 Message = ToolCall | Result | InitMessage
 
 
-def _parse_message(message: Any, tool_calls: dict[str, ToolCall], session_id: str, objective: str) -> Any | None:
-    if isinstance(message, SystemMessage):
-        return InitMessage(session_id=session_id, prompt=objective)
-
-    elif isinstance(message, ResultMessage):
-        return Result(session_id=session_id, success=message.subtype == "success", result=message.result.strip())
+def _parse_message(message: Any, tool_calls: dict[str, ToolCall], objective: str, session_id: str) -> Any | None:
+    if isinstance(message, ResultMessage):
+        return Result(
+            session_id=message.session_id, success=message.subtype == "success", result=message.result.strip()
+        )
 
     elif isinstance(message, (UserMessage, AssistantMessage)):
         content_blocks = getattr(message, "content", [])
@@ -101,19 +98,25 @@ def _parse_message(message: Any, tool_calls: dict[str, ToolCall], session_id: st
     return None
 
 
-async def run(objective: str) -> AsyncIterator[Any]:
-    options = ClaudeAgentOptions(permission_mode="bypassPermissions")
+async def run(objective: str, resume: str | None = None) -> AsyncIterator[Any]:
+    options = ClaudeAgentOptions(permission_mode="bypassPermissions", resume=resume)
     client = ClaudeSDKClient(options)
-    session_id = str(uuid.uuid4())
 
     await client.connect()
-    await client.query(objective)
+    await client.query(prompt=objective, session_id=resume or "default")
 
     tool_calls = {}  # tool_use_id -> ToolCall
 
+    session_id = None
     async for message in client.receive_messages():
-        logger.debug(f"Received message: {message}")
-        if transformed := _parse_message(message, tool_calls, session_id, objective):
+        # logger.debug(f"Received message: {message}")
+        if isinstance(message, SystemMessage):
+            session_id = message.data["session_id"]
+            yield InitMessage(session_id=message.data["session_id"], prompt=objective)
+            continue
+        if session_id is None:
+            raise ValueError("Session ID is not set")
+        if transformed := _parse_message(message, tool_calls, objective, session_id):
             yield transformed
             if isinstance(transformed, Result):
                 break
