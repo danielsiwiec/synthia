@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from daimos.agents.claude import Message, Result, run
 from daimos.agents.helpers.message_printer import Summarizer, log_message
-from daimos.events.events import EventEmitter, EventType
+from daimos.helpers.events import EventEmitter, EventType
 from daimos.helpers.schema import validate_schema
 from daimos.output import parse
 

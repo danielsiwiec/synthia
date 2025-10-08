@@ -7,7 +7,7 @@ load_dotenv()
 
 async def test_parse_happy_path():
     result = await parse(
-        "4",
+        "answer is4",
         {
             "type": "object",
             "properties": {"result": {"type": "number"}},
