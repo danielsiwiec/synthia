@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from claude_agent_sdk import (
+    AgentDefinition,
     AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
@@ -100,8 +101,15 @@ def _parse_message(message: Any, tool_calls: dict[str, ToolCall], objective: str
     return None
 
 
-async def run(objective: str, emitter: EventEmitter[Message], resume: str | None = None) -> AsyncIterator[Any]:
-    options = ClaudeAgentOptions(permission_mode="bypassPermissions", resume=resume)
+async def run(
+    objective: str,
+    emitter: EventEmitter[Message],
+    resume: str | None = None,
+    agents: dict[str, AgentDefinition] = None,
+) -> AsyncIterator[Any]:
+    if agents is None:
+        agents = {}
+    options = ClaudeAgentOptions(permission_mode="bypassPermissions", resume=resume, agents=agents)
     client = ClaudeSDKClient(options)
 
     await client.connect()
@@ -127,8 +135,10 @@ async def run(objective: str, emitter: EventEmitter[Message], resume: str | None
                 break
 
 
-async def run_for_result(objective: str) -> Result | None:
+async def run_for_result(objective: str, agents: dict[str, AgentDefinition] = None) -> Result | None:
+    if agents is None:
+        agents = {}
     emitter = EventEmitter[Message]()
-    async for message in run(objective, emitter):
+    async for message in run(objective, emitter, agents=agents):
         if isinstance(message, Result):
             return message
