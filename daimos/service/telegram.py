@@ -1,8 +1,8 @@
+from loguru import logger
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 from daimos.service.task import TaskRequest, TaskService
-from loguru import logger
 
 
 class Telegram:
