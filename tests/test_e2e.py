@@ -45,12 +45,12 @@ async def test_task_endpoint_with_schema(client):
     assert isinstance(data["result"], dict)
     assert data["result"]["number_of_files"] > 1
 
-    session_id = data["session_id"]
+    data["session_id"]
 
     # Test that resume parameter is accepted (even if session doesn't exist)
     # This verifies the resume functionality is properly integrated
     follow_up_response = await client.post(
-        "/task", json={"task": "what was that number again?", "response_schema": schema, "resume": session_id}
+        "/task", json={"task": "what was that number again?", "response_schema": schema, "resume": True}
     )
 
     assert follow_up_response.status_code == 200
