@@ -4,7 +4,7 @@ from claude_agent_sdk import AgentDefinition
 from loguru import logger
 
 subagents: dict[str, AgentDefinition] = {
-    "freemag": AgentDefinition(
+    "magazines": AgentDefinition(
         description="fetches a single magazine from freemag website. Use one at a time, not concurrently",
         prompt="""## Overall guidance
 - Do NOT use this agent concurrently. Execute it one at a time.
@@ -38,7 +38,14 @@ magazines/
     The Economist USA/
         The Economist USA - Sep 27, 2025.pdf
 ```""",
-    )
+    ),
+    "arr": AgentDefinition(
+        description="answers questions and performs tasks related to the Arr stack",
+        prompt="""## Overall guidance
+- The arr stack in a docker compose stack, configured in /Users/dansiwiec/arr
+- Term 'arr services' refers to all services running in this docker compose stack
+""",
+    ),
 }
 
 

@@ -106,9 +106,8 @@ def _parse_message(message: Any, tool_calls: dict[str, ToolCall], objective: str
     return None
 
 
-async def run(
+async def _run(
     objective: str,
-    emitter: EventEmitter[Message],
     resume: str | None = None,
     agents: dict[str, AgentDefinition] | None = None,
 ) -> AsyncIterator[Any]:
@@ -130,21 +129,24 @@ async def run(
         # logger.debug(f"Received message: {message}")
         if isinstance(message, SystemMessage):
             session_id = message.data["session_id"]
-            message = InitMessage(session_id=message.data["session_id"], prompt=objective)
-            await emitter.emit(EventType.TASK_AGENT_MESSAGE, message)
-            yield message
+            yield InitMessage(session_id=message.data["session_id"], prompt=objective)
             continue
         if session_id is None:
             raise ValueError("Session ID is not set")
         if transformed := _parse_message(message, tool_calls, objective, session_id):
-            await emitter.emit(EventType.TASK_AGENT_MESSAGE, transformed)
             yield transformed
             if isinstance(transformed, Result):
                 break
 
 
-async def run_for_result(objective: str, agents: dict[str, AgentDefinition] | None = None) -> Result | None:
-    emitter = EventEmitter[Message]()
-    async for message in run(objective, emitter, agents=agents):
+async def run_for_result(
+    objective: str,
+    resume: str | None = None,
+    agents: dict[str, AgentDefinition] | None = None,
+    emitter: EventEmitter[Message] | None = None,
+) -> Result | None:
+    async for message in _run(objective, resume=resume, agents=agents):
+        if emitter:
+            await emitter.emit(EventType.TASK_AGENT_MESSAGE, message)
         if isinstance(message, Result):
             return message
