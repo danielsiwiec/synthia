@@ -28,6 +28,10 @@ class Telegram:
         await self.application.shutdown()
 
     async def _task_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.message.from_user.id != int(self.chat_id):
+            logger.debug(f"Unauthorized user {update.message.from_user.id}")
+            return
+
         if not context.args:
             await update.message.reply_text("Please provide a task description")
             return
