@@ -5,10 +5,6 @@ from loguru import logger
 from daimos.agents.claude import Message, Result, run_for_result
 
 
-def log_message(message: Message) -> None:
-    logger.info(f"{message.render()}")
-
-
 class Summarizer:
     def __init__(self):
         self.sessions = defaultdict(list)
