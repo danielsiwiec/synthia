@@ -105,10 +105,8 @@ async def run(
     objective: str,
     emitter: EventEmitter[Message],
     resume: str | None = None,
-    agents: dict[str, AgentDefinition] = None,
+    agents: dict[str, AgentDefinition] | None = None,
 ) -> AsyncIterator[Any]:
-    if agents is None:
-        agents = {}
     options = ClaudeAgentOptions(permission_mode="bypassPermissions", resume=resume, agents=agents)
     client = ClaudeSDKClient(options)
 
@@ -135,9 +133,7 @@ async def run(
                 break
 
 
-async def run_for_result(objective: str, agents: dict[str, AgentDefinition] = None) -> Result | None:
-    if agents is None:
-        agents = {}
+async def run_for_result(objective: str, agents: dict[str, AgentDefinition] | None = None) -> Result | None:
     emitter = EventEmitter[Message]()
     async for message in run(objective, emitter, agents=agents):
         if isinstance(message, Result):
