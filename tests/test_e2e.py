@@ -73,6 +73,14 @@ async def test_task_endpoint_with_invalid_schema(client):
     assert "Invalid JSON schema" in data["detail"]
 
 
+async def test_task_endpoint_with_multiple_tags(client):
+    response = await client.post("/task", json={"task": "#magazines #arr do something"})
+
+    assert response.status_code == 400
+    data = response.json()
+    assert "Only one tag is allowed" in data["detail"]
+
+
 async def test_health_endpoint(client):
     response = await client.get("/health")
     assert response.status_code == 200

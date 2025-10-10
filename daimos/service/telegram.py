@@ -2,6 +2,7 @@ from loguru import logger
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
+from daimos.agents.subagents import TaskAgentException
 from daimos.service.task import TaskRequest, TaskService
 
 
@@ -36,5 +37,8 @@ class Telegram:
             await update.message.reply_text("Please provide a task description")
             return
 
-        result = await self.task_service.process_task(TaskRequest(task=" ".join(context.args)))
-        await update.message.reply_text(result.result)
+        try:
+            result = await self.task_service.process_task(TaskRequest(task=" ".join(context.args)))
+            await update.message.reply_text(result.result)
+        except TaskAgentException as e:
+            await update.message.reply_text(str(e))
