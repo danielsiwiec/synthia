@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from loguru import logger
-from telegram.ext import Application, CommandHandler
 
 from daimos.agents.claude import Message
 from daimos.agents.helpers.message_printer import Summarizer
@@ -40,18 +39,12 @@ task_service = TaskService(event_emitter)
 async def lifespan(app: FastAPI):
     telegram_token = os.environ["TELEGRAM_BOT_TOKEN"]
     app.state.telegram = Telegram(telegram_token, os.environ["TELEGRAM_CHAT_ID"], task_service)
-    app.state.telegram_bot = Application.builder().token(telegram_token).build()
-    telegram_bot = app.state.telegram_bot
-    telegram_bot.add_handler(CommandHandler("task", app.state.telegram.task_handler, has_args=True))
-    await telegram_bot.initialize()
-    await telegram_bot.start()
-    await telegram_bot.updater.start_polling()
-    await app.state.telegram.send_message("Daimos is running")
+    await app.state.telegram.start()
+    # await app.state.telegram.send_message("Daimos is running")
 
     yield
 
-    await telegram_bot.stop()
-    await telegram_bot.shutdown()
+    await app.state.telegram.stop()
 
 
 app = FastAPI(title="Daimos", description="FastAPI application with Claude Agent SDK integration", lifespan=lifespan)
