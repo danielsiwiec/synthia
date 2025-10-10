@@ -12,6 +12,7 @@ dependencies = [
     "fastapi[standard]>=0.118.0",
     "claude-agent-sdk>=0.1.1",
     "loguru>=0.7.3",
+    "python-telegram-bot>=22.5",
 ]
 
 [build-system]
@@ -62,3 +63,6 @@ asyncio_mode = "auto"
 markers = [
     "smoke: marks tests as smoke tests (quick tests for basic functionality)"
 ]
+
+[tool.ty.rules]
+possibly-unbound-attribute = "ignore"

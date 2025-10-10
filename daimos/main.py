@@ -1,17 +1,18 @@
 import logging
+import os
 import sys
-from typing import Any
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from loguru import logger
-from pydantic import BaseModel
+from telegram.ext import Application, CommandHandler
 
-from daimos.agents.claude import Message, Result, run
+from daimos.agents.claude import Message
 from daimos.agents.helpers.message_printer import Summarizer
 from daimos.helpers.events import EventEmitter, EventType
-from daimos.helpers.schema import validate_schema
-from daimos.output import parse
+from daimos.service.task import TaskRequest, TaskResponse, TaskService
+from daimos.service.telegram import Telegram
 
 load_dotenv()
 
@@ -27,49 +28,38 @@ logger.add(
     colorize=True,
 )
 
-app = FastAPI(title="Daimos", description="FastAPI application with Claude Agent SDK integration")
-logger.info("Starting Daimos")
-
-
-class TaskRequest(BaseModel):
-    task: str
-    response_schema: dict[str, Any] | None = None
-    resume: str | None = None
-
-
-class TaskResponse(BaseModel):
-    result: Any
-    session_id: str
-
-
 summarizer = Summarizer()
+logger.info("Starting Daimos")
+event_emitter = EventEmitter[Message]()
+event_emitter.on(EventType.TASK_AGENT_MESSAGE, lambda message: logger.info(f"{message.render()}"))
+event_emitter.on(EventType.TASK_AGENT_MESSAGE, summarizer.process_message)
+task_service = TaskService(event_emitter)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    telegram_token = os.environ["TELEGRAM_BOT_TOKEN"]
+    app.state.telegram = Telegram(telegram_token, os.environ["TELEGRAM_CHAT_ID"], task_service)
+    app.state.telegram_bot = Application.builder().token(telegram_token).build()
+    telegram_bot = app.state.telegram_bot
+    telegram_bot.add_handler(CommandHandler("task", app.state.telegram.task_handler, has_args=True))
+    await telegram_bot.initialize()
+    await telegram_bot.start()
+    await telegram_bot.updater.start_polling()
+    await app.state.telegram.send_message("Daimos is running")
+
+    yield
+
+    await telegram_bot.stop()
+    await telegram_bot.shutdown()
+
+
+app = FastAPI(title="Daimos", description="FastAPI application with Claude Agent SDK integration", lifespan=lifespan)
 
 
 @app.post("/task", response_model=TaskResponse)
-async def process_task(request: TaskRequest) -> TaskResponse:
-    validate_schema(request.response_schema)
-
-    event_emitter = EventEmitter[Message]()
-    event_emitter.on(EventType.TASK_AGENT_MESSAGE, lambda message: logger.info(f"{message.render()}"))
-
-    event_emitter.on(EventType.TASK_AGENT_MESSAGE, summarizer.process_message)
-    result_message = None
-    async for message in run(objective=request.task, resume=request.resume, emitter=event_emitter):
-        if isinstance(message, Result):
-            result_message = message
-
-    if not result_message:
-        raise HTTPException(
-            status_code=408,
-            detail="Timeout: No ResultMessage received within expected time",
-        )
-
-    result = (
-        await parse(result_message.result, request.response_schema)
-        if request.response_schema
-        else result_message.result
-    )
-    return TaskResponse(result=result, session_id=result_message.session_id)
+async def task(request: TaskRequest) -> TaskResponse:
+    return await task_service.process_task(request)
 
 
 @app.get("/health")
