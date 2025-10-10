@@ -243,9 +243,6 @@ $RECYCLE.BIN/
 # .nfs files are created when an open file is removed but is still being accessed
 .nfs*
 
-# UV specific
-uv.lock
-
 # Testmon specific (pytest-testmon)
 .testmondata
 .testmondata-shm
