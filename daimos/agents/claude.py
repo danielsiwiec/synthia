@@ -86,6 +86,11 @@ def _parse_message(message: Any, tool_calls: dict[str, ToolCall], objective: str
                 is_error = getattr(block, "is_error", False)
                 error = "Error occurred" if is_error else None
 
+                if isinstance(output, list):
+                    output = str(output)
+                elif output is None:
+                    output = ""
+
                 if tool_use_id and tool_use_id in tool_calls:
                     tool_call = tool_calls[tool_use_id]
                     completed_tool_call = ToolCall(
@@ -107,12 +112,12 @@ async def run(
     resume: str | None = None,
     agents: dict[str, AgentDefinition] | None = None,
 ) -> AsyncIterator[Any]:
-    options = ClaudeAgentOptions(permission_mode="bypassPermissions", resume=resume, agents=agents, mcp_servers={
-        "browser": {
-            "command": "npx",
-            "args": ["@playwright/mcp@latest"]
-        }
-    })
+    options = ClaudeAgentOptions(
+        permission_mode="bypassPermissions",
+        resume=resume,
+        agents=agents,
+        mcp_servers={"browser": {"command": "npx", "args": ["@playwright/mcp@latest"]}},
+    )
     client = ClaudeSDKClient(options)
 
     await client.connect()
