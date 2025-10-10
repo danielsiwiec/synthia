@@ -1,22 +1,11 @@
-from typing import Any
 
-from pydantic import BaseModel
 
-from daimos.agents.claude import Message, Result, run
+from daimos.agents.claude import Message
+from daimos.agents.task import run
 from daimos.helpers.events import EventEmitter
 from daimos.helpers.schema import validate_schema
 from daimos.output import parse
-
-
-class TaskRequest(BaseModel):
-    task: str
-    response_schema: dict[str, Any] | None = None
-    resume: str | None = None
-
-
-class TaskResponse(BaseModel):
-    result: Any
-    session_id: str
+from daimos.service.models import TaskRequest, TaskResponse
 
 
 class TaskService:
@@ -27,9 +16,7 @@ class TaskService:
         validate_schema(request.response_schema)
 
         result_message = None
-        async for message in run(objective=request.task, resume=request.resume, emitter=self.event_emitter):
-            if isinstance(message, Result):
-                result_message = message
+        result_message = await run(request, self.event_emitter)
 
         if not result_message:
             raise Exception("Timeout: No ResultMessage received within expected time")
