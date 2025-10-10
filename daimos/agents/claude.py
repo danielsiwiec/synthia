@@ -107,7 +107,12 @@ async def run(
     resume: str | None = None,
     agents: dict[str, AgentDefinition] | None = None,
 ) -> AsyncIterator[Any]:
-    options = ClaudeAgentOptions(permission_mode="bypassPermissions", resume=resume, agents=agents)
+    options = ClaudeAgentOptions(permission_mode="bypassPermissions", resume=resume, agents=agents, mcp_servers={
+        "browser": {
+            "command": "npx",
+            "args": ["@playwright/mcp@latest"]
+        }
+    })
     client = ClaudeSDKClient(options)
 
     await client.connect()

@@ -8,7 +8,7 @@ subagents: dict[str, AgentDefinition] = {
         description="fetches a single magazine from freemag website. Use one at a time, not concurrently",
         prompt="""## Overall guidance
 - Do NOT use this agent concurrently. Execute it one at a time.
-- Use the browser to download the magazine file, not HTTP requests, like WebFetch or curl
+- Use a browser to download the magazine file, not HTTP requests, like WebFetch, curl or wget
 - Do NOT use curl to download the magzine file, as it will be blocked. Use the downlaod button on the page,
   instead, using the browser.
 - Do NOT save the magazine file the `~/Downloads` folder. Instead, follow the instructions below regarding
@@ -21,7 +21,7 @@ subagents: dict[str, AgentDefinition] = {
 2. Search for the requested title.
 3. Compare the latest issue with the latest one in the `magazines/` folder.
 4. If the folder already contains the latest issue, do nothing.
-5. If the issue doesn't exist, then download it
+5. If the issue doesn't exist, keep navigating the website until you find the download button or link.
 6. Save the file in the `magazines` directory in the current working folder, according to the 'Save
    location' section below
 7. Verify the size of the file. It should be at least 5MBs. If it's less than that, the downloaded file is
