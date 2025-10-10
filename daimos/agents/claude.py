@@ -11,6 +11,8 @@ from claude_agent_sdk import (
 )
 from pydantic import BaseModel
 
+from daimos.helpers.events import EventEmitter, EventType
+
 
 class ToolCall(BaseModel):
     session_id: str
@@ -98,7 +100,7 @@ def _parse_message(message: Any, tool_calls: dict[str, ToolCall], objective: str
     return None
 
 
-async def run(objective: str, resume: str | None = None) -> AsyncIterator[Any]:
+async def run(objective: str, emitter: EventEmitter[Message], resume: str | None = None) -> AsyncIterator[Any]:
     options = ClaudeAgentOptions(permission_mode="bypassPermissions", resume=resume)
     client = ClaudeSDKClient(options)
 
@@ -112,17 +114,21 @@ async def run(objective: str, resume: str | None = None) -> AsyncIterator[Any]:
         # logger.debug(f"Received message: {message}")
         if isinstance(message, SystemMessage):
             session_id = message.data["session_id"]
-            yield InitMessage(session_id=message.data["session_id"], prompt=objective)
+            message = InitMessage(session_id=message.data["session_id"], prompt=objective)
+            await emitter.emit(EventType.TASK_AGENT_MESSAGE, message)
+            yield message
             continue
         if session_id is None:
             raise ValueError("Session ID is not set")
         if transformed := _parse_message(message, tool_calls, objective, session_id):
+            await emitter.emit(EventType.TASK_AGENT_MESSAGE, transformed)
             yield transformed
             if isinstance(transformed, Result):
                 break
 
 
 async def run_for_result(objective: str) -> Result | None:
-    async for message in run(objective):
+    emitter = EventEmitter[Message]()
+    async for message in run(objective, emitter):
         if isinstance(message, Result):
             return message

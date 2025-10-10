@@ -8,7 +8,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 from daimos.agents.claude import Message, Result, run
-from daimos.agents.helpers.message_printer import Summarizer, log_message
+from daimos.agents.helpers.message_printer import Summarizer
 from daimos.helpers.events import EventEmitter, EventType
 from daimos.helpers.schema import validate_schema
 from daimos.output import parse
@@ -42,18 +42,19 @@ class TaskResponse(BaseModel):
     session_id: str
 
 
+summarizer = Summarizer()
+
+
 @app.post("/task", response_model=TaskResponse)
 async def process_task(request: TaskRequest) -> TaskResponse:
     validate_schema(request.response_schema)
 
     event_emitter = EventEmitter[Message]()
-    event_emitter.on(EventType.TASK_AGENT_MESSAGE, log_message)
+    event_emitter.on(EventType.TASK_AGENT_MESSAGE, lambda message: logger.info(f"{message.render()}"))
 
-    summarizer = Summarizer()
     event_emitter.on(EventType.TASK_AGENT_MESSAGE, summarizer.process_message)
     result_message = None
-    async for message in run(objective=request.task, resume=request.resume):
-        await event_emitter.emit(EventType.TASK_AGENT_MESSAGE, message)
+    async for message in run(objective=request.task, resume=request.resume, emitter=event_emitter):
         if isinstance(message, Result):
             result_message = message
 
