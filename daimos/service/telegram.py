@@ -2,7 +2,7 @@ from loguru import logger
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
-from daimos.agents.subagents import TaskAgentException
+from daimos.agents.agents import TaskAgentException
 from daimos.service.task import TaskRequest, TaskService
 
 

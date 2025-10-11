@@ -7,9 +7,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from loguru import logger
 
+from daimos.agents.agents import TaskAgentException
 from daimos.agents.claude import Message
 from daimos.agents.helpers.message_printer import Summarizer
-from daimos.agents.subagents import TaskAgentException
 from daimos.helpers.events import EventEmitter, EventType
 from daimos.service.task import TaskRequest, TaskResponse, TaskService
 from daimos.service.telegram import Telegram

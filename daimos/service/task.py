@@ -1,5 +1,5 @@
+from daimos.agents.agents import get_agent_system_prompt
 from daimos.agents.claude import Message, run_for_result
-from daimos.agents.subagents import get_agent_system_prompt
 from daimos.helpers.events import EventEmitter
 from daimos.helpers.schema import validate_schema
 from daimos.output import parse
