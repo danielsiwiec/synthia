@@ -81,6 +81,14 @@ async def test_task_endpoint_with_multiple_tags(client):
     assert "Only one tag is allowed" in data["detail"]
 
 
+async def test_task_endpoint_with_nonexistent_agent(client):
+    response = await client.post("/task", json={"task": "#nonexistent do something"})
+
+    assert response.status_code == 400
+    data = response.json()
+    assert "not found" in data["detail"]
+
+
 async def test_health_endpoint(client):
     response = await client.get("/health")
     assert response.status_code == 200

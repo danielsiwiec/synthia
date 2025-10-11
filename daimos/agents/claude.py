@@ -2,7 +2,6 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from claude_agent_sdk import (
-    AgentDefinition,
     AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
@@ -109,12 +108,12 @@ def _parse_message(message: Any, tool_calls: dict[str, ToolCall], objective: str
 async def _run(
     objective: str,
     resume_from_session: str | None = None,
-    agents: dict[str, AgentDefinition] | None = None,
+    system_prompt: str | None = None,
 ) -> AsyncIterator[Any]:
     options = ClaudeAgentOptions(
         permission_mode="bypassPermissions",
         resume=resume_from_session,
-        agents=agents,
+        system_prompt=system_prompt,
         mcp_servers={"browser": {"command": "npx", "args": ["@playwright/mcp@latest"]}},
     )
     client = ClaudeSDKClient(options)
@@ -142,10 +141,10 @@ async def _run(
 async def run_for_result(
     objective: str,
     resume_from_session: str | None = None,
-    agents: dict[str, AgentDefinition] | None = None,
+    system_prompt: str | None = None,
     emitter: EventEmitter[Message] | None = None,
 ) -> Result | None:
-    async for message in _run(objective, resume_from_session=resume_from_session, agents=agents):
+    async for message in _run(objective, resume_from_session=resume_from_session, system_prompt=system_prompt):
         if emitter:
             await emitter.emit(EventType.TASK_AGENT_MESSAGE, message)
         if isinstance(message, Result):
