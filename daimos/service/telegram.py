@@ -5,6 +5,8 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 from daimos.agents.agents import TaskAgentException
 from daimos.service.task import TaskRequest, TaskService
 
+MAX_MESSAGE_LENGTH = 4096
+
 
 class Telegram:
     def __init__(self, token: str, chat_id: str, task_service: TaskService):
@@ -12,7 +14,12 @@ class Telegram:
         self.task_service = task_service
         self.application = Application.builder().token(token).build()
         self.application.add_handler(CommandHandler("task", self._task_handler, has_args=True))
-        self.application.add_handler(MessageHandler(callback=self._message_handler, filters=filters.TEXT))
+        self.application.add_handler(
+            MessageHandler(
+                callback=self._message_handler,
+                filters=filters.TEXT & ~filters.COMMAND,
+            )
+        )
 
     async def send_message(self, message: str):
         await self.application.bot.send_message(text=message, chat_id=self.chat_id, parse_mode="Markdown")
@@ -29,6 +36,28 @@ class Telegram:
         await self.application.stop()
         await self.application.shutdown()
 
+    async def _send_long_message(self, update: Update, text: str):
+        if len(text) <= MAX_MESSAGE_LENGTH:
+            await update.message.reply_text(text)
+            return
+
+        chunks = []
+        while text:
+            if len(text) <= MAX_MESSAGE_LENGTH:
+                chunks.append(text)
+                break
+
+            split_pos = text.rfind("\n", 0, MAX_MESSAGE_LENGTH)
+            if split_pos == -1:
+                split_pos = MAX_MESSAGE_LENGTH
+
+            chunks.append(text[:split_pos])
+            text = text[split_pos:].lstrip()
+
+        for i, chunk in enumerate(chunks):
+            prefix = f"[Part {i + 1}/{len(chunks)}]\n\n" if len(chunks) > 1 else ""
+            await update.message.reply_text(prefix + chunk)
+
     async def _task_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.debug(f"Task handler called with context.args: {context.args}")
         if update.message.from_user.id != int(self.chat_id):
@@ -41,9 +70,9 @@ class Telegram:
 
         try:
             result = await self.task_service.process_task(TaskRequest(task=" ".join(context.args)), resume=False)
-            await update.message.reply_text(result.result)
+            await self._send_long_message(update, result.result)
         except TaskAgentException as e:
-            await update.message.reply_text(str(e))
+            await self._send_long_message(update, str(e))
 
     async def _message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message.from_user.id != int(self.chat_id):
@@ -55,6 +84,6 @@ class Telegram:
 
         try:
             result = await self.task_service.process_task(TaskRequest(task=update.message.text), resume=True)
-            await update.message.reply_text(result.result)
+            await self._send_long_message(update, result.result)
         except TaskAgentException as e:
-            await update.message.reply_text(str(e))
+            await self._send_long_message(update, str(e))
