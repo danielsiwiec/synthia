@@ -1,7 +1,5 @@
-import re
-
 from daimos.agents.claude import Message, run_for_result
-from daimos.agents.subagents import get_matching_subagents
+from daimos.agents.subagents import get_agent_system_prompt
 from daimos.helpers.events import EventEmitter
 from daimos.helpers.schema import validate_schema
 from daimos.output import parse
@@ -18,10 +16,13 @@ class TaskService:
 
         resume_from_session = self._last_session_id if resume else None
 
-        agents = get_matching_subagents(request.task)
-        objective = re.sub(r"#\w+", "", request.task).strip()
+        system_prompt = get_agent_system_prompt(request.task)
+        objective = request.task
         result_message = await run_for_result(
-            objective=objective, resume_from_session=resume_from_session, emitter=self.event_emitter, agents=agents
+            objective=objective,
+            resume_from_session=resume_from_session,
+            emitter=self.event_emitter,
+            system_prompt=system_prompt,
         )
 
         if not result_message:

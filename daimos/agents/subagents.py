@@ -1,6 +1,5 @@
 import re
 
-from claude_agent_sdk import AgentDefinition
 from loguru import logger
 
 
@@ -8,10 +7,8 @@ class TaskAgentException(Exception):
     pass
 
 
-subagents: dict[str, AgentDefinition] = {
-    "magazines": AgentDefinition(
-        description="fetches a single magazine from freemag website. Use one at a time, not concurrently",
-        prompt="""## Overall guidance
+agents: dict[str, str] = {
+    "magazines": """## Overall guidance
 - Do NOT use this agent concurrently. Execute it one at a time.
 - Use a browser to download the magazine file, not HTTP requests, like WebFetch, curl or wget
 - Do NOT use curl to download the magzine file, as it will be blocked. Use the downlaod button on the page,
@@ -43,32 +40,26 @@ magazines/
     The Economist USA/
         The Economist USA - Sep 27, 2025.pdf
 ```""",
-    ),
-    "arr": AgentDefinition(
-        description="answer questions and perform tasks related to 'arr' services",
-        prompt="""## Overall guidance
+    "arr": """## Overall guidance
 - The arr services are served by a docker compose stack, configured in /Users/dansiwiec/arr/docker-compose.yaml
-- Term 'arr services' refers to all services running in this docker compose stack
-""",
-    ),
+- Term 'arr services' refers to all services running in this docker compose stack""",
 }
 
 
-def get_matching_subagents(objective: str) -> dict[str, AgentDefinition]:
+def get_agent_system_prompt(objective: str) -> str | None:
     agent_tags = re.findall(r"#(\w+)", objective)
-    if not agent_tags:
-        return {}
 
     if len(agent_tags) > 1:
         raise TaskAgentException(f"Multiple tags found: {agent_tags}. Only one tag is allowed.")
 
-    matching_agents = {}
-    for agent_name in agent_tags:
-        if agent_name in subagents:
-            matching_agents[agent_name] = subagents[agent_name]
+    if agent_tags:
+        agent_name = agent_tags[0]
 
-    if matching_agents:
-        logger.info(f"Matching subagents: {list(matching_agents.keys())}")
-    else:
-        logger.info("No matching subagents found")
-    return matching_agents
+        if agent_name not in agents:
+            raise TaskAgentException(f"Agent '{agent_name}' not found")
+
+        logger.info(f"Using agent: {agent_name}")
+        return agents[agent_name]
+
+    logger.info("No agent tag found, no system prompt")
+    return None
