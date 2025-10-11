@@ -108,19 +108,19 @@ def _parse_message(message: Any, tool_calls: dict[str, ToolCall], objective: str
 
 async def _run(
     objective: str,
-    resume: str | None = None,
+    resume_from_session: str | None = None,
     agents: dict[str, AgentDefinition] | None = None,
 ) -> AsyncIterator[Any]:
     options = ClaudeAgentOptions(
         permission_mode="bypassPermissions",
-        resume=resume,
+        resume=resume_from_session,
         agents=agents,
         mcp_servers={"browser": {"command": "npx", "args": ["@playwright/mcp@latest"]}},
     )
     client = ClaudeSDKClient(options)
 
     await client.connect()
-    await client.query(prompt=objective, session_id=resume or "default")
+    await client.query(prompt=objective, session_id=resume_from_session or "default")
 
     tool_calls = {}  # tool_use_id -> ToolCall
 
@@ -141,11 +141,11 @@ async def _run(
 
 async def run_for_result(
     objective: str,
-    resume: str | None = None,
+    resume_from_session: str | None = None,
     agents: dict[str, AgentDefinition] | None = None,
     emitter: EventEmitter[Message] | None = None,
 ) -> Result | None:
-    async for message in _run(objective, resume=resume, agents=agents):
+    async for message in _run(objective, resume_from_session=resume_from_session, agents=agents):
         if emitter:
             await emitter.emit(EventType.TASK_AGENT_MESSAGE, message)
         if isinstance(message, Result):

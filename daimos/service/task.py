@@ -1,5 +1,7 @@
-from daimos.agents.claude import Message
-from daimos.agents.task import run
+import re
+
+from daimos.agents.claude import Message, run_for_result
+from daimos.agents.subagents import get_matching_subagents
 from daimos.helpers.events import EventEmitter
 from daimos.helpers.schema import validate_schema
 from daimos.output import parse
@@ -10,11 +12,14 @@ class TaskService:
     def __init__(self, event_emitter: EventEmitter[Message]):
         self.event_emitter = event_emitter
 
-    async def process_task(self, request: TaskRequest) -> TaskResponse:
+    async def process_task(self, request: TaskRequest, resume_from_session: str | None = None) -> TaskResponse:
         validate_schema(request.response_schema)
 
-        result_message = None
-        result_message = await run(request, self.event_emitter)
+        agents = get_matching_subagents(request.task)
+        objective = re.sub(r"#\w+", "", request.task).strip()
+        result_message = await run_for_result(
+            objective=objective, resume_from_session=resume_from_session, emitter=self.event_emitter, agents=agents
+        )
 
         if not result_message:
             raise Exception("Timeout: No ResultMessage received within expected time")

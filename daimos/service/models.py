@@ -6,7 +6,7 @@ from pydantic import BaseModel
 class TaskRequest(BaseModel):
     task: str
     response_schema: dict[str, Any] | None = None
-    resume: str | None = None
+    resume: bool = False
 
 
 class TaskResponse(BaseModel):

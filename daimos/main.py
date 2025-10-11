@@ -38,6 +38,7 @@ task_service = TaskService(event_emitter)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.last_session_id = None
     telegram_token = os.environ["TELEGRAM_BOT_TOKEN"]
     app.state.telegram = Telegram(telegram_token, os.environ["TELEGRAM_CHAT_ID"], task_service)
     await app.state.telegram.start()
@@ -54,7 +55,10 @@ app = FastAPI(title="Daimos", description="FastAPI application with Claude Agent
 @app.post("/task", response_model=TaskResponse)
 async def task(request: TaskRequest) -> TaskResponse:
     try:
-        return await task_service.process_task(request)
+        resume_from_session = app.state.last_session_id if request.resume else None
+        response = await task_service.process_task(request, resume_from_session=resume_from_session)
+        app.state.last_session_id = response.session_id
+        return response
     except TaskAgentException as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
