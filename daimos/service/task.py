@@ -11,9 +11,12 @@ from daimos.service.models import TaskRequest, TaskResponse
 class TaskService:
     def __init__(self, event_emitter: EventEmitter[Message]):
         self.event_emitter = event_emitter
+        self._last_session_id: str | None = None
 
-    async def process_task(self, request: TaskRequest, resume_from_session: str | None = None) -> TaskResponse:
+    async def process_task(self, request: TaskRequest, resume: bool = False) -> TaskResponse:
         validate_schema(request.response_schema)
+
+        resume_from_session = self._last_session_id if resume else None
 
         agents = get_matching_subagents(request.task)
         objective = re.sub(r"#\w+", "", request.task).strip()
@@ -29,4 +32,6 @@ class TaskService:
             if request.response_schema
             else result_message.result
         )
+
+        self._last_session_id = result_message.session_id
         return TaskResponse(result=result, session_id=result_message.session_id)
