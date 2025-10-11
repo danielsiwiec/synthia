@@ -4,11 +4,12 @@ import sys
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from loguru import logger
 
 from daimos.agents.claude import Message
 from daimos.agents.helpers.message_printer import Summarizer
+from daimos.agents.subagents import TaskAgentException
 from daimos.helpers.events import EventEmitter, EventType
 from daimos.service.task import TaskRequest, TaskResponse, TaskService
 from daimos.service.telegram import Telegram
@@ -52,7 +53,10 @@ app = FastAPI(title="Daimos", description="FastAPI application with Claude Agent
 
 @app.post("/task", response_model=TaskResponse)
 async def task(request: TaskRequest) -> TaskResponse:
-    return await task_service.process_task(request)
+    try:
+        return await task_service.process_task(request)
+    except TaskAgentException as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @app.get("/health")

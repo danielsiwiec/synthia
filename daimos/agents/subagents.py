@@ -3,6 +3,11 @@ import re
 from claude_agent_sdk import AgentDefinition
 from loguru import logger
 
+
+class TaskAgentException(Exception):
+    pass
+
+
 subagents: dict[str, AgentDefinition] = {
     "magazines": AgentDefinition(
         description="fetches a single magazine from freemag website. Use one at a time, not concurrently",
@@ -40,9 +45,9 @@ magazines/
 ```""",
     ),
     "arr": AgentDefinition(
-        description="answers questions and performs tasks related to the Arr stack",
+        description="answer questions and perform tasks related to 'arr' services",
         prompt="""## Overall guidance
-- The arr stack in a docker compose stack, configured in /Users/dansiwiec/arr
+- The arr services are served by a docker compose stack, configured in /Users/dansiwiec/arr/docker-compose.yaml
 - Term 'arr services' refers to all services running in this docker compose stack
 """,
     ),
@@ -53,6 +58,9 @@ def get_matching_subagents(objective: str) -> dict[str, AgentDefinition]:
     agent_tags = re.findall(r"#(\w+)", objective)
     if not agent_tags:
         return {}
+
+    if len(agent_tags) > 1:
+        raise TaskAgentException(f"Multiple tags found: {agent_tags}. Only one tag is allowed.")
 
     matching_agents = {}
     for agent_name in agent_tags:
