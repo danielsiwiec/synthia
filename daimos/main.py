@@ -12,7 +12,7 @@ from daimos.agents.claude import Message
 from daimos.agents.helpers.message_printer import Summarizer
 from daimos.helpers.events import EventEmitter, EventType
 from daimos.service.task import TaskRequest, TaskResponse, TaskService
-from daimos.service.telegram import Telegram
+from daimos.telegram import Telegram
 
 load_dotenv()
 
@@ -41,7 +41,6 @@ async def lifespan(app: FastAPI):
     telegram_token = os.environ["TELEGRAM_BOT_TOKEN"]
     app.state.telegram = Telegram(telegram_token, os.environ["TELEGRAM_CHAT_ID"], task_service)
     await app.state.telegram.start()
-    # await app.state.telegram.send_message("Daimos is running")
 
     yield
 

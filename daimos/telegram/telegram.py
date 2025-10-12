@@ -4,8 +4,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 from daimos.agents.agents import TaskAgentException
 from daimos.service.task import TaskRequest, TaskService
-
-MAX_MESSAGE_LENGTH = 4096
+from daimos.telegram.helpers import send_message
 
 
 class Telegram:
@@ -21,9 +20,6 @@ class Telegram:
             )
         )
 
-    async def send_message(self, message: str):
-        await self.application.bot.send_message(text=message, chat_id=self.chat_id, parse_mode="Markdown")
-
     async def start(self):
         try:
             await self.application.initialize()
@@ -36,47 +32,29 @@ class Telegram:
         await self.application.stop()
         await self.application.shutdown()
 
-    async def _send_long_message(self, update: Update, text: str):
-        if len(text) <= MAX_MESSAGE_LENGTH:
-            await update.message.reply_text(text)
-            return
-
-        chunks = []
-        while text:
-            if len(text) <= MAX_MESSAGE_LENGTH:
-                chunks.append(text)
-                break
-
-            split_pos = text.rfind("\n", 0, MAX_MESSAGE_LENGTH)
-            if split_pos == -1:
-                split_pos = MAX_MESSAGE_LENGTH
-
-            chunks.append(text[:split_pos])
-            text = text[split_pos:].lstrip()
-
-        for i, chunk in enumerate(chunks):
-            prefix = f"[Part {i + 1}/{len(chunks)}]\n\n" if len(chunks) > 1 else ""
-            await update.message.reply_text(prefix + chunk)
-
-    async def _task_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        logger.debug(f"Task handler called with context.args: {context.args}")
+    def _is_authorized(self, update: Update) -> bool:
         if update.message.from_user.id != int(self.chat_id):
             logger.debug(f"Unauthorized user {update.message.from_user.id}")
+            return False
+        return True
+
+    async def _task_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await send_message(update, "**⚙️ Processing task...**")
+        if not self._is_authorized(update):
             return
 
         if not context.args:
-            await update.message.reply_text("Please provide a task description")
+            await send_message(update, "Please provide a task description")
             return
 
         try:
             result = await self.task_service.process_task(TaskRequest(task=" ".join(context.args)), resume=False)
-            await self._send_long_message(update, result.result)
+            await send_message(update, result.result)
         except TaskAgentException as e:
-            await self._send_long_message(update, str(e))
+            await send_message(update, str(e))
 
     async def _message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if update.message.from_user.id != int(self.chat_id):
-            logger.debug(f"Unauthorized user {update.message.from_user.id}")
+        if not self._is_authorized(update):
             return
 
         if not update.message.text:
@@ -84,6 +62,6 @@ class Telegram:
 
         try:
             result = await self.task_service.process_task(TaskRequest(task=update.message.text), resume=True)
-            await self._send_long_message(update, result.result)
+            await send_message(update, result.result)
         except TaskAgentException as e:
-            await self._send_long_message(update, str(e))
+            await send_message(update, str(e))
