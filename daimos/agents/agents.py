@@ -88,6 +88,26 @@ agents: dict[str, str] = {
         - Save the request in a temporary json file and use `curl -d @file.json` syntax to send it
         - The link to the document will be: https://www.markdownpaste.com/document/[slug]
     """),
+    "joke": dedent("""
+        ## Overall guidance
+        - Find a joke from the web
+        - The joke should be longer than 50 words
+        - Respond only with the joke. Do not include any other text.
+    """),
+    "brief": dedent("""
+        ## Overall guidance
+        - Combine these pieces of information: a single piece of news, a single joke and a single fact
+
+        ## Sources
+        - jokes: call POST http://localhost:8003/task with the following payload:
+        ```
+        {
+          "task": "give me a joke #joke"
+        }
+        - news: search the web for a single piece of news
+        - facts: search the web for a single fact
+        ```
+    """),
 }
 
 
