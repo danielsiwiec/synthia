@@ -10,7 +10,6 @@ from claude_agent_sdk import (
     UserMessage,
 )
 from claude_agent_sdk.client import Message as ClaudeMessage
-from loguru import logger
 from pydantic import BaseModel
 
 from daimos.helpers.pubsub import pubsub
@@ -127,7 +126,6 @@ async def _run(
 
     session_id = None
     async for message in client.receive_messages():
-        logger.debug(f"Received message: {message}")
         await pubsub.publish(ClaudeMessage, message)
         if isinstance(message, SystemMessage):
             session_id = message.data["session_id"]

@@ -2,10 +2,17 @@ import re
 from pathlib import Path
 
 from loguru import logger
+from pydantic import BaseModel
+
+from daimos.helpers.pubsub import pubsub
 
 
 class TaskAgentException(Exception):
     pass
+
+
+class AgentSelection(BaseModel):
+    agent_name: str | None = None
 
 
 def _load_agents() -> dict[str, str]:
@@ -28,7 +35,7 @@ def _load_agents() -> dict[str, str]:
     return agents
 
 
-def get_agent_system_prompt(objective: str) -> str | None:
+async def get_agent_system_prompt(objective: str) -> str | None:
     agent_tags = re.findall(r"#(\w+)", objective)
 
     if len(agent_tags) > 1:
@@ -42,7 +49,10 @@ def get_agent_system_prompt(objective: str) -> str | None:
             raise TaskAgentException(f"Agent '{agent_name}' not found")
 
         logger.info(f"Using agent: {agent_name}")
-        return agents[agent_name]
+        agent = agents[agent_name]
+    else:
+        logger.info("No agent tag found, no system prompt")
+        agent = None
 
-    logger.info("No agent tag found, no system prompt")
-    return None
+    await pubsub.publish(AgentSelection, AgentSelection(agent_name=agent_name if agent else None))
+    return agent

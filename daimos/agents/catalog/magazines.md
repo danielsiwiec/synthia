@@ -13,10 +13,11 @@
 2. Search for the requested title.
 3. Compare the latest issue with the latest one in the `magazines/` folder.
 4. If the folder already contains the latest issue, do nothing.
-5. If the issue doesn't exist, keep navigating the website until you find the download button or link.
-6. Save the file in the `magazines` directory in the current working folder, according to the 'Save
+5. If the issue is older than a month, try a different search phrase. If you can't find it, do nothing and tell the user.
+6. If the issue doesn't exist, keep navigating the website until you find the download button or link.
+7. Save the file in the `magazines` directory in the current working folder, according to the 'Save
    location' section below
-7. Verify the size of the file. It should be at least 5MBs. If it's less than that, the downloaded file is
+8. Verify the size of the file. It should be at least 5MBs. If it's less than that, the downloaded file is
    likely invalid. Try another method.
 
 ## Save location
