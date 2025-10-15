@@ -2,8 +2,9 @@ import re
 from pathlib import Path
 
 from loguru import logger
-from pydantic import BaseModel
 
+from daimos.agents.learning.learner import Learner
+from daimos.agents.models import AgentSelection
 from daimos.helpers.pubsub import pubsub
 
 
@@ -11,11 +12,7 @@ class TaskAgentException(Exception):
     pass
 
 
-class AgentSelection(BaseModel):
-    agent_name: str | None = None
-
-
-def _load_agents() -> dict[str, str]:
+def _load_agents(learner: Learner) -> dict[str, str]:
     agents = {}
     catalog_dir = Path(__file__).parent / "catalog"
 
@@ -27,6 +24,12 @@ def _load_agents() -> dict[str, str]:
         agent_name = md_file.stem
         try:
             content = md_file.read_text(encoding="utf-8").strip()
+
+            learnings = learner.load_learnings(agent_name)
+            if learnings:
+                content = f"{content}\n\n## Previous Learnings\n\n{learnings}"
+                logger.debug(f"Loaded learnings for agent: {agent_name}")
+
             agents[agent_name] = content
             logger.debug(f"Loaded agent: {agent_name}")
         except Exception as e:
@@ -35,7 +38,7 @@ def _load_agents() -> dict[str, str]:
     return agents
 
 
-async def get_agent_system_prompt(objective: str) -> str | None:
+async def get_agent_system_prompt(objective: str, learner: Learner) -> tuple[str | None, str | None]:
     agent_tags = re.findall(r"#(\w+)", objective)
 
     if len(agent_tags) > 1:
@@ -43,7 +46,7 @@ async def get_agent_system_prompt(objective: str) -> str | None:
 
     if agent_tags:
         agent_name = agent_tags[0]
-        agents = _load_agents()
+        agents = _load_agents(learner)
 
         if agent_name not in agents:
             raise TaskAgentException(f"Agent '{agent_name}' not found")
@@ -53,6 +56,7 @@ async def get_agent_system_prompt(objective: str) -> str | None:
     else:
         logger.info("No agent tag found, no system prompt")
         agent = None
+        agent_name = None
 
     await pubsub.publish(AgentSelection, AgentSelection(agent_name=agent_name if agent else None))
-    return agent
+    return agent, agent_name

@@ -12,3 +12,8 @@ class TaskRequest(BaseModel):
 class TaskResponse(BaseModel):
     result: Any
     session_id: str
+
+
+class TaskCompletion(BaseModel):
+    session_id: str
+    agent_name: str | None
