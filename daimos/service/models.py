@@ -16,4 +16,3 @@ class TaskResponse(BaseModel):
 
 class TaskCompletion(BaseModel):
     session_id: str
-    agent_name: str | None

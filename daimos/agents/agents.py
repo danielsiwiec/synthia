@@ -20,15 +20,17 @@ def _load_agents(learner: Learner) -> dict[str, str]:
         logger.warning(f"Catalog directory not found: {catalog_dir}")
         return agents
 
+    skills = learner.load_all_skills()
+    skills_section = _build_skills_section(skills)
+
     for md_file in catalog_dir.glob("*.md"):
         agent_name = md_file.stem
         try:
             content = md_file.read_text(encoding="utf-8").strip()
 
-            learnings = learner.load_learnings(agent_name)
-            if learnings:
-                content = f"{content}\n\n## Previous Learnings\n\n{learnings}"
-                logger.debug(f"Loaded learnings for agent: {agent_name}")
+            if skills_section:
+                content = f"{content}\n\n{skills_section}"
+                logger.debug(f"Added skills section to agent: {agent_name}")
 
             agents[agent_name] = content
             logger.debug(f"Loaded agent: {agent_name}")
@@ -36,6 +38,21 @@ def _load_agents(learner: Learner) -> dict[str, str]:
             logger.error(f"Failed to load agent {agent_name}: {e}")
 
     return agents
+
+
+def _build_skills_section(skills: list[dict]) -> str:
+    if not skills:
+        return ""
+
+    section = "## Available Skills\n\n"
+    section += "The following skills contain learnings from previous tasks. "
+    section += "If you are performing a task similar to any of these skills, "
+    section += "read the corresponding skill file to incorporate the learnings:\n\n"
+
+    for skill in skills:
+        section += f"- **{skill['name']}**: {skill['description']}\n"
+
+    return section
 
 
 async def get_agent_system_prompt(objective: str, learner: Learner) -> tuple[str | None, str | None]:
