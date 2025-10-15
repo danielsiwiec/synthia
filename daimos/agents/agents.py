@@ -55,7 +55,7 @@ def _build_skills_section(skills: list[dict]) -> str:
     return section
 
 
-async def get_agent_system_prompt(objective: str, learner: Learner) -> tuple[str | None, str | None]:
+async def get_agent_system_prompt(objective: str, learner: Learner) -> str | None:
     agent_tags = re.findall(r"#(\w+)", objective)
 
     if len(agent_tags) > 1:
@@ -76,4 +76,4 @@ async def get_agent_system_prompt(objective: str, learner: Learner) -> tuple[str
         agent_name = None
 
     await pubsub.publish(AgentSelection, AgentSelection(agent_name=agent_name if agent else None))
-    return agent, agent_name
+    return agent
