@@ -1,14 +1,12 @@
 from daimos.agents.agents import get_agent_system_prompt
-from daimos.agents.claude import Message, run_for_result
-from daimos.helpers.events import EventEmitter
+from daimos.agents.claude import run_for_result
 from daimos.helpers.schema import validate_schema
 from daimos.output import parse
 from daimos.service.models import TaskRequest, TaskResponse
 
 
 class TaskService:
-    def __init__(self, event_emitter: EventEmitter[Message]):
-        self.event_emitter = event_emitter
+    def __init__(self):
         self._last_session_id: str | None = None
 
     async def process_task(self, request: TaskRequest, resume: bool = False) -> TaskResponse:
@@ -21,7 +19,6 @@ class TaskService:
         result_message = await run_for_result(
             objective=objective,
             resume_from_session=resume_from_session,
-            emitter=self.event_emitter,
             system_prompt=system_prompt,
         )
 

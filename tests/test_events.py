@@ -1,43 +1,95 @@
+import asyncio
 from unittest.mock import Mock
 
-from daimos.helpers.events import EventEmitter, EventType
+from daimos.helpers.pubsub import PubSub
 
 
-async def test_event_emitter_with_multiple_handlers():
-    emitter = EventEmitter()
+class TaskAgentMessage:
+    def __init__(self, content: str):
+        self.content = content
+
+
+class DummyMessage:
+    def __init__(self, content: str):
+        self.content = content
+
+
+async def test_pubsub_with_multiple_handlers():
+    pubsub = PubSub()
 
     handler1 = Mock()
     handler2 = Mock()
 
-    emitter.on(EventType.TASK_AGENT_MESSAGE, handler1)
-    emitter.on(EventType.TASK_AGENT_MESSAGE, handler2)
+    def sync_handler1(msg):
+        handler1(msg)
 
-    await emitter.emit(EventType.TASK_AGENT_MESSAGE, "test message")
+    def sync_handler2(msg):
+        handler2(msg)
 
-    handler1.assert_called_once_with("test message")
-    handler2.assert_called_once_with("test message")
+    pubsub.subscribe(TaskAgentMessage, sync_handler1)
+    pubsub.subscribe(TaskAgentMessage, sync_handler2)
+
+    await pubsub.start()
+    await pubsub.publish(TaskAgentMessage, TaskAgentMessage("test message"))
+
+    await asyncio.sleep(0.1)  # Give time for dispatch
+
+    handler1.assert_called_once()
+    handler2.assert_called_once()
+    await pubsub.stop()
 
 
-async def test_event_emitter_with_no_handlers():
-    emitter = EventEmitter()
+async def test_pubsub_with_no_handlers():
+    pubsub = PubSub()
 
-    await emitter.emit(EventType.TASK_AGENT_MESSAGE, "test message")
+    await pubsub.start()
+    await pubsub.publish(TaskAgentMessage, TaskAgentMessage("test message"))
+
+    await asyncio.sleep(0.1)  # Give time for dispatch
 
     assert True
+    await pubsub.stop()
 
 
-async def test_event_emitter_handler_not_called_for_different_event():
-    from enum import Enum
-
-    emitter = EventEmitter()
+async def test_pubsub_handler_not_called_for_different_event():
+    pubsub = PubSub()
 
     handler = Mock()
 
-    emitter.on(EventType.TASK_AGENT_MESSAGE, handler)
+    def sync_handler(msg):
+        handler(msg)
 
-    class DummyEventType(Enum):
-        DUMMY = "dummy"
+    pubsub.subscribe(TaskAgentMessage, sync_handler)
 
-    await emitter.emit(EventType.DUMMY, "test message")
+    await pubsub.start()
+    await pubsub.publish(DummyMessage, DummyMessage("test message"))
+
+    await asyncio.sleep(0.1)  # Give time for dispatch
 
     handler.assert_not_called()
+    await pubsub.stop()
+
+
+async def test_pubsub_mixed_sync_async_handlers():
+    pubsub = PubSub()
+
+    sync_handler = Mock()
+    async_handler = Mock()
+
+    def sync_fn(msg):
+        sync_handler(msg)
+
+    async def async_fn(msg):
+        async_handler(msg)
+
+    pubsub.subscribe(TaskAgentMessage, sync_fn)
+    pubsub.subscribe(TaskAgentMessage, async_fn)
+
+    await pubsub.start()
+    await pubsub.publish(TaskAgentMessage, TaskAgentMessage("test message"))
+
+    await asyncio.sleep(0.1)  # Give time for dispatch
+
+    sync_handler.assert_called_once()
+    async_handler.assert_called_once()
+    await pubsub.stop()

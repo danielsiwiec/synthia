@@ -7,10 +7,10 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from loguru import logger
 
+import daimos.helpers.debug  # noqa: F401
 from daimos.agents.agents import TaskAgentException
-from daimos.agents.claude import Message
 from daimos.agents.helpers.message_printer import Summarizer
-from daimos.helpers.events import EventEmitter, EventType
+from daimos.helpers.pubsub import pubsub
 from daimos.service.task import TaskRequest, TaskResponse, TaskService
 from daimos.telegram import Telegram
 
@@ -30,10 +30,8 @@ logger.add(
 
 summarizer = Summarizer()
 logger.info("Starting Daimos")
-event_emitter = EventEmitter[Message]()
-event_emitter.on(EventType.TASK_AGENT_MESSAGE, lambda message: logger.info(f"{message.render()}"))
-event_emitter.on(EventType.TASK_AGENT_MESSAGE, summarizer.process_message)
-task_service = TaskService(event_emitter)
+
+task_service = TaskService()
 
 
 @asynccontextmanager
@@ -41,10 +39,12 @@ async def lifespan(app: FastAPI):
     telegram_token = os.environ["TELEGRAM_BOT_TOKEN"]
     app.state.telegram = Telegram(telegram_token, os.environ["TELEGRAM_CHAT_ID"], task_service)
     await app.state.telegram.start()
+    await pubsub.start()
 
     yield
 
     await app.state.telegram.stop()
+    await pubsub.stop()
 
 
 app = FastAPI(title="Daimos", description="FastAPI application with Claude Agent SDK integration", lifespan=lifespan)
