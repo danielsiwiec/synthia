@@ -1,12 +1,12 @@
 import pytest
 
 from daimos.agents.claude import InitMessage, Result, ToolCall
-from daimos.agents.helpers.message_printer import Summarizer
+from daimos.agents.learning.learner import Learner
 
 
 @pytest.mark.asyncio
 async def test_summarizer_happy_path():
-    summarizer = Summarizer()
+    learner = Learner()
 
     # First session: Task counting
     session1_id = "3ac245a2-ac19-4046-bf46-42233056892d"
@@ -108,12 +108,12 @@ async def test_summarizer_happy_path():
 
     # Process first session
     for message in session1_messages:
-        await summarizer.process_message(message)
+        await learner.process_message(message)
 
     # Process second session
     for message in session2_messages:
-        await summarizer.process_message(message)
+        await learner.process_message(message)
 
     # Process third session
     for message in session3_messages:
-        await summarizer.process_message(message)
+        await learner.process_message(message)

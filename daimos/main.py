@@ -9,7 +9,8 @@ from loguru import logger
 
 import daimos.helpers.debug  # noqa: F401
 from daimos.agents.agents import TaskAgentException
-from daimos.agents.helpers.message_printer import Summarizer
+from daimos.agents.claude import Message
+from daimos.agents.learning.learner import Learner
 from daimos.helpers.pubsub import pubsub
 from daimos.service.task import TaskRequest, TaskResponse, TaskService
 from daimos.telegram import Telegram
@@ -28,10 +29,11 @@ logger.add(
     colorize=True,
 )
 
-summarizer = Summarizer()
+learner = Learner()
+pubsub.subscribe(Message, learner.process_message)
 logger.info("Starting Daimos")
 
-task_service = TaskService()
+task_service = TaskService(learner)
 
 
 @asynccontextmanager
