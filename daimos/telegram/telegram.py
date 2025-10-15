@@ -1,8 +1,10 @@
 from loguru import logger
-from telegram import Update
+from telegram import Bot, Update
+from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
-from daimos.agents.agents import TaskAgentException
+from daimos.agents.agents import AgentSelection, TaskAgentException
+from daimos.helpers.pubsub import pubsub
 from daimos.service.task import TaskRequest, TaskService
 from daimos.telegram.helpers import send_message
 
@@ -19,6 +21,14 @@ class Telegram:
                 filters=filters.TEXT & ~filters.COMMAND,
             )
         )
+        self.bot = Bot(token=token)
+        pubsub.subscribe(AgentSelection, self.on_agent_selection)
+
+    async def on_agent_selection(self, agent_selection: AgentSelection):
+        if agent_selection.agent_name:
+            await self._send_message(f"**Selected agent: {agent_selection.agent_name}**")
+        else:
+            await self._send_message("**No agent selected**")
 
     async def start(self):
         try:
@@ -38,20 +48,25 @@ class Telegram:
             return False
         return True
 
+    async def _send_message(self, text: str):
+        async def message_sender(text: str):
+            await self.bot.send_message(chat_id=self.chat_id, text=text, parse_mode=ParseMode.HTML)
+
+        await send_message(message_sender, text)
+
     async def _task_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await send_message(update, "**⚙️ Processing task...**")
         if not self._is_authorized(update):
             return
 
         if not context.args:
-            await send_message(update, "Please provide a task description")
+            await self._send_message("Please provide a task description")
             return
 
         try:
             result = await self.task_service.process_task(TaskRequest(task=" ".join(context.args)), resume=False)
-            await send_message(update, result.result)
+            await self._send_message(result.result)
         except TaskAgentException as e:
-            await send_message(update, str(e))
+            await self._send_message(str(e))
 
     async def _message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_authorized(update):
@@ -62,6 +77,6 @@ class Telegram:
 
         try:
             result = await self.task_service.process_task(TaskRequest(task=update.message.text), resume=True)
-            await send_message(update, result.result)
+            await self._send_message(result.result)
         except TaskAgentException as e:
-            await send_message(update, str(e))
+            await self._send_message(str(e))

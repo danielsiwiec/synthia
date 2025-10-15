@@ -1,9 +1,8 @@
 import re
+from collections.abc import Callable, Coroutine
 
 import bleach
 import markdown
-from telegram import Update
-from telegram.constants import ParseMode
 
 MAX_MESSAGE_LENGTH = 4096
 
@@ -40,12 +39,12 @@ def _sanitize_html_for_telegram(html: str) -> str:
     return html.strip()
 
 
-async def send_message(update: Update, text: str):
+async def send_message(message_sender: Callable[[str], Coroutine], text: str):
     html = markdown.markdown(text)
     text = _sanitize_html_for_telegram(html)
 
     if len(text) <= MAX_MESSAGE_LENGTH:
-        await update.message.reply_text(text=text, parse_mode=ParseMode.HTML)
+        await message_sender(text)
         return
 
     chunks = []
@@ -63,4 +62,4 @@ async def send_message(update: Update, text: str):
 
     for i, chunk in enumerate(chunks):
         prefix = f"[Part {i + 1}/{len(chunks)}]\n\n" if len(chunks) > 1 else ""
-        await update.message.reply_text(text=prefix + chunk, parse_mode=ParseMode.HTML)
+        await message_sender(prefix + chunk)
