@@ -9,9 +9,11 @@ from claude_agent_sdk import (
     SystemMessage,
     UserMessage,
 )
+from claude_agent_sdk.client import Message as ClaudeMessage
+from loguru import logger
 from pydantic import BaseModel
 
-from daimos.helpers.events import EventEmitter, EventType
+from daimos.helpers.pubsub import pubsub
 
 
 class ToolCall(BaseModel):
@@ -125,7 +127,8 @@ async def _run(
 
     session_id = None
     async for message in client.receive_messages():
-        # logger.debug(f"Received message: {message}")
+        logger.debug(f"Received message: {message}")
+        await pubsub.publish(ClaudeMessage, message)
         if isinstance(message, SystemMessage):
             session_id = message.data["session_id"]
             yield InitMessage(session_id=message.data["session_id"], prompt=objective)
@@ -142,10 +145,8 @@ async def run_for_result(
     objective: str,
     resume_from_session: str | None = None,
     system_prompt: str | None = None,
-    emitter: EventEmitter[Message] | None = None,
 ) -> Result | None:
     async for message in _run(objective, resume_from_session=resume_from_session, system_prompt=system_prompt):
-        if emitter:
-            await emitter.emit(EventType.TASK_AGENT_MESSAGE, message)
+        await pubsub.publish(Message, message)
         if isinstance(message, Result):
             return message

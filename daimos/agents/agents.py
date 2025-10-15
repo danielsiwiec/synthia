@@ -11,11 +11,11 @@ class TaskAgentException(Exception):
 def _load_agents() -> dict[str, str]:
     agents = {}
     catalog_dir = Path(__file__).parent / "catalog"
-    
+
     if not catalog_dir.exists():
         logger.warning(f"Catalog directory not found: {catalog_dir}")
         return agents
-    
+
     for md_file in catalog_dir.glob("*.md"):
         agent_name = md_file.stem
         try:
@@ -24,7 +24,7 @@ def _load_agents() -> dict[str, str]:
             logger.debug(f"Loaded agent: {agent_name}")
         except Exception as e:
             logger.error(f"Failed to load agent {agent_name}: {e}")
-    
+
     return agents
 
 
