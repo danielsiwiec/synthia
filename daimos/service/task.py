@@ -17,7 +17,7 @@ class TaskService:
 
         resume_from_session = self._last_session_id if resume else None
 
-        system_prompt, agent_name = await get_agent_system_prompt(request.task, self.learner)
+        system_prompt = await get_agent_system_prompt(request.task, self.learner)
         objective = request.task
         result_message = await run_for_result(
             objective=objective,
