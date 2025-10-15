@@ -1,12 +1,12 @@
 from dotenv import load_dotenv
 
-from daimos.output import parse
+from daimos.output import parse_from_schema
 
 load_dotenv()
 
 
 async def test_parse_happy_path():
-    result = await parse(
+    result = await parse_from_schema(
         "answer is4",
         {
             "type": "object",

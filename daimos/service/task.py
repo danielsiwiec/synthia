@@ -3,7 +3,7 @@ from daimos.agents.claude import run_for_result
 from daimos.agents.learning.learner import Learner
 from daimos.helpers.pubsub import pubsub
 from daimos.helpers.schema import validate_schema
-from daimos.output import parse
+from daimos.output import parse_from_schema
 from daimos.service.models import TaskCompletion, TaskRequest, TaskResponse
 
 
@@ -29,15 +29,13 @@ class TaskService:
             raise Exception("Timeout: No ResultMessage received within expected time")
 
         result = (
-            await parse(result_message.result, request.response_schema)
+            await parse_from_schema(result_message.result, request.response_schema)
             if request.response_schema
             else result_message.result
         )
 
         self._last_session_id = result_message.session_id
 
-        await pubsub.publish(
-            TaskCompletion, TaskCompletion(session_id=result_message.session_id, agent_name=agent_name)
-        )
+        await pubsub.publish(TaskCompletion, TaskCompletion(session_id=result_message.session_id))
 
         return TaskResponse(result=result, session_id=result_message.session_id)
