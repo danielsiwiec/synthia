@@ -24,6 +24,7 @@ class Telegram:
 
     async def _on_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message is None or (update.message.from_user and update.message.from_user.id != int(self.chat_id)):
+            logger.warning(f"Message from unauthorized user {update.message.from_user.id} ignored")
             return
         message = update.message.text
         await self.send_message(message=f"Right back at you: {message}")
