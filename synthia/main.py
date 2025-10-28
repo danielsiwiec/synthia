@@ -7,13 +7,12 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from loguru import logger
 
-import daimos.helpers.debug  # noqa: F401
-from daimos.agents.agents import TaskAgentException
-from daimos.agents.claude import Message
-from daimos.agents.learning.learner import Learner
-from daimos.helpers.pubsub import pubsub
-from daimos.service.task import TaskRequest, TaskResponse, TaskService
-from daimos.telegram import Telegram
+import synthia.helpers.debug  # noqa: F401
+from synthia.agents.agents import TaskAgentException
+from synthia.agents.learning.learner import Learner
+from synthia.helpers.pubsub import pubsub
+from synthia.service.task import TaskRequest, TaskResponse, TaskService
+from synthia.telegram import Telegram
 
 load_dotenv()
 
@@ -30,16 +29,14 @@ logger.add(
 )
 
 learner = Learner()
-pubsub.subscribe(Message, learner.process_message)
-logger.info("Starting Daimos")
+logger.info("Starting Synthia")
 
 task_service = TaskService(learner)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    telegram_token = os.environ["TELEGRAM_BOT_TOKEN"]
-    app.state.telegram = Telegram(telegram_token, os.environ["TELEGRAM_CHAT_ID"], task_service)
+    app.state.telegram = Telegram(os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"], task_service)
     await app.state.telegram.start()
     await pubsub.start()
 
@@ -49,7 +46,7 @@ async def lifespan(app: FastAPI):
     await pubsub.stop()
 
 
-app = FastAPI(title="Daimos", description="FastAPI application with Claude Agent SDK integration", lifespan=lifespan)
+app = FastAPI(title="Synthia", description="FastAPI application with Claude Agent SDK integration", lifespan=lifespan)
 
 
 @app.post("/task", response_model=TaskResponse)

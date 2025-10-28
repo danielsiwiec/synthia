@@ -1,10 +1,10 @@
-from daimos.agents.agents import get_agent_system_prompt
-from daimos.agents.claude import run_for_result
-from daimos.agents.learning.learner import Learner
-from daimos.helpers.pubsub import pubsub
-from daimos.helpers.schema import validate_schema
-from daimos.output import parse_from_schema
-from daimos.service.models import TaskCompletion, TaskRequest, TaskResponse
+from synthia.agents.agents import get_agent_system_prompt
+from synthia.agents.claude import run_for_result
+from synthia.agents.learning.learner import Learner
+from synthia.helpers.pubsub import pubsub
+from synthia.helpers.schema import validate_schema
+from synthia.output import parse_from_schema
+from synthia.service.models import TaskCompletion, TaskRequest, TaskResponse
 
 
 class TaskService:
@@ -36,6 +36,6 @@ class TaskService:
 
         self._last_session_id = result_message.session_id
 
-        await pubsub.publish(TaskCompletion, TaskCompletion(session_id=result_message.session_id))
+        await pubsub.publish(TaskCompletion(session_id=result_message.session_id))
 
         return TaskResponse(result=result, session_id=result_message.session_id)

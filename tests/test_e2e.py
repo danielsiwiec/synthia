@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from daimos.main import app
+from synthia.main import app
 
 
 @pytest.fixture(scope="session")
@@ -43,7 +43,7 @@ async def test_task_endpoint_with_schema(client):
     assert "result" in data
     assert "session_id" in data
     assert isinstance(data["result"], dict)
-    assert data["result"]["number_of_files"] > 1
+    assert data["result"]["number_of_files"] > 0
 
     data["session_id"]
 

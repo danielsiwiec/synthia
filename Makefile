@@ -1,10 +1,10 @@
 .PHONY: start smoke dev test lint check format
 
 start:
-	uv run uvicorn daimos.main:app --host 0.0.0.0 --port 8003
+	uv run uvicorn synthia.main:app --host 0.0.0.0 --port 8003
 
 dev:
-	uv run uvicorn daimos.main:app --host 0.0.0.0 --port 8003 --reload
+	uv run uvicorn synthia.main:app --host 0.0.0.0 --port 8003 --reload
 
 test:
 	uv run pytest tests/ -n auto --testmon

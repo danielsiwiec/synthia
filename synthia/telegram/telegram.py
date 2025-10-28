@@ -3,11 +3,11 @@ from telegram import Bot, Update
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
-from daimos.agents.agents import TaskAgentException
-from daimos.agents.models import AgentSelection
-from daimos.helpers.pubsub import pubsub
-from daimos.service.task import TaskRequest, TaskService
-from daimos.telegram.helpers import send_message
+from synthia.agents.agents import TaskAgentException
+from synthia.agents.models import AgentSelection
+from synthia.helpers.pubsub import pubsub
+from synthia.service.task import TaskRequest, TaskService
+from synthia.telegram.helpers import send_message
 
 
 class Telegram:
@@ -36,6 +36,7 @@ class Telegram:
             await self.application.initialize()
             await self.application.start()
             await self.application.updater.start_polling()
+            await self._send_message("*Synthia connected 👋*")
         except Exception as _e:
             logger.error(f"Telegram application failed to start: {_e}")
 

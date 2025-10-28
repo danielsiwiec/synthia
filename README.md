@@ -1,4 +1,4 @@
-# Daimos
+# Synthia
 
 A FastAPI application with Claude Agent SDK integration for processing tasks.
 
