@@ -278,3 +278,6 @@ logs/
 *.sublime-workspace
 
 wip
+
+# Claude sessions directory (auto-generated skills and session data)
+claude_sessions/

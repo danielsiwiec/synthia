@@ -22,8 +22,12 @@ class PubSub:
         else:
             self.sync_subscribers[topic].append(handler)
 
-    async def publish(self, topic: type[T], message: T):
-        await self.queues[topic].put(message)
+    async def publish(self, message: T):
+        all_topics = set(self.async_subscribers.keys()) | set(self.sync_subscribers.keys())
+
+        for topic in all_topics:
+            if isinstance(message, topic):
+                await self.queues[topic].put(message)
 
     async def _dispatch(self, topic: type):
         while True:

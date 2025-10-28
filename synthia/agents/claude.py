@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 from claude_agent_sdk import (
@@ -9,10 +10,9 @@ from claude_agent_sdk import (
     SystemMessage,
     UserMessage,
 )
-from claude_agent_sdk.client import Message as ClaudeMessage
 from pydantic import BaseModel
 
-from daimos.helpers.pubsub import pubsub
+from synthia.helpers.pubsub import pubsub
 
 
 class ToolCall(BaseModel):
@@ -111,7 +111,13 @@ async def _run(
     resume_from_session: str | None = None,
     system_prompt: str | None = None,
 ) -> AsyncIterator[Any]:
+    project_root = Path(__file__).parent.parent.parent
+    claude_sessions_dir = project_root / "claude_sessions"
+
     options = ClaudeAgentOptions(
+        cwd=str(claude_sessions_dir),
+        setting_sources=["project"],
+        allowed_tools=["Skill"],
         permission_mode="bypassPermissions",
         resume=resume_from_session,
         system_prompt=system_prompt,
@@ -126,7 +132,7 @@ async def _run(
 
     session_id = None
     async for message in client.receive_messages():
-        await pubsub.publish(ClaudeMessage, message)
+        await pubsub.publish(message)
         if isinstance(message, SystemMessage):
             session_id = message.data["session_id"]
             yield InitMessage(session_id=message.data["session_id"], prompt=objective)
@@ -145,6 +151,6 @@ async def run_for_result(
     system_prompt: str | None = None,
 ) -> Result | None:
     async for message in _run(objective, resume_from_session=resume_from_session, system_prompt=system_prompt):
-        await pubsub.publish(Message, message)
+        await pubsub.publish(message)
         if isinstance(message, Result):
             return message

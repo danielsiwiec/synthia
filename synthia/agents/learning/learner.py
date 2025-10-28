@@ -2,14 +2,14 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from claude_agent_sdk import Message, ResultMessage
 from loguru import logger
 from pydantic import BaseModel
 
-from daimos.agents.claude import Message, run_for_result
-from daimos.helpers.pubsub import pubsub
-from daimos.output import parse_from_type
-from daimos.service.models import TaskCompletion
-
+from synthia.agents.claude import run_for_result
+from synthia.helpers.pubsub import pubsub
+from synthia.output import parse_from_type
+from synthia.service.models import TaskCompletion
 
 class Skill(BaseModel):
     skill_name: str
@@ -25,27 +25,26 @@ class SkillsResponse(BaseModel):
 class Learner:
     def __init__(self, skills_dir: Path | None = None):
         if skills_dir is None:
-            skills_dir = Path(__file__).parent.parent / "skills"
+            skills_dir = Path(__file__).parent.parent.parent.parent / "claude_sessions" / ".claude" / "skills"
         self.skills_dir = skills_dir
-        self.skills_dir.mkdir(exist_ok=True)
+        self.skills_dir.mkdir(parents=True, exist_ok=True)
         self.sessions = defaultdict(list)
+        pubsub.subscribe(Message, self.process_message)
         pubsub.subscribe(TaskCompletion, self._on_task_completion)
 
     async def process_message(self, message: Message) -> None:
-        session_id = message.session_id
-        self.sessions[session_id].append(message)
+        # skip ResultMessage, as it's just a duplication
+        if not isinstance(message, ResultMessage):
+            self.sessions[message.session_id].append(message)
 
     async def _on_task_completion(self, task_completion: TaskCompletion) -> None:
         session_id = task_completion.session_id
 
         if session_id in self.sessions:
-            messages = self.sessions[session_id]
-            await self._process_completed_task(session_id, messages)
+            await self.process_completed_task(session_id)
 
-    async def _process_completed_task(self, session_id: str, messages: list[Message]) -> None:
-        await self.process_completed_task(session_id, messages)
-
-    async def process_completed_task(self, session_id: str, messages: list[Message]) -> None:
+    async def process_completed_task(self, session_id: str) -> None:
+        messages = self.sessions[session_id]
         if not messages:
             logger.debug(f"No messages for session {session_id}, skipping learning")
             return
@@ -75,10 +74,8 @@ class Learner:
         prompt = """You are analyzing a completed task session to identify reusable skills that were performed.
 Your goal is to extract skill-based learnings that can be applied to similar tasks in the future.
 
-A "skill" is a reusable pattern or technique for accomplishing a specific type of task. For example:
-- "browser_magazine_downloads" - handling browser-based downloads with token limits
-- "api_data_extraction" - extracting and transforming data from APIs
-- "file_processing" - processing and organizing files in specific formats
+A "skill" is a reusable pattern or technique for accomplishing a specific type of task. Skills are stored in the
+Claude Agent SDK format as SKILL.md files that Claude autonomously invokes when relevant.
 
 === AVAILABLE SKILLS ===
 """
@@ -92,7 +89,7 @@ A "skill" is a reusable pattern or technique for accomplishing a specific type o
         prompt += "\n\n=== SESSION MESSAGES ===\n"
 
         for i, msg in enumerate(messages, 1):
-            prompt += f"Message {i}: {msg.render()}\n"
+            prompt += f"Message {i}: {msg}\n"
 
         prompt += """
 
@@ -104,17 +101,29 @@ Please analyze the session and identify ALL reusable skills that were performed:
 4. **For new skills**: Define the skill name, description, and key learnings
 
 For each skill you identify, provide:
-- **skill_name**: A short, descriptive snake_case name (use existing name if it matches)
-- **description**: One-line description of what this skill helps accomplish
-- **content**: The markdown-formatted learning content (for new skills, the complete content;
-  for existing skills, only the NEW insights to merge)
+- **skill_name**: A descriptive name following these STRICT requirements:
+  * Use gerund form (verb + -ing): e.g., "processing-pdfs", "analyzing-data", "managing-apis"
+  * Only lowercase letters, numbers, and hyphens (no underscores, no uppercase)
+  * Maximum 64 characters
+  * Be specific and action-oriented
+  * Use existing name if updating an existing skill
+- **description**: One-line description (max 1024 characters) that articulates:
+  * What the skill does (functionality)
+  * When to use it (appropriate use cases)
+  * Must be non-empty and specific
+- **content**: The markdown-formatted learning content:
+  * For new skills: Complete instructions (keep under 500 lines)
+  * For existing skills: Only NEW insights to merge
+  * Act as a concise overview that points to detailed materials as needed
+  * Use progressive disclosure pattern
 - **is_new**: Boolean indicating if this is a new skill (true) or an update to existing (false)
 
 IMPORTANT:
 - Generate multiple skills if the session involved multiple distinct techniques or patterns
 - Each skill should focus on a specific, reusable capability
 - Only include skills with genuinely valuable, actionable insights
-- Be concise and specific for each skill"""
+- Skill names MUST use hyphens (not underscores) and be all lowercase
+- Keep content concise and focused (under 500 lines per skill)"""
 
         return prompt
 
@@ -137,11 +146,18 @@ IMPORTANT:
                 logger.warning(f"Skipping incomplete skill: {skill}")
                 continue
 
-            skill_file = self.skills_dir / f"{skill_name}.md"
+            normalized_name = self._normalize_skill_name(skill_name)
+            if not self._validate_skill_name(normalized_name):
+                logger.warning(f"Skipping skill with invalid name: {skill_name}")
+                continue
+
+            skill_dir = self.skills_dir / normalized_name
+            skill_file = skill_dir / "SKILL.md"
 
             if is_new or not skill_file.exists():
-                full_content = f"---\nname: {skill_name}\ndescription: {description}\n---\n\n{content}"
+                full_content = f"---\nname: {normalized_name}\ndescription: {description}\n---\n\n{content}"
                 operation = "Created new"
+                skill_dir.mkdir(parents=True, exist_ok=True)
             else:
                 existing_content = skill_file.read_text(encoding="utf-8")
                 full_content = self._merge_skill_content(existing_content, content, description)
@@ -149,9 +165,31 @@ IMPORTANT:
 
             try:
                 skill_file.write_text(full_content, encoding="utf-8")
-                logger.info(f"{operation} skill '{skill_name}' at {skill_file}")
+                logger.info(f"{operation} skill '{normalized_name}' at {skill_file}")
             except Exception as e:
-                logger.error(f"Failed to save skill '{skill_name}': {e}")
+                logger.error(f"Failed to save skill '{normalized_name}': {e}")
+
+    def _normalize_skill_name(self, name: str) -> str:
+        import re
+
+        normalized = name.lower()
+        normalized = re.sub(r"[^a-z0-9-]", "-", normalized)
+        normalized = re.sub(r"-+", "-", normalized)
+        normalized = normalized.strip("-")
+        return normalized[:64]
+
+    def _validate_skill_name(self, name: str) -> bool:
+        import re
+
+        if not name or len(name) > 64:
+            return False
+        if not re.match(r"^[a-z0-9-]+$", name):
+            return False
+        if "anthropic" in name or "claude" in name:
+            return False
+        if "<" in name or ">" in name:
+            return False
+        return True
 
     def _merge_skill_content(self, existing: str, new_content: str, new_description: str) -> str:
         import re
@@ -180,7 +218,14 @@ IMPORTANT:
         if not self.skills_dir.exists():
             return skills
 
-        for skill_file in self.skills_dir.glob("*.md"):
+        for skill_dir in self.skills_dir.iterdir():
+            if not skill_dir.is_dir():
+                continue
+
+            skill_file = skill_dir / "SKILL.md"
+            if not skill_file.exists():
+                continue
+
             try:
                 content = skill_file.read_text(encoding="utf-8")
                 frontmatter_match = re.match(r"^---\s*\n(.*?)\n---", content, re.DOTALL)
@@ -195,7 +240,7 @@ IMPORTANT:
                             {
                                 "name": name_match.group(1).strip(),
                                 "description": desc_match.group(1).strip(),
-                                "file": skill_file.name,
+                                "file": skill_dir.name,
                             }
                         )
             except Exception as e:

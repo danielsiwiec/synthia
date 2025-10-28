@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 
-from daimos.output import parse_from_schema
+from synthia.output import parse_from_schema
 
 load_dotenv()
 

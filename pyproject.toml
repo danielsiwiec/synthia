@@ -1,5 +1,5 @@
 [project]
-name = "daimos"
+name = "synthia"
 version = "0.1.0"
 description = "FastAPI application with Claude Agent SDK integration"
 requires-python = ">=3.13"
@@ -10,11 +10,11 @@ dependencies = [
     "langchain-openai>=0.3.34",
     "pydantic>=2.11.9",
     "fastapi[standard]>=0.118.0",
-    "claude-agent-sdk>=0.1.1",
     "loguru>=0.7.3",
     "python-telegram-bot>=22.5",
     "markdown>=3.9",
     "bleach>=6.2.0",
+    "claude-agent-sdk>=0.1.6",
 ]
 
 [build-system]
@@ -22,7 +22,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["daimos"]
+packages = ["synthia"]
 
 [tool.uv]
 dev-dependencies = [
@@ -52,7 +52,7 @@ select = [
 "__init__.py" = ["F401"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["daimos"]
+known-first-party = ["synthia"]
 
 [tool.ruff.format]
 quote-style = "double"

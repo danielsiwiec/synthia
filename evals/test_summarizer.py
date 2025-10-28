@@ -1,7 +1,7 @@
 import pytest
 
-from daimos.agents.claude import InitMessage, Result, ToolCall
-from daimos.agents.learning.learner import Learner
+from synthia.agents.claude import InitMessage, Result, ToolCall
+from synthia.agents.learning.learner import Learner
 
 
 @pytest.mark.asyncio
