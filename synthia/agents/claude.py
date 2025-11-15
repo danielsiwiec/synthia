@@ -113,6 +113,7 @@ async def _run(
 ) -> AsyncIterator[Any]:
     project_root = Path(__file__).parent.parent.parent
     claude_sessions_dir = project_root / "claude_sessions"
+    claude_sessions_dir.mkdir(parents=True, exist_ok=True)
 
     options = ClaudeAgentOptions(
         cwd=str(claude_sessions_dir),
