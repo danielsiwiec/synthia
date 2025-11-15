@@ -27,7 +27,7 @@ logger.add(
     colorize=True,
 )
 
-logger.info("Starting Synthia")
+logger.info("starting Synthia")
 
 task_service = TaskService()
 

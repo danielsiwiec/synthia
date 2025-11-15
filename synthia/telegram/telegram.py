@@ -4,8 +4,6 @@ from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from synthia.agents.agents import TaskAgentException
-from synthia.agents.models import AgentSelection
-from synthia.helpers.pubsub import pubsub
 from synthia.service.task import TaskRequest, TaskService
 from synthia.telegram.helpers import send_message
 
@@ -23,13 +21,6 @@ class Telegram:
             )
         )
         self.bot = Bot(token=token)
-        pubsub.subscribe(AgentSelection, self.on_agent_selection)
-
-    async def on_agent_selection(self, agent_selection: AgentSelection):
-        if agent_selection.agent_name:
-            await self._send_message(f"**Selected agent: {agent_selection.agent_name}**")
-        else:
-            await self._send_message("**No agent selected**")
 
     async def start(self):
         try:
@@ -38,7 +29,7 @@ class Telegram:
             await self.application.updater.start_polling()
             await self._send_message("*Synthia connected 👋*")
         except Exception as _e:
-            logger.error(f"Telegram application failed to start: {_e}")
+            logger.error(f"telegram application failed to start: {_e}")
 
     async def stop(self):
         await self.application.stop()
@@ -46,7 +37,7 @@ class Telegram:
 
     def _is_authorized(self, update: Update) -> bool:
         if update.message.from_user.id != int(self.chat_id):
-            logger.warning(f"Unauthorized user {update.message.from_user.id}")
+            logger.warning(f"unauthorized user {update.message.from_user.id}")
             return False
         return True
 

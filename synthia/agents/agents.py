@@ -16,7 +16,7 @@ def _load_agents() -> dict[str, str]:
     catalog_dir = Path(__file__).parent / "catalog"
 
     if not catalog_dir.exists():
-        logger.warning(f"Catalog directory not found: {catalog_dir}")
+        logger.warning(f"catalog directory not found: {catalog_dir}")
         return agents
 
     for md_file in catalog_dir.glob("*.md"):
@@ -24,9 +24,9 @@ def _load_agents() -> dict[str, str]:
         try:
             content = md_file.read_text(encoding="utf-8").strip()
             agents[agent_name] = content
-            logger.debug(f"Loaded agent: {agent_name}")
+            logger.debug(f"loaded agent: {agent_name}")
         except Exception as e:
-            logger.error(f"Failed to load agent {agent_name}: {e}")
+            logger.error(f"failed to load agent {agent_name}: {e}")
 
     return agents
 
@@ -44,10 +44,10 @@ async def get_agent_system_prompt(objective: str) -> str | None:
         if agent_name not in agents:
             raise TaskAgentException(f"Agent '{agent_name}' not found")
 
-        logger.info(f"Using agent: {agent_name}")
+        logger.info(f"using agent: {agent_name}")
         agent = agents[agent_name]
     else:
-        logger.info("No agent tag found, no system prompt")
+        logger.info("no agent tag found, no system prompt")
         agent = None
         agent_name = None
 

@@ -38,7 +38,7 @@ class PubSub:
                 try:
                     handler(msg)
                 except Exception as e:
-                    logger.error(f"Error in sync handler for {topic.__name__}: {e}")
+                    logger.error(f"error in sync handler for {topic.__name__}: {e}")
 
             async_handlers = self.async_subscribers.get(topic, [])
             for handler in async_handlers:
