@@ -68,3 +68,8 @@ markers = [
 
 [tool.ty.rules]
 possibly-unbound-attribute = "ignore"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.4.0",
+]
