@@ -4,11 +4,6 @@ import pytest
 from synthia.main import app
 
 
-@pytest.fixture(scope="session")
-def anyio_backend() -> str:
-    return "asyncio"
-
-
 @pytest.fixture
 async def client():
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
