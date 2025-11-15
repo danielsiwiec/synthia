@@ -24,21 +24,19 @@ async def test_task_endpoint_basic_math(client):
 async def test_task_endpoint_with_schema(client):
     schema = {
         "type": "object",
-        "properties": {"number_of_files": {"type": "number"}},
-        "required": ["number_of_files"],
+        "properties": {"number_of_legs": {"type": "number"}},
+        "required": ["number_of_legs"],
     }
 
     # First request
-    response = await client.post(
-        "/task", json={"task": "count the number of files in the current directory", "response_schema": schema}
-    )
+    response = await client.post("/task", json={"task": "how many legs does a dog have?", "response_schema": schema})
 
     assert response.status_code == 200
     data = response.json()
     assert "result" in data
     assert "session_id" in data
     assert isinstance(data["result"], dict)
-    assert data["result"]["number_of_files"] > 0
+    assert data["result"]["number_of_legs"] == 4
 
     data["session_id"]
 
@@ -52,7 +50,7 @@ async def test_task_endpoint_with_schema(client):
     follow_up_data = follow_up_response.json()
     assert "result" in follow_up_data
     assert "session_id" in follow_up_data
-    assert follow_up_data["result"]["number_of_files"] == data["result"]["number_of_files"]
+    assert follow_up_data["result"]["number_of_legs"] == data["result"]["number_of_legs"]
 
 
 async def test_task_endpoint_with_invalid_schema(client):
