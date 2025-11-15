@@ -3,7 +3,6 @@ from pathlib import Path
 
 from loguru import logger
 
-from synthia.agents.learning.learner import Learner
 from synthia.agents.models import AgentSelection
 from synthia.helpers.pubsub import pubsub
 
@@ -12,7 +11,7 @@ class TaskAgentException(Exception):
     pass
 
 
-def _load_agents(learner: Learner) -> dict[str, str]:
+def _load_agents() -> dict[str, str]:
     agents = {}
     catalog_dir = Path(__file__).parent / "catalog"
 
@@ -32,7 +31,7 @@ def _load_agents(learner: Learner) -> dict[str, str]:
     return agents
 
 
-async def get_agent_system_prompt(objective: str, learner: Learner) -> str | None:
+async def get_agent_system_prompt(objective: str) -> str | None:
     agent_tags = re.findall(r"#(\w+)", objective)
 
     if len(agent_tags) > 1:
@@ -40,7 +39,7 @@ async def get_agent_system_prompt(objective: str, learner: Learner) -> str | Non
 
     if agent_tags:
         agent_name = agent_tags[0]
-        agents = _load_agents(learner)
+        agents = _load_agents()
 
         if agent_name not in agents:
             raise TaskAgentException(f"Agent '{agent_name}' not found")

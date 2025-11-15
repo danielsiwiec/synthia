@@ -9,7 +9,6 @@ from loguru import logger
 
 import synthia.helpers.debug  # noqa: F401
 from synthia.agents.agents import TaskAgentException
-from synthia.agents.learning.learner import Learner
 from synthia.helpers.pubsub import pubsub
 from synthia.service.task import TaskRequest, TaskResponse, TaskService
 from synthia.telegram import Telegram
@@ -28,10 +27,9 @@ logger.add(
     colorize=True,
 )
 
-learner = Learner()
 logger.info("Starting Synthia")
 
-task_service = TaskService(learner)
+task_service = TaskService()
 
 
 @asynccontextmanager
