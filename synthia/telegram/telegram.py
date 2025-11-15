@@ -46,7 +46,7 @@ class Telegram:
 
     def _is_authorized(self, update: Update) -> bool:
         if update.message.from_user.id != int(self.chat_id):
-            logger.debug(f"Unauthorized user {update.message.from_user.id}")
+            logger.warning(f"Unauthorized user {update.message.from_user.id}")
             return False
         return True
 
