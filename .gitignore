@@ -280,4 +280,6 @@ logs/
 wip
 
 # Claude sessions directory (auto-generated skills and session data)
-claude_sessions/
+claude_sessions/*
+!claude_sessions/.claude/
+!claude_sessions/.claude/**

@@ -66,20 +66,21 @@ async def test_task_endpoint_with_invalid_schema(client):
     assert "Invalid JSON schema" in data["detail"]
 
 
-async def test_task_endpoint_with_multiple_tags(client):
-    response = await client.post("/task", json={"task": "#magazines #arr do something"})
+async def test_task_endpoint_kilo_to_pebble_converter(client):
+    schema = {
+        "type": "object",
+        "properties": {"pebble": {"type": "number"}},
+        "required": ["pebble"],
+    }
 
-    assert response.status_code == 400
+    response = await client.post("/task", json={"task": "convert 2 kilo to pebble units", "response_schema": schema})
+
+    assert response.status_code == 200
     data = response.json()
-    assert "Only one tag is allowed" in data["detail"]
-
-
-async def test_task_endpoint_with_nonexistent_agent(client):
-    response = await client.post("/task", json={"task": "#nonexistent do something"})
-
-    assert response.status_code == 400
-    data = response.json()
-    assert "not found" in data["detail"]
+    assert "result" in data
+    assert "session_id" in data
+    assert isinstance(data["result"], dict)
+    assert data["result"]["pebble"] == 6.28
 
 
 async def test_health_endpoint(client):

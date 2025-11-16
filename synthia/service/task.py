@@ -1,4 +1,3 @@
-from synthia.agents.agents import get_agent_system_prompt
 from synthia.agents.claude import run_for_result
 from synthia.helpers.pubsub import pubsub
 from synthia.helpers.schema import validate_schema
@@ -15,12 +14,10 @@ class TaskService:
 
         resume_from_session = self._last_session_id if resume else None
 
-        system_prompt = await get_agent_system_prompt(request.task)
         objective = request.task
         result_message = await run_for_result(
             objective=objective,
             resume_from_session=resume_from_session,
-            system_prompt=system_prompt,
         )
 
         if not result_message:

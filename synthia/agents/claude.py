@@ -109,7 +109,6 @@ def _parse_message(message: Any, tool_calls: dict[str, ToolCall], objective: str
 async def _run(
     objective: str,
     resume_from_session: str | None = None,
-    system_prompt: str | None = None,
 ) -> AsyncIterator[Any]:
     project_root = Path(__file__).parent.parent.parent
     claude_sessions_dir = project_root / "claude_sessions"
@@ -121,7 +120,6 @@ async def _run(
         allowed_tools=["Skill"],
         permission_mode="bypassPermissions",
         resume=resume_from_session,
-        system_prompt=system_prompt,
         mcp_servers={"browser": {"command": "npx", "args": ["@playwright/mcp@latest"]}},
     )
     client = ClaudeSDKClient(options)
@@ -149,9 +147,8 @@ async def _run(
 async def run_for_result(
     objective: str,
     resume_from_session: str | None = None,
-    system_prompt: str | None = None,
 ) -> Result | None:
-    async for message in _run(objective, resume_from_session=resume_from_session, system_prompt=system_prompt):
+    async for message in _run(objective, resume_from_session=resume_from_session):
         await pubsub.publish(message)
         if isinstance(message, Result):
             return message

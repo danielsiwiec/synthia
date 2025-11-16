@@ -4,11 +4,10 @@ import sys
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from loguru import logger
 
 import synthia.helpers.debug  # noqa: F401
-from synthia.agents.agents import TaskAgentException
 from synthia.helpers.pubsub import pubsub
 from synthia.service.task import TaskRequest, TaskResponse, TaskService
 from synthia.telegram import Telegram
@@ -49,11 +48,8 @@ app = FastAPI(title="Synthia", description="FastAPI application with Claude Agen
 
 @app.post("/task", response_model=TaskResponse)
 async def task(request: TaskRequest) -> TaskResponse:
-    try:
-        response = await task_service.process_task(request, resume=request.resume)
-        return response
-    except TaskAgentException as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    response = await task_service.process_task(request, resume=request.resume)
+    return response
 
 
 @app.get("/health")
