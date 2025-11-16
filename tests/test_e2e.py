@@ -1,11 +1,21 @@
+import random
+import secrets
+
 import httpx
 import pytest
 
-from synthia.main import app
+from synthia.main import Config, create_app
 
 
 @pytest.fixture
-async def client():
+def app():
+    random_user = f"user_{secrets.token_hex(8)}"
+    config: Config = {"memory_user": random_user, "telegram_bot_token": "test_token", "telegram_chat_id": "test_chat"}
+    return create_app(config)
+
+
+@pytest.fixture
+async def client(app):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
@@ -66,7 +76,7 @@ async def test_task_endpoint_with_invalid_schema(client):
     assert "Invalid JSON schema" in data["detail"]
 
 
-async def test_task_endpoint_kilo_to_pebble_converter(client):
+async def test_skill(client):
     schema = {
         "type": "object",
         "properties": {"pebble": {"type": "number"}},
@@ -88,3 +98,16 @@ async def test_health_endpoint(client):
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
+
+
+async def test_memories(client):
+    favorite_number = random.randint(1, 1000)
+
+    await client.post("/task", json={"task": f"remember my favorite number is {favorite_number}"})
+
+    second_response = await client.post("/task", json={"task": "what's my favorite number?"})
+
+    assert second_response.status_code == 200
+    second_data = second_response.json()
+    assert "result" in second_data
+    assert str(favorite_number) in second_data["result"]
