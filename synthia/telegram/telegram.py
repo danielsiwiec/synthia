@@ -1,5 +1,7 @@
+import random
+
 from loguru import logger
-from telegram import Bot, Update
+from telegram import Bot, ReactionTypeEmoji, Update
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
@@ -47,9 +49,19 @@ class Telegram:
 
         await send_message(message_sender, text)
 
+    async def _acknowledge_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        emojis = ["👍", "👌", "🫡"]
+        emoji = random.choice(emojis)
+        try:
+            await update.message.set_reaction(reaction=[ReactionTypeEmoji(emoji=emoji)])
+        except Exception as _e:
+            logger.error(f"failed to react to message: {_e}", exc_info=True)
+
     async def _task_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_authorized(update):
             return
+
+        await self._acknowledge_message(update, context)
 
         if not context.args:
             await self._send_message("Please provide a task description")
@@ -64,6 +76,8 @@ class Telegram:
     async def _message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_authorized(update):
             return
+
+        await self._acknowledge_message(update, context)
 
         if not update.message.text:
             return
