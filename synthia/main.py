@@ -2,12 +2,14 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
+from typing import TypedDict
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from loguru import logger
 
 import synthia.helpers.debug  # noqa: F401
+from synthia.agents.claude import ClaudeAgent
 from synthia.helpers.pubsub import pubsub
 from synthia.service.task import TaskRequest, TaskResponse, TaskService
 from synthia.telegram import Telegram
@@ -26,35 +28,60 @@ logger.add(
     colorize=True,
 )
 
+
+class Config(TypedDict, total=False):
+    memory_user: str
+    telegram_bot_token: str
+    telegram_chat_id: str
+
+
+def _get_config(overrides: Config | None = None) -> Config:
+    config: Config = {
+        "memory_user": os.environ.get("MEMORY_USER", ""),
+        "telegram_bot_token": os.environ.get("TELEGRAM_BOT_TOKEN", ""),
+        "telegram_chat_id": os.environ.get("TELEGRAM_CHAT_ID", ""),
+    }
+    if overrides:
+        config.update(overrides)
+    return config
+
+
+def create_app(config_overrides: Config | None = None) -> FastAPI:
+    config = _get_config(config_overrides)
+
+    claude_agent = ClaudeAgent(user=config["memory_user"])
+    task_service = TaskService(claude_agent)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        app.state.telegram = Telegram(config["telegram_bot_token"], config["telegram_chat_id"], task_service)
+        await app.state.telegram.start()
+        await pubsub.start()
+
+        yield
+
+        await app.state.telegram.stop()
+        await pubsub.stop()
+
+    app = FastAPI(
+        title="Synthia", description="FastAPI application with Claude Agent SDK integration", lifespan=lifespan
+    )
+
+    @app.post("/task", response_model=TaskResponse)
+    async def task(request: TaskRequest) -> TaskResponse:
+        response = await task_service.process_task(request, resume=request.resume)
+        return response
+
+    @app.get("/health")
+    async def health_check():
+        return {"status": "healthy"}
+
+    return app
+
+
 logger.info("starting Synthia")
 
-task_service = TaskService()
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    app.state.telegram = Telegram(os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"], task_service)
-    await app.state.telegram.start()
-    await pubsub.start()
-
-    yield
-
-    await app.state.telegram.stop()
-    await pubsub.stop()
-
-
-app = FastAPI(title="Synthia", description="FastAPI application with Claude Agent SDK integration", lifespan=lifespan)
-
-
-@app.post("/task", response_model=TaskResponse)
-async def task(request: TaskRequest) -> TaskResponse:
-    response = await task_service.process_task(request, resume=request.resume)
-    return response
-
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
+app = create_app()
 
 
 if __name__ == "__main__":

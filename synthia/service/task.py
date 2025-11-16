@@ -1,4 +1,4 @@
-from synthia.agents.claude import run_for_result
+from synthia.agents.claude import ClaudeAgent
 from synthia.helpers.pubsub import pubsub
 from synthia.helpers.schema import validate_schema
 from synthia.output import parse_from_schema
@@ -6,8 +6,9 @@ from synthia.service.models import TaskCompletion, TaskRequest, TaskResponse
 
 
 class TaskService:
-    def __init__(self):
+    def __init__(self, claude_agent: ClaudeAgent):
         self._last_session_id: str | None = None
+        self._claude_agent = claude_agent
 
     async def process_task(self, request: TaskRequest, resume: bool = False) -> TaskResponse:
         validate_schema(request.response_schema)
@@ -15,7 +16,7 @@ class TaskService:
         resume_from_session = self._last_session_id if resume else None
 
         objective = request.task
-        result_message = await run_for_result(
+        result_message = await self._claude_agent.run_for_result(
             objective=objective,
             resume_from_session=resume_from_session,
         )
