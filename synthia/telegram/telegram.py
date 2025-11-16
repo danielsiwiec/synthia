@@ -5,7 +5,6 @@ from telegram import Bot, ReactionTypeEmoji, Update
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
-from synthia.agents.agents import TaskAgentException
 from synthia.service.task import TaskRequest, TaskService
 from synthia.telegram.helpers import send_message
 
@@ -67,11 +66,8 @@ class Telegram:
             await self._send_message("Please provide a task description")
             return
 
-        try:
-            result = await self.task_service.process_task(TaskRequest(task=" ".join(context.args)), resume=False)
-            await self._send_message(result.result)
-        except TaskAgentException as e:
-            await self._send_message(str(e))
+        result = await self.task_service.process_task(TaskRequest(task=" ".join(context.args)), resume=False)
+        await self._send_message(result.result)
 
     async def _message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_authorized(update):
@@ -82,8 +78,5 @@ class Telegram:
         if not update.message.text:
             return
 
-        try:
-            result = await self.task_service.process_task(TaskRequest(task=update.message.text), resume=True)
-            await self._send_message(result.result)
-        except TaskAgentException as e:
-            await self._send_message(str(e))
+        result = await self.task_service.process_task(TaskRequest(task=update.message.text), resume=True)
+        await self._send_message(result.result)
