@@ -59,8 +59,9 @@ Message = ToolCall | Result | InitMessage
 
 
 class ClaudeAgent:
-    def __init__(self, user: str):
+    def __init__(self, user: str, memory_mcp_server: dict[str, Any] | None = None):
         self.user = user
+        self._memory_mcp_server = memory_mcp_server
 
     def _parse_message(
         self, message: Any, tool_calls: dict[str, ToolCall], objective: str, session_id: str
@@ -120,6 +121,12 @@ class ClaudeAgent:
         claude_sessions_dir = project_root / "claude_sessions"
         claude_sessions_dir.mkdir(parents=True, exist_ok=True)
 
+        mcp_servers = {
+            "browser": {"command": "npx", "args": ["@playwright/mcp@latest"]},
+        }
+        if self._memory_mcp_server:
+            mcp_servers["memory"] = self._memory_mcp_server
+
         options = ClaudeAgentOptions(
             cwd=str(claude_sessions_dir),
             setting_sources=["project"],
@@ -127,13 +134,7 @@ class ClaudeAgent:
             permission_mode="bypassPermissions",
             system_prompt="Your name is Synthia. You are a helpful assistant that can help with tasks and questions.",
             resume=resume_from_session,
-            mcp_servers={
-                "browser": {"command": "npx", "args": ["@playwright/mcp@latest"]},
-                "memory": {
-                    "type": "sse",
-                    "url": f"http://localhost:8765/mcp/openmemory/sse/{self.user}",
-                },
-            },
+            mcp_servers=mcp_servers,
         )
         client = ClaudeSDKClient(options)
 
