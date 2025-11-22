@@ -1,4 +1,4 @@
-.PHONY: start smoke dev test lint check format
+.PHONY: start smoke dev test lint check format install-playwright-mcp start-playwright-mcp stop-playwright-mcp uninstall-playwright-mcp
 
 start:
 	uv run uvicorn synthia.main:app --host 0.0.0.0 --port 8003
@@ -23,15 +23,22 @@ format:
 type:
 	uv run ty check .
 
-install:
-	mkdir -p ~/Library/LaunchAgents
-	cp com.dansiwiec.synthia.plist ~/Library/LaunchAgents
-	launchctl bootstrap gui/$$(id -u) ~/Library/LaunchAgents/com.dansiwiec.synthia.plist || true
+up:
+	docker-compose up --build -d
 
-uninstall:
-	launchctl bootout gui/$$(id -u)/com.dansiwiec.synthia || true
-	rm ~/Library/LaunchAgents/com.dansiwiec.synthia.plist || true
+down:
+	docker-compose down
 
 restart:
-	cp com.dansiwiec.synthia.plist ~/Library/LaunchAgents
-	launchctl kickstart -k gui/$$(id -u)/com.dansiwiec.synthia
+	docker-compose restart
+
+install-playwright-mcp:
+	mkdir -p ~/Library/LaunchAgents/
+	cp com.dansiwiec.playwright-mcp.plist ~/Library/LaunchAgents/
+	-launchctl bootout gui/$$(id -u)/com.dansiwiec.playwright-mcp 2>/dev/null || true
+	-launchctl unload ~/Library/LaunchAgents/com.dansiwiec.playwright-mcp.plist 2>/dev/null || true
+	launchctl bootstrap gui/$$(id -u) ~/Library/LaunchAgents/com.dansiwiec.playwright-mcp.plist
+
+uninstall-playwright-mcp:
+	-launchctl bootout gui/$$(id -u)/com.dansiwiec.playwright-mcp 2>/dev/null || true
+	rm -f ~/Library/LaunchAgents/com.dansiwiec.playwright-mcp.plist

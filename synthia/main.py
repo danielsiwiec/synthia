@@ -7,11 +7,10 @@ from typing import TypedDict
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from loguru import logger
-from mem0 import AsyncMemory
 
 import synthia.helpers.debug  # noqa: F401
 from synthia.agents.claude import ClaudeAgent
-from synthia.agents.memory.client import create_memory_mcp_server
+from synthia.agents.memory.client import create_memory_client, create_memory_mcp_server
 from synthia.helpers.pubsub import pubsub
 from synthia.service.task import TaskRequest, TaskResponse, TaskService
 from synthia.telegram import Telegram
@@ -51,21 +50,28 @@ def _get_config(overrides: Config | None = None) -> Config:
 def create_app(config_overrides: Config | None = None) -> FastAPI:
     config = _get_config(config_overrides)
 
-    memory_client = AsyncMemory()
-    memory_mcp_server = create_memory_mcp_server(user=config["memory_user"], memory_client=memory_client)
-    claude_agent = ClaudeAgent(user=config["memory_user"], memory_mcp_server=memory_mcp_server)
-    task_service = TaskService(claude_agent)
-
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        memory_client = await create_memory_client()
+        memory_mcp_server = create_memory_mcp_server(user=config["memory_user"], memory_client=memory_client)
+        claude_agent = ClaudeAgent(user=config["memory_user"], memory_mcp_server=memory_mcp_server)
+        task_service = TaskService(claude_agent)
+
+        app.state.task_service = task_service
         app.state.telegram = Telegram(config["telegram_bot_token"], config["telegram_chat_id"], task_service)
         await app.state.telegram.start()
         await pubsub.start()
 
         yield
 
-        await app.state.telegram.stop()
-        await pubsub.stop()
+        try:
+            await app.state.telegram.stop()
+        except Exception:
+            pass
+        try:
+            await pubsub.stop()
+        except Exception:
+            pass
 
     app = FastAPI(
         title="Synthia", description="FastAPI application with Claude Agent SDK integration", lifespan=lifespan
@@ -73,6 +79,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
     @app.post("/task", response_model=TaskResponse)
     async def task(request: TaskRequest) -> TaskResponse:
+        task_service = app.state.task_service
         response = await task_service.process_task(request, resume=request.resume)
         return response
 
