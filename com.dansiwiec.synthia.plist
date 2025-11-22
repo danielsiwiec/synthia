@@ -25,5 +25,10 @@
     <string>/Users/dansiwiec/workspace/synthia/logs/stdout.log</string>
     <key>WorkingDirectory</key>
     <string>/Users/dansiwiec/workspace/synthia</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/dansiwiec/.nvm/versions/node/v22.20.0/bin:/Users/dansiwiec/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
 </dict>
 </plist>

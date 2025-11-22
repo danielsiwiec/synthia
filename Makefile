@@ -24,13 +24,14 @@ type:
 	uv run ty check .
 
 install:
-	sudo cp com.dansiwiec.synthia.plist /Library/LaunchDaemons
-	sudo launchctl bootstrap system /Library/LaunchDaemons/com.dansiwiec.synthia.plist || true
+	mkdir -p ~/Library/LaunchAgents
+	cp com.dansiwiec.synthia.plist ~/Library/LaunchAgents
+	launchctl bootstrap gui/$$(id -u) ~/Library/LaunchAgents/com.dansiwiec.synthia.plist || true
 
 uninstall:
-	sudo launchctl bootout system/com.dansiwiec.synthia || true
-	sudo rm /Library/LaunchDaemons/com.dansiwiec.synthia.plist
+	launchctl bootout gui/$$(id -u)/com.dansiwiec.synthia || true
+	rm ~/Library/LaunchAgents/com.dansiwiec.synthia.plist || true
 
 restart:
-	sudo cp com.dansiwiec.synthia.plist /Library/LaunchDaemons
-	sudo launchctl kickstart -k system/com.dansiwiec.synthia
+	cp com.dansiwiec.synthia.plist ~/Library/LaunchAgents
+	launchctl kickstart -k gui/$$(id -u)/com.dansiwiec.synthia
