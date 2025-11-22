@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.dansiwiec.playwright-mcp</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/dansiwiec/.nvm/versions/node/v22.20.0/bin/npx</string>
+		<string>@playwright/mcp@latest</string>
+		<string>--port</string>
+		<string>8931</string>
+		<string>--host</string>
+		<string>0.0.0.0</string>
+		<string>--allowed-hosts</string>
+		<string>*</string>
+		<string>--extension</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/tmp/playwright-mcp.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/playwright-mcp.err.log</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/Users/dansiwiec/.nvm/versions/node/v22.20.0/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<key>PLAYWRIGHT_MCP_EXTENSION_TOKEN</key>
+		<string>37ziQBD3D3959sz1JU1FwB9046Wr4WKNMQumZTukxnE</string>
+	</dict>
+</dict>
+</plist>
+

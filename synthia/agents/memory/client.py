@@ -1,7 +1,23 @@
+import os
 from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server
 from mem0 import AsyncMemory
+
+
+async def create_memory_client() -> AsyncMemory:
+    connection_string = os.environ.get("POSTGRES_CONNECTION_STRING", "")
+
+    config = {
+        "vector_store": {
+            "provider": "pgvector",
+            "config": {
+                "connection_string": connection_string,
+            },
+        }
+    }
+
+    return await AsyncMemory.from_config(config)
 
 
 def create_memory_mcp_server(user: str, memory_client: AsyncMemory) -> Any:

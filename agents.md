@@ -8,6 +8,7 @@ always add and remove packages using uv add/uv remove
 - run `make check` after all changes
 - after every change run the tests with the smoke marker. Do not use testmon or xdist for smoke test
 - run all tests only after larger code changes. When running all tests, add
+- when running multiple tests for verification, use xdist with `-n auto`
 
 ## Code style
 - never add comments or docstrings

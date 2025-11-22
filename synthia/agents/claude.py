@@ -14,6 +14,13 @@ from pydantic import BaseModel
 
 from synthia.helpers.pubsub import pubsub
 
+SYSTEM_PROMPT = """
+Your name is Synthia. You are a helpful assistant that can help with tasks and questions.
+
+## Browser downloads
+All browser downloads, by default, are saved in the `/mounts/downloads` folder.
+"""
+
 
 class ToolCall(BaseModel):
     session_id: str
@@ -122,7 +129,7 @@ class ClaudeAgent:
         claude_sessions_dir.mkdir(parents=True, exist_ok=True)
 
         mcp_servers = {
-            "browser": {"command": "npx", "args": ["@playwright/mcp@latest"]},
+            "browser": {"type": "http", "url": "http://host.docker.internal:8931/mcp"},
         }
         if self._memory_mcp_server:
             mcp_servers["memory"] = self._memory_mcp_server
@@ -132,7 +139,7 @@ class ClaudeAgent:
             setting_sources=["project"],
             allowed_tools=["Skill"],
             permission_mode="bypassPermissions",
-            system_prompt="Your name is Synthia. You are a helpful assistant that can help with tasks and questions.",
+            system_prompt=SYSTEM_PROMPT,
             resume=resume_from_session,
             mcp_servers=mcp_servers,
         )

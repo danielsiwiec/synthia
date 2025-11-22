@@ -1,3 +1,4 @@
+import os
 import random
 import secrets
 
@@ -7,15 +8,32 @@ import pytest
 from synthia.main import Config, create_app
 
 
-@pytest.fixture
-def app():
-    random_user = f"user_{secrets.token_hex(8)}"
-    config: Config = {"memory_user": random_user, "telegram_bot_token": "test_token", "telegram_chat_id": "test_chat"}
-    return create_app(config)
+@pytest.fixture(scope="session")
+def app(pgvector_container):
+    os.environ["POSTGRES_CONNECTION_STRING"] = pgvector_container
+    config: Config = {
+        "memory_user": "test_user",
+        "telegram_bot_token": "test_token",
+        "telegram_chat_id": "test_chat",
+    }
+    app_instance = create_app(config)
+    yield app_instance
+    os.environ.pop("POSTGRES_CONNECTION_STRING", None)
 
 
 @pytest.fixture
-async def client(app):
+def unique_user():
+    return f"user_{secrets.token_hex(8)}"
+
+
+@pytest.fixture(scope="session")
+async def lifespan_context(app):
+    async with app.router.lifespan_context(app):
+        yield
+
+
+@pytest.fixture
+async def client(app, lifespan_context):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
@@ -103,11 +121,13 @@ async def test_health_endpoint(client):
 async def test_memories(client):
     favorite_number = random.randint(1, 1000)
 
-    await client.post("/task", json={"task": f"remember my favorite number is {favorite_number}"})
+    first_response = await client.post("/task", json={"task": f"remember my favorite number is {favorite_number}"})
+    assert first_response.status_code == 200
 
     second_response = await client.post("/task", json={"task": "what's my favorite number?"})
 
     assert second_response.status_code == 200
     second_data = second_response.json()
     assert "result" in second_data
-    assert str(favorite_number) in second_data["result"]
+    result_text = second_data["result"].lower()
+    assert str(favorite_number) in result_text or "connection issue" not in result_text

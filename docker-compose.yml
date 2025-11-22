@@ -1,0 +1,53 @@
+services:
+  synthia:
+    container_name: synthia
+    build:
+      context: .
+      args:
+        USER_UID: ${USER_UID:-501}
+        USER_GID: ${USER_GID:-20}
+    ports:
+      - "8003:8003"
+    environment:
+      - MEMORY_USER=${MEMORY_USER:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - POSTGRES_CONNECTION_STRING=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@pgvector:5432/vector_store
+      - HOME=/home/synthia
+    depends_on:
+      pgvector:
+        condition: service_healthy
+    volumes:
+      - ./claude_sessions:/app/claude_sessions
+      - ${HOME}/.claude:/home/synthia/.claude
+      - /Users/dansiwiec/arr/:/mounts/arr
+      - /Volumes/media:/mounts/media
+      - /Users/dansiwiec/Downloads:/mounts/downloads
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "0"
+    restart: unless-stopped
+
+  pgvector:
+    container_name: pgvector
+    build:
+      context: ./images/pgvector
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=vector_store
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgvector_data:
+
