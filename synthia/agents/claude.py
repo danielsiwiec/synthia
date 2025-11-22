@@ -125,6 +125,7 @@ class ClaudeAgent:
             setting_sources=["project"],
             allowed_tools=["Skill"],
             permission_mode="bypassPermissions",
+            system_prompt="Your name is Synthia. You are a helpful assistant that can help with tasks and questions.",
             resume=resume_from_session,
             mcp_servers={
                 "browser": {"command": "npx", "args": ["@playwright/mcp@latest"]},
