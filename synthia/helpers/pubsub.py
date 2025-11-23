@@ -2,11 +2,22 @@ import asyncio
 import inspect
 from collections import defaultdict
 from collections.abc import Callable, Coroutine
-from typing import Any, TypeVar
+from typing import Any, TypeVar, get_args
 
 from loguru import logger
 
 T = TypeVar("T")
+
+
+def _is_union_type(topic: type) -> bool:
+    return hasattr(topic, "__args__") and type(topic).__name__ == "UnionType"
+
+
+def _matches_topic(message: Any, topic: type) -> bool:
+    if _is_union_type(topic):
+        union_args = get_args(topic)
+        return any(isinstance(message, arg) for arg in union_args)
+    return isinstance(message, topic)
 
 
 class PubSub:
@@ -26,7 +37,7 @@ class PubSub:
         all_topics = set(self.async_subscribers.keys()) | set(self.sync_subscribers.keys())
 
         for topic in all_topics:
-            if isinstance(message, topic):
+            if _matches_topic(message, topic):
                 await self.queues[topic].put(message)
 
     async def _dispatch(self, topic: type):
