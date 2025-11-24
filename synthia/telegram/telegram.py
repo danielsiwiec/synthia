@@ -50,9 +50,15 @@ class Telegram:
             return False
         return True
 
-    async def _send_message(self, update: Update, text: str):
+    async def _send_message_with_update(self, update: Update, text: str):
         async def message_sender(text: str):
             await update.message.reply_text(text=text, parse_mode=ParseMode.HTML)
+
+        await send_message(message_sender, text)
+
+    async def _send_message_with_bot(self, text: str):
+        async def message_sender(text: str):
+            await self.bot.send_message(chat_id=self.chat_id, text=text, parse_mode=ParseMode.HTML)
 
         await send_message(message_sender, text)
 
@@ -71,10 +77,10 @@ class Telegram:
         await self._acknowledge_message(update, context)
 
         if not context.args:
-            await self._send_message(update, "Please provide a task description")
+            await self._send_message_with_update(update, "Please provide a task description")
             return
         result = await self.task_service.process_task(TaskRequest(task=" ".join(context.args)), resume=False)
-        await self._send_message(update, result.result)
+        await self._send_message_with_update(update, result.result)
 
     async def _message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_authorized(update):
@@ -86,14 +92,12 @@ class Telegram:
             return
 
         result = await self.task_service.process_task(TaskRequest(task=update.message.text), resume=True)
-        await self._send_message(update, result.result)
+        await self._send_message_with_update(update, result.result)
 
     async def _handle_progress_notification(self, notification: ProgressNotification):
         try:
             emojis = ["⚙️", "🤔", "💭", "💡"]
             emoji = random.choice(emojis)
-            await self.bot.send_message(
-                chat_id=self.chat_id, text=f"{emoji} {notification.summary}", disable_notification=True
-            )
+            await self._send_message_with_bot(text=f"{emoji} _{notification.summary}_")
         except Exception as _e:
             logger.error(f"failed to send progress notification: {_e}", exc_info=True)

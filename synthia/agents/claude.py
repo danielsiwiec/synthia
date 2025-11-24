@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,11 +15,16 @@ from pydantic import BaseModel
 
 from synthia.helpers.pubsub import pubsub
 
-SYSTEM_PROMPT = """
+SYSTEM_PROMPT = f"""
 Your name is Synthia. You are a helpful assistant that can help with tasks and questions.
+
+# Today is {datetime.now().strftime("%Y-%m-%d")}.
 
 ## Browser downloads
 All browser downloads, by default, are saved in the `/mounts/downloads` folder.
+
+## Web Search
+If you encounter access issues using the web search tool, try using the browser instead.
 """
 
 
