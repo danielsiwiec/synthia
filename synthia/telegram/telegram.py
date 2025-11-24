@@ -5,6 +5,8 @@ from telegram import Bot, ReactionTypeEmoji, Update
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
+from synthia.helpers.pubsub import pubsub
+from synthia.service.models import ProgressNotification
 from synthia.service.task import TaskRequest, TaskService
 from synthia.telegram.helpers import send_message
 
@@ -22,13 +24,19 @@ class Telegram:
             )
         )
         self.bot = Bot(token=token)
+        pubsub.subscribe(ProgressNotification, self._handle_progress_notification)
 
     async def start(self):
         try:
             await self.application.initialize()
             await self.application.start()
             await self.application.updater.start_polling()
-            await self._send_message("*Synthia connected 👋*")
+            await self.bot.send_message(
+                chat_id=self.chat_id,
+                text="_Synthia connected 👋_",
+                parse_mode=ParseMode.MARKDOWN_V2,
+                disable_notification=True,
+            )
         except Exception as _e:
             logger.error(f"telegram application failed to start: {_e}")
 
@@ -42,9 +50,9 @@ class Telegram:
             return False
         return True
 
-    async def _send_message(self, text: str):
+    async def _send_message(self, update: Update, text: str):
         async def message_sender(text: str):
-            await self.bot.send_message(chat_id=self.chat_id, text=text, parse_mode=ParseMode.HTML)
+            await update.message.reply_text(text=text, parse_mode=ParseMode.HTML)
 
         await send_message(message_sender, text)
 
@@ -63,11 +71,10 @@ class Telegram:
         await self._acknowledge_message(update, context)
 
         if not context.args:
-            await self._send_message("Please provide a task description")
+            await self._send_message(update, "Please provide a task description")
             return
-
         result = await self.task_service.process_task(TaskRequest(task=" ".join(context.args)), resume=False)
-        await self._send_message(result.result)
+        await self._send_message(update, result.result)
 
     async def _message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_authorized(update):
@@ -79,4 +86,14 @@ class Telegram:
             return
 
         result = await self.task_service.process_task(TaskRequest(task=update.message.text), resume=True)
-        await self._send_message(result.result)
+        await self._send_message(update, result.result)
+
+    async def _handle_progress_notification(self, notification: ProgressNotification):
+        try:
+            emojis = ["⚙️", "🤔", "💭", "💡"]
+            emoji = random.choice(emojis)
+            await self.bot.send_message(
+                chat_id=self.chat_id, text=f"{emoji} {notification.summary}", disable_notification=True
+            )
+        except Exception as _e:
+            logger.error(f"failed to send progress notification: {_e}", exc_info=True)
