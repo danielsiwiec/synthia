@@ -16,3 +16,8 @@ class TaskResponse(BaseModel):
 
 class TaskCompletion(BaseModel):
     session_id: str
+
+
+class ProgressNotification(BaseModel):
+    session_id: str
+    summary: str

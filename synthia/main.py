@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from loguru import logger
 
+import synthia.agents.progress  # noqa: F401
 import synthia.helpers.debug  # noqa: F401
 from synthia.agents.claude import ClaudeAgent
 from synthia.agents.memory.client import create_memory_client, create_memory_mcp_server
