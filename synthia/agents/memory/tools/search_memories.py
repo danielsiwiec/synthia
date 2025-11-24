@@ -35,7 +35,8 @@ def create_search_memories_tool(user: str, memory_client: AsyncMemory):
             if results and isinstance(results, dict) and results.get("results"):
                 formatted_results = "\n".join(
                     [
-                        f"Memory: {result.get('memory', '')}\nRelevance: {result.get('score', '')}\n---"
+                        f"ID: {result.get('id', '')}\nMemory: {result.get('memory', '')}\n"
+                        f"Relevance: {result.get('score', '')}\n---"
                         for result in results["results"]
                     ]
                 )
@@ -50,7 +51,8 @@ def create_search_memories_tool(user: str, memory_client: AsyncMemory):
             elif results and isinstance(results, list):
                 formatted_results = "\n".join(
                     [
-                        f"Memory: {result.get('memory', '')}\nRelevance: {result.get('score', '')}\n---"
+                        f"ID: {result.get('id', '')}\nMemory: {result.get('memory', '')}\n"
+                        f"Relevance: {result.get('score', '')}\n---"
                         for result in results
                     ]
                 )
