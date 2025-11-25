@@ -11,11 +11,12 @@ from synthia.main import Config, create_app
 @pytest.fixture(scope="session")
 def app(pgvector_container):
     os.environ["POSTGRES_CONNECTION_STRING"] = pgvector_container
-    config: Config = {
-        "memory_user": "test_user",
-        "telegram_bot_token": "test_token",
-        "telegram_chat_id": "test_chat",
-    }
+    config = Config(
+        memory_user="test_user",
+        telegram_bot_token="test_token",
+        telegram_users="user1:test_chat",
+        admin_user="user1",
+    )
     app_instance = create_app(config)
     yield app_instance
     os.environ.pop("POSTGRES_CONNECTION_STRING", None)

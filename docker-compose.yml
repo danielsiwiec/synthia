@@ -11,7 +11,8 @@ services:
     environment:
       - MEMORY_USER=${MEMORY_USER:-}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - TELEGRAM_USERS=${TELEGRAM_USERS:-}
+      - ADMIN_USER=${ADMIN_USER:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - POSTGRES_CONNECTION_STRING=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@pgvector:5432/vector_store
       - HOME=/home/synthia

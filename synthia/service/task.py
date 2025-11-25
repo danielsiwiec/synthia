@@ -19,6 +19,7 @@ class TaskService:
         result_message = await self._claude_agent.run_for_result(
             objective=objective,
             resume_from_session=resume_from_session,
+            user=request.user,
         )
 
         if not result_message:

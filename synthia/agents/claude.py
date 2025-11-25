@@ -34,6 +34,7 @@ class ToolCall(BaseModel):
     input: dict
     output: str | None = None
     error: str | None = None
+    user: str | None = None
 
     def render(self) -> str:
         parts = ["🔧"]
@@ -51,6 +52,7 @@ class Result(BaseModel):
     success: bool
     result: str
     error: str | None = None
+    user: str | None = None
 
     def render(self) -> str:
         parts = ["✅" if self.success else "🔴"]
@@ -61,6 +63,7 @@ class Result(BaseModel):
 class InitMessage(BaseModel):
     session_id: str
     prompt: str
+    user: str | None = None
 
     def render(self) -> str:
         parts = ["⚙️"]
@@ -77,11 +80,14 @@ class ClaudeAgent:
         self._memory_mcp_server = memory_mcp_server
 
     def _parse_message(
-        self, message: Any, tool_calls: dict[str, ToolCall], objective: str, session_id: str
+        self, message: Any, tool_calls: dict[str, ToolCall], objective: str, session_id: str, user: str | None = None
     ) -> Any | None:
         if isinstance(message, ResultMessage):
             return Result(
-                session_id=message.session_id, success=message.subtype == "success", result=message.result.strip()
+                session_id=message.session_id,
+                success=message.subtype == "success",
+                result=message.result.strip(),
+                user=user,
             )
 
         elif isinstance(message, (UserMessage, AssistantMessage)):
@@ -98,7 +104,9 @@ class ClaudeAgent:
                     input_data = getattr(block, "input", {})
 
                     if tool_use_id:
-                        tool_calls[tool_use_id] = ToolCall(session_id=session_id, name=name, input=input_data)
+                        tool_calls[tool_use_id] = ToolCall(
+                            session_id=session_id, name=name, input=input_data, user=user
+                        )
 
                 elif block_type == "ToolResultBlock":
                     tool_use_id = getattr(block, "tool_use_id", None)
@@ -119,6 +127,7 @@ class ClaudeAgent:
                             input=tool_call.input,
                             output=output.strip(),
                             error=error,
+                            user=user,
                         )
                         del tool_calls[tool_use_id]
                         return completed_tool_call
@@ -129,6 +138,7 @@ class ClaudeAgent:
         self,
         objective: str,
         resume_from_session: str | None = None,
+        user: str | None = None,
     ) -> AsyncIterator[Any]:
         project_root = Path(__file__).parent.parent.parent
         claude_sessions_dir = project_root / "claude_sessions"
@@ -161,11 +171,11 @@ class ClaudeAgent:
             await pubsub.publish(message)
             if isinstance(message, SystemMessage):
                 session_id = message.data["session_id"]
-                yield InitMessage(session_id=message.data["session_id"], prompt=objective)
+                yield InitMessage(session_id=message.data["session_id"], prompt=objective, user=user)
                 continue
             if session_id is None:
                 raise ValueError("Session ID is not set")
-            if transformed := self._parse_message(message, tool_calls, objective, session_id):
+            if transformed := self._parse_message(message, tool_calls, objective, session_id, user):
                 yield transformed
                 if isinstance(transformed, Result):
                     break
@@ -174,8 +184,9 @@ class ClaudeAgent:
         self,
         objective: str,
         resume_from_session: str | None = None,
+        user: str | None = None,
     ) -> Result | None:
-        async for message in self.run(objective, resume_from_session=resume_from_session):
+        async for message in self.run(objective, resume_from_session=resume_from_session, user=user):
             await pubsub.publish(message)
             if isinstance(message, Result):
                 return message
