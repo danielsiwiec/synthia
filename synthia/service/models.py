@@ -19,7 +19,16 @@ class TaskCompletion(BaseModel):
     session_id: str
 
 
+class ScheduledTaskCompletion(BaseModel):
+    name: str
+
+
 class ProgressNotification(BaseModel):
     session_id: str
     summary: str
     user: str | None = None
+
+
+class TaskTrigger(BaseModel):
+    task: str
+    name: str

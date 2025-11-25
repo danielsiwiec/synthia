@@ -16,6 +16,7 @@ def app(pgvector_container):
         telegram_bot_token="test_token",
         telegram_users="user1:test_chat",
         admin_user="user1",
+        postgres_connection_string=pgvector_container,
     )
     app_instance = create_app(config)
     yield app_instance

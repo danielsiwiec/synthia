@@ -6,7 +6,7 @@ from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from synthia.helpers.pubsub import pubsub
-from synthia.service.models import ProgressNotification
+from synthia.service.models import ProgressNotification, ScheduledTaskCompletion
 from synthia.service.task import TaskRequest, TaskService
 from synthia.telegram.helpers import send_message
 
@@ -27,6 +27,7 @@ class Telegram:
         )
         self.bot = Bot(token=token)
         pubsub.subscribe(ProgressNotification, self._handle_progress_notification)
+        pubsub.subscribe(ScheduledTaskCompletion, self._handle_scheduled_task_completion)
 
     async def start(self):
         try:
@@ -98,13 +99,13 @@ class Telegram:
         await self._send_message_to_chat(text=result.result, chat_id=chat_id)
 
     async def _handle_progress_notification(self, notification: ProgressNotification):
-        try:
-            emojis = ["⚙️", "🤔", "💭", "💡"]
-            emoji = random.choice(emojis)
-            if notification.user and notification.user in self.telegram_users_map:
-                await self._send_message_to_chat(
-                    text=f"{emoji} _{notification.summary}_",
-                    chat_id=self.telegram_users_map[notification.user],
-                )
-        except Exception as _e:
-            logger.error(f"failed to send progress notification: {_e}", exc_info=True)
+        emojis = ["⚙️", "🤔", "💭", "💡"]
+        emoji = random.choice(emojis)
+        if notification.user and notification.user in self.telegram_users_map:
+            await self._send_message_to_chat(
+                text=f"{emoji} _{notification.summary}_",
+                chat_id=self.telegram_users_map[notification.user],
+            )
+
+    async def _handle_scheduled_task_completion(self, completion: ScheduledTaskCompletion):
+        await self._send_message_to_chat(text=f"✅ _Task '{completion.name}' completed_", chat_id=self.admin_chat_id)

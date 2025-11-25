@@ -11,8 +11,11 @@ import synthia.agents.progress  # noqa: F401
 import synthia.helpers.debug  # noqa: F401
 from synthia.agents.claude import ClaudeAgent
 from synthia.agents.memory.client import create_memory_client, create_memory_mcp_server
+from synthia.agents.scheduler.client import create_scheduler_mcp_server
+from synthia.agents.scheduler.service import SchedulerService
 from synthia.helpers.pubsub import pubsub
-from synthia.service.task import TaskRequest, TaskResponse, TaskService
+from synthia.service.models import TaskRequest, TaskResponse
+from synthia.service.task import TaskService
 from synthia.telegram import Telegram
 
 load_dotenv()
@@ -37,6 +40,7 @@ class Config(BaseSettings):
     telegram_bot_token: str
     telegram_users: str
     admin_user: str
+    postgres_connection_string: str = ""
 
     @property
     def telegram_users_map(self) -> dict[str, str]:
@@ -72,10 +76,23 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         memory_client = await create_memory_client()
         memory_mcp_server = create_memory_mcp_server(user=config.memory_user, memory_client=memory_client)
-        claude_agent = ClaudeAgent(user=config.memory_user, memory_mcp_server=memory_mcp_server)
+
+        scheduler_service = SchedulerService(postgres_url=config.postgres_connection_string)
+        scheduler_mcp_server = create_scheduler_mcp_server(scheduler_service)
+
+        claude_agent = ClaudeAgent(
+            user=config.memory_user,
+            mcp_servers={
+                "memory": memory_mcp_server,
+                "scheduler": scheduler_mcp_server,
+            },
+        )
         task_service = TaskService(claude_agent)
 
+        scheduler_service.start()
+
         app.state.task_service = task_service
+        app.state.scheduler_service = scheduler_service
         app.state.telegram = Telegram(
             config.telegram_bot_token, config.telegram_users_map, config.admin_chat_id, task_service
         )
@@ -84,6 +101,10 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
         yield
 
+        try:
+            scheduler_service.shutdown()
+        except Exception:
+            pass
         try:
             await app.state.telegram.stop()
         except Exception:
