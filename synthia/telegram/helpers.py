@@ -30,7 +30,14 @@ _TELEGRAM_ALLOWED_ATTRIBUTES = {
 
 def _sanitize_html_for_telegram(html: str) -> str:
     html = re.sub(r"<h[1-6]>(.*?)</h[1-6]>", r"<b>\1</b>\n", html)
-    html = re.sub(r"<li>(.*?)</li>", r"\n• \1", html)
+
+    while re.search(r"<ul>\s*<li>", html):
+        html = re.sub(r"<ul>\s*", "", html)
+        html = re.sub(r"</ul>", "", html)
+
+    while re.search(r"<li>", html):
+        html = re.sub(r"<li>(.*?)</li>", r"\n• \1", html)
+
     html = re.sub(r"</?(ul|ol|p)>", "\n", html)
 
     html = bleach.clean(html, tags=_TELEGRAM_ALLOWED_TAGS, attributes=_TELEGRAM_ALLOWED_ATTRIBUTES, strip=True)
