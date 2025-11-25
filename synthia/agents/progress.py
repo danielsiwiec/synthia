@@ -12,7 +12,7 @@ _message_counts: dict[str, int] = defaultdict(int)
 _enabled_sessions: set[str] = set()
 
 
-async def _summarize_messages(session_id: str):
+async def _summarize_messages(session_id: str, user: str | None = None):
     if session_id not in _messages_by_session or not _messages_by_session[session_id]:
         return
 
@@ -42,7 +42,7 @@ async def _summarize_messages(session_id: str):
     else:
         summary_text = str(summary)
 
-    await pubsub.publish(ProgressNotification(session_id=session_id, summary=summary_text))
+    await pubsub.publish(ProgressNotification(session_id=session_id, summary=summary_text, user=user))
 
 
 async def analyze_progress(message: Message):
@@ -74,7 +74,7 @@ async def analyze_progress(message: Message):
         _messages_by_session[session_id] = _messages_by_session[session_id][-3:]
 
     if _message_counts[session_id] % 3 == 0:
-        await _summarize_messages(session_id)
+        await _summarize_messages(session_id, message.user)
 
 
 async def _handle_task_completion(completion: TaskCompletion):

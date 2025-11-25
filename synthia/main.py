@@ -1,12 +1,11 @@
 import logging
-import os
 import sys
 from contextlib import asynccontextmanager
-from typing import TypedDict
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from loguru import logger
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 import synthia.agents.progress  # noqa: F401
 import synthia.helpers.debug  # noqa: F401
@@ -31,35 +30,55 @@ logger.add(
 )
 
 
-class Config(TypedDict, total=False):
+class Config(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     memory_user: str
     telegram_bot_token: str
-    telegram_chat_id: str
+    telegram_users: str
+    admin_user: str
 
+    @property
+    def telegram_users_map(self) -> dict[str, str]:
+        if not self.telegram_users:
+            return {}
+        result = {}
+        for pair in self.telegram_users.split(","):
+            pair = pair.strip()
+            if not pair:
+                continue
+            if ":" not in pair:
+                continue
+            user, chat_id = pair.split(":", 1)
+            result[user.strip()] = chat_id.strip()
+        return result
 
-def _get_config(overrides: Config | None = None) -> Config:
-    config: Config = {
-        "memory_user": os.environ.get("MEMORY_USER", ""),
-        "telegram_bot_token": os.environ.get("TELEGRAM_BOT_TOKEN", ""),
-        "telegram_chat_id": os.environ.get("TELEGRAM_CHAT_ID", ""),
-    }
-    if overrides:
-        config.update(overrides)
-    return config
+    @property
+    def admin_chat_id(self) -> str:
+        users_map = self.telegram_users_map
+        chat_id = users_map.get(self.admin_user)
+        if not chat_id:
+            raise ValueError(f"admin_user '{self.admin_user}' not found in telegram_users")
+        return chat_id
 
 
 def create_app(config_overrides: Config | None = None) -> FastAPI:
-    config = _get_config(config_overrides)
+    if config_overrides:
+        config = config_overrides
+    else:
+        config = Config()  # type: ignore[call-arg]
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         memory_client = await create_memory_client()
-        memory_mcp_server = create_memory_mcp_server(user=config["memory_user"], memory_client=memory_client)
-        claude_agent = ClaudeAgent(user=config["memory_user"], memory_mcp_server=memory_mcp_server)
+        memory_mcp_server = create_memory_mcp_server(user=config.memory_user, memory_client=memory_client)
+        claude_agent = ClaudeAgent(user=config.memory_user, memory_mcp_server=memory_mcp_server)
         task_service = TaskService(claude_agent)
 
         app.state.task_service = task_service
-        app.state.telegram = Telegram(config["telegram_bot_token"], config["telegram_chat_id"], task_service)
+        app.state.telegram = Telegram(
+            config.telegram_bot_token, config.telegram_users_map, config.admin_chat_id, task_service
+        )
         await app.state.telegram.start()
         await pubsub.start()
 
@@ -80,7 +99,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
     @app.post("/task", response_model=TaskResponse)
     async def task(request: TaskRequest) -> TaskResponse:
-        task_service = app.state.task_service
+        task_service: TaskService = app.state.task_service
         response = await task_service.process_task(request, resume=request.resume)
         return response
 
