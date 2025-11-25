@@ -75,9 +75,13 @@ Message = ToolCall | Result | InitMessage
 
 
 class ClaudeAgent:
-    def __init__(self, user: str, memory_mcp_server: dict[str, Any] | None = None):
+    def __init__(
+        self,
+        user: str,
+        mcp_servers: dict[str, dict[str, Any]] | None = None,
+    ):
         self.user = user
-        self._memory_mcp_server = memory_mcp_server
+        self._mcp_servers = mcp_servers or {}
 
     def _parse_message(
         self, message: Any, tool_calls: dict[str, ToolCall], objective: str, session_id: str, user: str | None = None
@@ -146,9 +150,8 @@ class ClaudeAgent:
 
         mcp_servers = {
             "browser": {"type": "http", "url": "http://host.docker.internal:8931/mcp"},
+            **self._mcp_servers,
         }
-        if self._memory_mcp_server:
-            mcp_servers["memory"] = self._memory_mcp_server
 
         options = ClaudeAgentOptions(
             cwd=str(claude_sessions_dir),

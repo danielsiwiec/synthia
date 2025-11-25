@@ -1,25 +1,16 @@
 import os
-from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from docker.errors import NotFound
 from testcontainers.core.image import DockerImage
 from testcontainers.postgres import PostgresContainer
+
+from synthia.helpers.pubsub import pubsub
 
 
 @pytest.fixture(scope="session")
 def anyio_backend() -> str:
     return "asyncio"
-
-
-@contextmanager
-def _safe_container_context(container):
-    try:
-        with container:
-            yield container
-    except NotFound:
-        pass
 
 
 @pytest.fixture(scope="session")
@@ -31,3 +22,13 @@ def pgvector_container():
         with PostgresContainer(str(image)) as postgres:
             connection_url = postgres.get_connection_url(host="127.0.0.1", driver=None)
             yield connection_url
+
+
+@pytest.fixture
+async def clean_pubsub():
+    for task in pubsub.tasks:
+        task.cancel()
+    pubsub.tasks = []
+    pubsub.queues.clear()
+    yield pubsub
+    await pubsub.stop()

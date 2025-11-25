@@ -19,6 +19,7 @@ dependencies = [
     "psycopg[binary]>=3.2.13",
     "psycopg-pool>=3.2.8",
     "pydantic-settings>=2.12.0",
+    "apscheduler>=3.11.1",
 ]
 
 [build-system]

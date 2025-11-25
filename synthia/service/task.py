@@ -2,13 +2,18 @@ from synthia.agents.claude import ClaudeAgent
 from synthia.helpers.pubsub import pubsub
 from synthia.helpers.schema import validate_schema
 from synthia.output import parse_from_schema
-from synthia.service.models import TaskCompletion, TaskRequest, TaskResponse
+from synthia.service.models import ScheduledTaskCompletion, TaskCompletion, TaskRequest, TaskResponse, TaskTrigger
 
 
 class TaskService:
     def __init__(self, claude_agent: ClaudeAgent):
         self._last_session_id: str | None = None
         self._claude_agent = claude_agent
+        pubsub.subscribe(TaskTrigger, self._handle_scheduled_task)
+
+    async def _handle_scheduled_task(self, trigger: TaskTrigger) -> None:
+        await self.process_task(TaskRequest(task=trigger.task))
+        await pubsub.publish(ScheduledTaskCompletion(name=trigger.name))
 
     async def process_task(self, request: TaskRequest, resume: bool = False) -> TaskResponse:
         validate_schema(request.response_schema)

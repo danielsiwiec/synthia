@@ -64,6 +64,7 @@ class PubSub:
         for task in self.tasks:
             task.cancel()
         await asyncio.gather(*self.tasks, return_exceptions=True)
+        self.tasks = []
 
 
 pubsub = PubSub()
