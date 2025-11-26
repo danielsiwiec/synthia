@@ -6,7 +6,7 @@ ARG USER_GID=20
 RUN (groupadd -g ${USER_GID} synthia 2>/dev/null || groupadd synthia 2>/dev/null || true) && \
     useradd -m -u ${USER_UID} -g ${USER_GID} synthia 2>/dev/null || \
     (useradd -m -u ${USER_UID} synthia && usermod -g ${USER_GID} synthia) && \
-    apt-get update && apt-get install -y curl sudo ca-certificates gnupg lsb-release && \
+    apt-get update && apt-get install -y curl sudo ca-certificates gnupg lsb-release procps && \
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
     chmod a+r /etc/apt/keyrings/docker.gpg && \
