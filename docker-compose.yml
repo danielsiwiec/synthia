@@ -20,7 +20,7 @@ services:
       pgvector:
         condition: service_healthy
     volumes:
-      - ./claude_sessions:/app/claude_sessions
+      - ./claude_home:/app/claude_home
       - ${HOME}/.claude:/home/synthia/.claude
       - /Users/dansiwiec/arr/:/mounts/arr
       - /Volumes/media:/mounts/media
