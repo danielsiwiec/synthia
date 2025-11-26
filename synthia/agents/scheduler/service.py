@@ -31,10 +31,13 @@ class SchedulerService:
 
     def add_job(self, name: str, start_date: datetime | str, seconds: int | float, task: str) -> dict[str, Any]:
         trigger = IntervalTrigger(seconds=seconds, start_date=start_date)
+
+        async def publish_task_trigger():
+            await pubsub.publish(TaskTrigger(task=task, name=name))
+
         self._scheduler.add_job(
-            pubsub.publish,
+            publish_task_trigger,
             trigger=trigger,
-            args=[TaskTrigger(task=task, name=name)],
             id=name,
             replace_existing=True,
         )
