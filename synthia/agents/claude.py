@@ -144,9 +144,8 @@ class ClaudeAgent:
         resume_from_session: str | None = None,
         user: str | None = None,
     ) -> AsyncIterator[Any]:
-        project_root = Path(__file__).parent.parent.parent
-        claude_sessions_dir = project_root / "claude_sessions"
-        claude_sessions_dir.mkdir(parents=True, exist_ok=True)
+        cwd = Path(__file__).parent.parent.parent / "claude_home"
+        cwd.mkdir(parents=True, exist_ok=True)
 
         mcp_servers = {
             "browser": {"type": "http", "url": "http://host.docker.internal:8931/mcp"},
@@ -154,7 +153,7 @@ class ClaudeAgent:
         }
 
         options = ClaudeAgentOptions(
-            cwd=str(claude_sessions_dir),
+            cwd=str(cwd),
             setting_sources=["project"],
             allowed_tools=["Skill"],
             permission_mode="bypassPermissions",
