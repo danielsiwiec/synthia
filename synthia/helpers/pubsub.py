@@ -2,7 +2,7 @@ import asyncio
 import inspect
 from collections import defaultdict
 from collections.abc import Callable, Coroutine
-from typing import Any, TypeVar, get_args
+from typing import Any, TypeVar, cast, get_args
 
 from loguru import logger
 
@@ -29,9 +29,9 @@ class PubSub:
 
     def subscribe(self, topic: type[T], handler: Callable[[T], Coroutine] | Callable[[T], None]):
         if inspect.iscoroutinefunction(handler):
-            self.async_subscribers[topic].append(handler)
+            self.async_subscribers[topic].append(cast(Callable[[Any], Coroutine], handler))
         else:
-            self.sync_subscribers[topic].append(handler)
+            self.sync_subscribers[topic].append(cast(Callable[[Any], None], handler))
 
     async def publish(self, message: T):
         all_topics = set(self.async_subscribers.keys()) | set(self.sync_subscribers.keys())

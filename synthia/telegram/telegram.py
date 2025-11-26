@@ -33,6 +33,9 @@ class Telegram:
         try:
             await self.application.initialize()
             await self.application.start()
+            if not self.application.updater:
+                raise Exception("updater not found")
+
             await self.application.updater.start_polling()
             await self._send_message_to_chat(text="_Synthia connected 👋_", chat_id=self.admin_chat_id)
         except Exception as _e:
@@ -43,6 +46,9 @@ class Telegram:
         await self.application.shutdown()
 
     def _is_authorized(self, update: Update) -> bool:
+        if not update.message or not update.message.from_user:
+            return False
+
         chat_id = str(update.message.chat.id)
         if chat_id not in self.authorized_chat_ids:
             logger.warning(f"unauthorized chat_id {chat_id} from user {update.message.from_user.id}")
@@ -65,6 +71,9 @@ class Telegram:
         await send_message(message_sender, text)
 
     async def _acknowledge_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message:
+            return
+
         emojis = ["👍", "👌", "🫡"]
         emoji = random.choice(emojis)
         try:
@@ -73,12 +82,15 @@ class Telegram:
             logger.error(f"failed to react to message: {_e}", exc_info=True)
 
     async def _task_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message or not update.message.chat_id:
+            return
+
         if not self._is_authorized(update):
             return
 
         await self._acknowledge_message(update, context)
 
-        chat_id = str(update.message.chat.id)
+        chat_id = str(update.message.chat_id)
         if not context.args:
             await self._send_message_to_chat(text="Please provide a task description", chat_id=chat_id)
             return
@@ -92,7 +104,7 @@ class Telegram:
 
         await self._acknowledge_message(update, context)
 
-        if not update.message.text:
+        if not update.message or not update.message.text:
             return
 
         chat_id = str(update.message.chat.id)

@@ -7,10 +7,12 @@ from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
+    McpServerConfig,
     ResultMessage,
     SystemMessage,
     UserMessage,
 )
+from claude_agent_sdk.types import McpHttpServerConfig
 from pydantic import BaseModel
 
 from synthia.helpers.pubsub import pubsub
@@ -78,8 +80,10 @@ class ClaudeAgent:
     def __init__(
         self,
         user: str,
-        mcp_servers: dict[str, dict[str, Any]] | None = None,
+        mcp_servers: dict[str, McpServerConfig] | None = None,
     ):
+        if mcp_servers is None:
+            mcp_servers = {}
         self.user = user
         self._mcp_servers = mcp_servers or {}
 
@@ -148,7 +152,7 @@ class ClaudeAgent:
         cwd.mkdir(parents=True, exist_ok=True)
 
         mcp_servers = {
-            "browser": {"type": "http", "url": "http://host.docker.internal:8931/mcp"},
+            "browser": McpHttpServerConfig(type="http", url="http://host.docker.internal:8931/mcp"),
             **self._mcp_servers,
         }
 

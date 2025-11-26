@@ -1,4 +1,5 @@
 from collections import defaultdict
+from typing import cast
 
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
@@ -29,7 +30,7 @@ async def _summarize_messages(session_id: str, user: str | None = None):
         "Always respond with only one statement. If there are multiple actions, use only the most relevant one: "
         f"{combined_messages}"
     )
-    result = await model.with_structured_output(Summary).ainvoke(prompt)
+    result = cast(Summary, await model.with_structured_output(Summary).ainvoke(prompt))
 
     await pubsub.publish(ProgressNotification(session_id=session_id, summary=result.summary, user=user))
 
