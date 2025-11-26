@@ -52,10 +52,12 @@ class Telegram:
     def _get_user_from_chat_id(self, chat_id: str) -> str | None:
         return next((user for user, user_chat_id in self.telegram_users_map.items() if user_chat_id == chat_id), None)
 
-    async def _send_message_to_chat(self, text: str, chat_id: str):
+    async def _send_message_to_chat(self, text: str, chat_id: str, disable_notification: bool = False):
         def _create_message_sender():
             async def message_sender(msg_text: str):
-                await self.bot.send_message(chat_id=chat_id, text=msg_text, parse_mode=ParseMode.HTML)
+                await self.bot.send_message(
+                    chat_id=chat_id, text=msg_text, parse_mode=ParseMode.HTML, disable_notification=disable_notification
+                )
 
             return message_sender
 
@@ -105,6 +107,7 @@ class Telegram:
             await self._send_message_to_chat(
                 text=f"{emoji} _{notification.summary}_",
                 chat_id=self.telegram_users_map[notification.user],
+                disable_notification=True,
             )
 
     async def _handle_scheduled_task_completion(self, completion: ScheduledTaskCompletion):
