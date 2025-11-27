@@ -10,6 +10,10 @@ from synthia.helpers.pubsub import pubsub
 from synthia.service.models import TaskTrigger
 
 
+async def _publish_task_trigger(task: str, name: str) -> None:
+    await pubsub.publish(TaskTrigger(task=task, name=name))
+
+
 class SchedulerService:
     def __init__(self, postgres_url: str):
         if postgres_url:
@@ -23,7 +27,6 @@ class SchedulerService:
 
     def start(self) -> None:
         self._scheduler.start()
-        logger.info("Scheduler started")
 
     def shutdown(self) -> None:
         self._scheduler.shutdown()
@@ -32,14 +35,12 @@ class SchedulerService:
     def add_job(self, name: str, start_date: datetime | str, seconds: int | float, task: str) -> dict[str, Any]:
         trigger = IntervalTrigger(seconds=seconds, start_date=start_date)
 
-        async def publish_task_trigger():
-            await pubsub.publish(TaskTrigger(task=task, name=name))
-
         self._scheduler.add_job(
-            publish_task_trigger,
+            "synthia.agents.scheduler.service:_publish_task_trigger",
             trigger=trigger,
             id=name,
             replace_existing=True,
+            args=[task, name],
         )
         logger.info(f"Added job '{name}' with start_date '{start_date}' and interval {seconds} seconds")
         return {"name": name, "start_date": str(start_date), "seconds": seconds, "task": task}
@@ -75,11 +76,8 @@ class SchedulerService:
     async def trigger_job(self, name: str) -> bool:
         job = self._scheduler.get_job(name)
         if job and job.args:
-            task_trigger = job.args[0]
-            if isinstance(task_trigger, TaskTrigger):
-                await pubsub.publish(task_trigger)
-            else:
-                await pubsub.publish(TaskTrigger(task=task_trigger, name=name))
+            task, job_name = job.args
+            await pubsub.publish(TaskTrigger(task=task, name=job_name))
             logger.info(f"Triggered job '{name}' for immediate execution")
             return True
         logger.warning(f"Job '{name}' not found")
