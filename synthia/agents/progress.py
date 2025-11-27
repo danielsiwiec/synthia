@@ -17,7 +17,7 @@ _messages_by_session: dict[str, list[str]] = defaultdict(list)
 
 
 async def _summarize_messages(session_id: str, user: str | None = None):
-    messages = _messages_by_session.get(session_id, [])[-3:]
+    messages = _messages_by_session[session_id]
     if not messages:
         return
 
@@ -49,9 +49,8 @@ async def analyze_progress(message: Message):
     if session_id not in _messages_by_session:
         return
 
-    message_text = message.render() if hasattr(message, "render") else str(message)
-    _messages_by_session[session_id].append(message_text)
+    _messages_by_session[session_id].append(message.render(short=True))
 
     if len(_messages_by_session[session_id]) % 3 == 0:
         await _summarize_messages(session_id, message.user)
-        _messages_by_session[session_id] = _messages_by_session[session_id][-3:]
+        _messages_by_session[session_id] = []

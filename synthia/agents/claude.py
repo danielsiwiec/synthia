@@ -38,11 +38,11 @@ class ToolCall(BaseModel):
     error: str | None = None
     user: str | None = None
 
-    def render(self) -> str:
+    def render(self, short: bool = False) -> str:
         parts = ["🔧"]
         parts.append(f"[{self.name}]")
         parts.append(f"input={self.input}")
-        if self.output is not None:
+        if not short and self.output is not None:
             parts.append(f"output='{self.output}'")
         if self.error is not None:
             parts.append(f"error='{self.error}'")
@@ -56,7 +56,7 @@ class Result(BaseModel):
     error: str | None = None
     user: str | None = None
 
-    def render(self) -> str:
+    def render(self, short: bool = False) -> str:
         parts = ["✅" if self.success else "🔴"]
         parts.append(self.result if self.success else self.error)
         return " ".join(parts)
@@ -67,7 +67,7 @@ class InitMessage(BaseModel):
     prompt: str
     user: str | None = None
 
-    def render(self) -> str:
+    def render(self, short: bool = False) -> str:
         parts = ["⚙️"]
         parts.append(self.prompt)
         return " ".join(parts)
