@@ -1,3 +1,5 @@
+import asyncio
+
 from synthia.agents.claude import ClaudeAgent
 from synthia.helpers.pubsub import pubsub
 from synthia.helpers.schema import validate_schema
@@ -9,6 +11,7 @@ class TaskService:
     def __init__(self, claude_agent: ClaudeAgent):
         self._last_session_id: str | None = None
         self._claude_agent = claude_agent
+        self._current_task: asyncio.Task | None = None
         pubsub.subscribe(TaskTrigger, self._handle_scheduled_task)
 
     async def _handle_scheduled_task(self, trigger: TaskTrigger) -> None:
@@ -21,11 +24,25 @@ class TaskService:
         resume_from_session = self._last_session_id if resume else None
 
         objective = request.task
-        result_message = await self._claude_agent.run_for_result(
-            objective=objective,
-            resume_from_session=resume_from_session,
-            user=request.user,
-        )
+
+        async def _run_task():
+            return await self._claude_agent.run_for_result(
+                objective=objective,
+                resume_from_session=resume_from_session,
+                user=request.user,
+            )
+
+        task = asyncio.create_task(_run_task())
+        self._current_task = task
+
+        try:
+            result_message = await task
+        except asyncio.CancelledError:
+            self._current_task = None
+            raise
+        finally:
+            if self._current_task == task:
+                self._current_task = None
 
         if not result_message:
             raise Exception("Timeout: No ResultMessage received within expected time")
@@ -41,3 +58,13 @@ class TaskService:
         await pubsub.publish(TaskCompletion(session_id=result_message.session_id))
 
         return TaskResponse(result=result, session_id=result_message.session_id)
+
+    async def stop_current_task(self) -> bool:
+        if not self._current_task:
+            return False
+        self._current_task.cancel()
+        try:
+            await self._current_task
+        except asyncio.CancelledError:
+            pass
+        return True
