@@ -68,5 +68,4 @@ async def send_message(message_sender: Callable[[str], Coroutine], text: str):
         text = text[split_pos:].lstrip()
 
     for i, chunk in enumerate(chunks):
-        prefix = f"[Part {i + 1}/{len(chunks)}]\n\n" if len(chunks) > 1 else ""
-        await message_sender(prefix + chunk)
+        await message_sender(f"[Part {i + 1}/{len(chunks)}]\n\n{chunk}")

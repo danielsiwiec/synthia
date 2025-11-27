@@ -3,6 +3,7 @@ from typing import Any
 from claude_agent_sdk import tool
 
 from synthia.agents.scheduler.service import SchedulerService
+from synthia.agents.tools import error_response, success_response
 
 
 def create_add_job_tool(scheduler_service: SchedulerService):
@@ -39,33 +40,13 @@ def create_add_job_tool(scheduler_service: SchedulerService):
         },
     )
     async def add_job(args: dict[str, Any]) -> dict[str, Any]:
-        name = args.get("name", "")
-        start_date = args.get("start_date", "")
-        seconds = args.get("seconds", 0)
-        task = args.get("task", "")
-
         try:
-            job_info = scheduler_service.add_job(name, start_date, seconds, task)
-            return {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            f"Job '{job_info['name']}' added successfully with start_date "
-                            f"'{job_info['start_date']}' and interval {job_info['seconds']} seconds"
-                        ),
-                    }
-                ]
-            }
+            job_info = scheduler_service.add_job(args["name"], args["start_date"], args["seconds"], args["task"])
+            return success_response(
+                f"Job '{job_info['name']}' added successfully with start_date "
+                f"'{job_info['start_date']}' and interval {job_info['seconds']} seconds"
+            )
         except Exception as error:
-            return {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": f"Error adding job: {str(error)}",
-                    }
-                ],
-                "isError": True,
-            }
+            return error_response(f"Error adding job: {error}")
 
     return add_job

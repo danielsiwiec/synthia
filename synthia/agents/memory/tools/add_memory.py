@@ -3,6 +3,8 @@ from typing import Any
 from claude_agent_sdk import tool
 from mem0 import AsyncMemory
 
+from synthia.agents.tools import error_response, success_response
+
 
 def create_add_memory_tool(user: str, memory_client: AsyncMemory):
     @tool(
@@ -24,29 +26,14 @@ def create_add_memory_tool(user: str, memory_client: AsyncMemory):
         },
     )
     async def add_memory(args: dict[str, Any]) -> dict[str, Any]:
-        content = args.get("content", "")
+        content = args["content"]
         user_id = args.get("userId") or user
 
         try:
             messages = [{"role": "user", "content": content}]
             await memory_client.add(messages, user_id=user_id)
-            return {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "Memory added successfully",
-                    }
-                ]
-            }
+            return success_response("Memory added successfully")
         except Exception as error:
-            return {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": f"Error adding memory: {str(error)}",
-                    }
-                ],
-                "isError": True,
-            }
+            return error_response(f"Error adding memory: {error}")
 
     return add_memory

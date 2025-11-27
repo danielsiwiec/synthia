@@ -3,6 +3,8 @@ from typing import Any
 from claude_agent_sdk import tool
 from mem0 import AsyncMemory
 
+from synthia.agents.tools import error_response, success_response
+
 
 def create_delete_memory_tool(user: str, memory_client: AsyncMemory):
     @tool(
@@ -24,27 +26,10 @@ def create_delete_memory_tool(user: str, memory_client: AsyncMemory):
         },
     )
     async def delete_memory(args: dict[str, Any]) -> dict[str, Any]:
-        memory_id = args.get("memoryId", "")
-
         try:
-            await memory_client.delete(memory_id)
-            return {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "Memory deleted successfully",
-                    }
-                ]
-            }
+            await memory_client.delete(args["memoryId"])
+            return success_response("Memory deleted successfully")
         except Exception as error:
-            return {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": f"Error deleting memory: {str(error)}",
-                    }
-                ],
-                "isError": True,
-            }
+            return error_response(f"Error deleting memory: {error}")
 
     return delete_memory

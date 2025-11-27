@@ -1,15 +1,13 @@
 import asyncio
 import logging
 import sys
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from loguru import logger
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-import synthia.agents.progress  # noqa: F401
-import synthia.helpers.debug  # noqa: F401
 from synthia.agents.claude import ClaudeAgent
 from synthia.agents.memory.client import create_memory_client, create_memory_mcp_server
 from synthia.agents.scheduler.client import create_scheduler_mcp_server
@@ -34,6 +32,16 @@ logger.add(
 )
 
 
+def _register_handlers():
+    from synthia.agents.claude import Message
+    from synthia.agents.progress import analyze_progress
+    from synthia.service.models import TaskCompletion
+
+    pubsub.subscribe(Message, lambda message: logger.info(f"{message.render()}"))
+    pubsub.subscribe(Message, analyze_progress)
+    pubsub.subscribe(TaskCompletion, lambda c: None)
+
+
 class Config(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -47,34 +55,28 @@ class Config(BaseSettings):
     def telegram_users_map(self) -> dict[str, str]:
         if not self.telegram_users:
             return {}
-        result = {}
-        for pair in self.telegram_users.split(","):
-            pair = pair.strip()
-            if not pair:
-                continue
-            if ":" not in pair:
-                continue
-            user, chat_id = pair.split(":", 1)
-            result[user.strip()] = chat_id.strip()
-        return result
+        return {
+            user.strip(): chat_id.strip()
+            for pair in self.telegram_users.split(",")
+            if ":" in pair
+            for user, chat_id in [pair.split(":", 1)]
+        }
 
     @property
     def admin_chat_id(self) -> str:
-        users_map = self.telegram_users_map
-        chat_id = users_map.get(self.admin_user)
+        chat_id = self.telegram_users_map.get(self.admin_user)
         if not chat_id:
             raise ValueError(f"admin_user '{self.admin_user}' not found in telegram_users")
         return chat_id
 
 
 def create_app(config_overrides: Config | None = None) -> FastAPI:
-    if config_overrides:
-        config = config_overrides
-    else:
-        config = Config()  # type: ignore[call-arg]
+    config = config_overrides or Config()  # type: ignore[call-arg]
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        _register_handlers()
+
         memory_client = await create_memory_client()
         memory_mcp_server = create_memory_mcp_server(user=config.memory_user, memory_client=memory_client)
 
@@ -102,18 +104,12 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
         yield
 
-        try:
+        with suppress(Exception):
             scheduler_service.shutdown()
-        except Exception:
-            pass
-        try:
+        with suppress(Exception):
             await app.state.telegram.stop()
-        except Exception:
-            pass
-        try:
+        with suppress(Exception):
             await pubsub.stop()
-        except Exception:
-            pass
 
     app = FastAPI(
         title="Synthia", description="FastAPI application with Claude Agent SDK integration", lifespan=lifespan

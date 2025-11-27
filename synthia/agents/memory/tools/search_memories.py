@@ -3,6 +3,12 @@ from typing import Any
 from claude_agent_sdk import tool
 from mem0 import AsyncMemory
 
+from synthia.agents.tools import error_response, success_response
+
+
+def _format_memory(result: dict) -> str:
+    return f"ID: {result.get('id', '')}\nMemory: {result.get('memory', '')}\nRelevance: {result.get('score', '')}\n---"
+
 
 def create_search_memories_tool(user: str, memory_client: AsyncMemory):
     @tool(
@@ -27,61 +33,17 @@ def create_search_memories_tool(user: str, memory_client: AsyncMemory):
         },
     )
     async def search_memories(args: dict[str, Any]) -> dict[str, Any]:
-        query = args.get("query", "")
+        query = args["query"]
         user_id = args.get("userId") or user
 
         try:
             results = await memory_client.search(query, user_id=user_id)
-            if results and isinstance(results, dict) and results.get("results"):
-                formatted_results = "\n".join(
-                    [
-                        f"ID: {result.get('id', '')}\nMemory: {result.get('memory', '')}\n"
-                        f"Relevance: {result.get('score', '')}\n---"
-                        for result in results["results"]
-                    ]
-                )
-                return {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": formatted_results,
-                        }
-                    ]
-                }
-            elif results and isinstance(results, list):
-                formatted_results = "\n".join(
-                    [
-                        f"ID: {result.get('id', '')}\nMemory: {result.get('memory', '')}\n"
-                        f"Relevance: {result.get('score', '')}\n---"
-                        for result in results
-                    ]
-                )
-                return {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": formatted_results,
-                        }
-                    ]
-                }
-            else:
-                return {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "No memories found",
-                        }
-                    ]
-                }
+            items = results.get("results") if isinstance(results, dict) else results
+            if items:
+                formatted_results = "\n".join(_format_memory(r) for r in items)
+                return success_response(formatted_results)
+            return success_response("No memories found")
         except Exception as error:
-            return {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": f"Error searching memories: {str(error)}",
-                    }
-                ],
-                "isError": True,
-            }
+            return error_response(f"Error searching memories: {error}")
 
     return search_memories

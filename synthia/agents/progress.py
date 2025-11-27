@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from synthia.agents.claude import InitMessage, Message, Result
 from synthia.helpers.pubsub import pubsub
-from synthia.service.models import ProgressNotification, TaskCompletion
+from synthia.service.models import ProgressNotification
 
 
 class Summary(BaseModel):
@@ -55,11 +55,3 @@ async def analyze_progress(message: Message):
     if len(_messages_by_session[session_id]) % 3 == 0:
         await _summarize_messages(session_id, message.user)
         _messages_by_session[session_id] = _messages_by_session[session_id][-3:]
-
-
-async def _handle_task_completion(completion: TaskCompletion):
-    _messages_by_session.pop(completion.session_id, None)
-
-
-pubsub.subscribe(Message, analyze_progress)
-pubsub.subscribe(TaskCompletion, _handle_task_completion)

@@ -3,6 +3,7 @@ from typing import Any
 from claude_agent_sdk import tool
 
 from synthia.agents.scheduler.service import SchedulerService
+from synthia.agents.tools import error_response, success_response
 
 
 def create_trigger_job_tool(scheduler_service: SchedulerService):
@@ -21,38 +22,12 @@ def create_trigger_job_tool(scheduler_service: SchedulerService):
         },
     )
     async def trigger_job(args: dict[str, Any]) -> dict[str, Any]:
-        name = args.get("name", "")
-
+        name = args["name"]
         try:
-            triggered = await scheduler_service.trigger_job(name)
-            if triggered:
-                return {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": f"Job '{name}' triggered for immediate execution.",
-                        }
-                    ]
-                }
-            else:
-                return {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": f"Job '{name}' not found.",
-                        }
-                    ],
-                    "isError": True,
-                }
+            if await scheduler_service.trigger_job(name):
+                return success_response(f"Job '{name}' triggered for immediate execution.")
+            return error_response(f"Job '{name}' not found.")
         except Exception as error:
-            return {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": f"Error triggering job: {str(error)}",
-                    }
-                ],
-                "isError": True,
-            }
+            return error_response(f"Error triggering job: {error}")
 
     return trigger_job
