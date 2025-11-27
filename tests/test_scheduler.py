@@ -10,8 +10,8 @@ from tests.helpers import await_until
 
 
 @pytest.fixture
-async def scheduler_service() -> AsyncGenerator[SchedulerService]:
-    service = SchedulerService(postgres_url="")
+async def scheduler_service(pgvector_container: str) -> AsyncGenerator[SchedulerService]:
+    service = SchedulerService(postgres_url=pgvector_container)
     service.start()
     yield service
     service.shutdown()
