@@ -173,18 +173,24 @@ class ClaudeAgent:
         tool_calls = {}  # tool_use_id -> ToolCall
 
         session_id = None
-        async for message in client.receive_messages():
-            await pubsub.publish(message)
-            if isinstance(message, SystemMessage):
-                session_id = message.data["session_id"]
-                yield InitMessage(session_id=message.data["session_id"], prompt=objective, user=user)
-                continue
-            if session_id is None:
-                raise ValueError("Session ID is not set")
-            if transformed := self._parse_message(message, tool_calls, objective, session_id, user):
-                yield transformed
-                if isinstance(transformed, Result):
-                    break
+        try:
+            async for message in client.receive_messages():
+                await pubsub.publish(message)
+                if isinstance(message, SystemMessage):
+                    session_id = message.data["session_id"]
+                    yield InitMessage(session_id=message.data["session_id"], prompt=objective, user=user)
+                    continue
+                if session_id is None:
+                    raise ValueError("Session ID is not set")
+                if transformed := self._parse_message(message, tool_calls, objective, session_id, user):
+                    yield transformed
+                    if isinstance(transformed, Result):
+                        break
+        finally:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
 
     async def run_for_result(
         self,

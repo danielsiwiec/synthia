@@ -1,9 +1,10 @@
+import asyncio
 import logging
 import sys
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from loguru import logger
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -121,8 +122,16 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
     @app.post("/task", response_model=TaskResponse)
     async def task(request: TaskRequest) -> TaskResponse:
         task_service: TaskService = app.state.task_service
-        response = await task_service.process_task(request, resume=request.resume)
-        return response
+        try:
+            response = await task_service.process_task(request, resume=request.resume)
+            return response
+        except asyncio.CancelledError:
+            raise HTTPException(status_code=499, detail="Task was cancelled") from None
+
+    @app.post("/stop")
+    async def stop():
+        task_service: TaskService = app.state.task_service
+        await task_service.stop_current_task()
 
     @app.get("/health")
     async def health_check():
@@ -139,4 +148,4 @@ app = create_app()
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8003)

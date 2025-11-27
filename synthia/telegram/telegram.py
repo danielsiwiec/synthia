@@ -19,6 +19,7 @@ class Telegram:
         self.task_service = task_service
         self.application = Application.builder().token(token).build()
         self.application.add_handler(CommandHandler("task", self._task_handler, has_args=True))
+        self.application.add_handler(CommandHandler("stop", self._stop_handler))
         self.application.add_handler(
             MessageHandler(
                 callback=self._message_handler,
@@ -59,15 +60,14 @@ class Telegram:
         return next((user for user, user_chat_id in self.telegram_users_map.items() if user_chat_id == chat_id), None)
 
     async def _send_message_to_chat(self, text: str, chat_id: str, disable_notification: bool = False):
-        def _create_message_sender():
-            async def message_sender(msg_text: str):
-                await self.bot.send_message(
-                    chat_id=chat_id, text=msg_text, parse_mode=ParseMode.HTML, disable_notification=disable_notification
-                )
+        async def message_sender(msg_text: str):
+            await self.bot.send_message(
+                chat_id=chat_id,
+                text=msg_text,
+                parse_mode=ParseMode.HTML,
+                disable_notification=disable_notification,
+            )
 
-            return message_sender
-
-        message_sender = _create_message_sender()
         await send_message(message_sender, text)
 
     async def _acknowledge_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -97,6 +97,20 @@ class Telegram:
         user = self._get_user_from_chat_id(chat_id)
         result = await self.task_service.process_task(TaskRequest(task=" ".join(context.args), user=user), resume=False)
         await self._send_message_to_chat(text=result.result, chat_id=chat_id)
+
+    async def _stop_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message or not update.message.chat_id:
+            return
+
+        if not self._is_authorized(update):
+            return
+
+        await self._acknowledge_message(update, context)
+
+        chat_id = str(update.message.chat_id)
+        stopped = await self.task_service.stop_current_task()
+        if stopped:
+            await self._send_message_to_chat(text="🛑 task stopped", chat_id=chat_id)
 
     async def _message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_authorized(update):

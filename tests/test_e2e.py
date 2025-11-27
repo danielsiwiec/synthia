@@ -1,3 +1,4 @@
+import asyncio
 import os
 import random
 import secrets
@@ -51,14 +52,13 @@ async def test_task_endpoint_basic_math(client):
 
 
 @pytest.mark.smoke
-async def test_task_endpoint_with_schema(client):
+async def test_ultimate_e2e(client):
     schema = {
         "type": "object",
         "properties": {"number_of_legs": {"type": "number"}},
         "required": ["number_of_legs"],
     }
 
-    # First request
     response = await client.post("/task", json={"task": "how many legs does a dog have?", "response_schema": schema})
 
     assert response.status_code == 200
@@ -68,10 +68,19 @@ async def test_task_endpoint_with_schema(client):
     assert isinstance(data["result"], dict)
     assert data["result"]["number_of_legs"] == 4
 
-    data["session_id"]
+    async def run_wait_task():
+        return await client.post("/task", json={"task": "wait 60 seconds, then say 'hello'"}, timeout=30.0)
 
-    # Test that resume parameter is accepted (even if session doesn't exist)
-    # This verifies the resume functionality is properly integrated
+    task = asyncio.create_task(run_wait_task())
+
+    await asyncio.sleep(0.5)
+
+    stop_response = await client.post("/stop")
+    assert stop_response.status_code == 200
+
+    result = await asyncio.wait_for(task, timeout=6.0)
+    assert result.status_code == 499, "Task should return 499 when cancelled"
+
     follow_up_response = await client.post(
         "/task", json={"task": "what was that number again?", "response_schema": schema, "resume": True}
     )
@@ -80,7 +89,7 @@ async def test_task_endpoint_with_schema(client):
     follow_up_data = follow_up_response.json()
     assert "result" in follow_up_data
     assert "session_id" in follow_up_data
-    assert follow_up_data["result"]["number_of_legs"] == data["result"]["number_of_legs"]
+    assert follow_up_data["result"]["number_of_legs"] == 4
 
 
 async def test_task_endpoint_with_invalid_schema(client):
