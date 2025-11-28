@@ -23,16 +23,13 @@ class TaskService:
 
         resume_from_session = self._last_session_id if resume else None
 
-        objective = request.task
-
-        async def _run_task():
-            return await self._claude_agent.run_for_result(
-                objective=objective,
+        task = asyncio.create_task(
+            self._claude_agent.run_for_result(
+                objective=request.task,
                 resume_from_session=resume_from_session,
                 user=request.user,
             )
-
-        task = asyncio.create_task(_run_task())
+        )
         self._current_task = task
 
         try:

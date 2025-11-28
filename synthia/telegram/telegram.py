@@ -17,7 +17,7 @@ class Telegram:
         self.telegram_users_map = telegram_users_map
         self.admin_chat_id = admin_chat_id
         self.task_service = task_service
-        self.application = Application.builder().token(token).build()
+        self.application = Application.builder().token(token).concurrent_updates(True).build()
         self.application.add_handler(CommandHandler("task", self._task_handler, has_args=True))
         self.application.add_handler(CommandHandler("stop", self._stop_handler))
         self.application.add_handler(

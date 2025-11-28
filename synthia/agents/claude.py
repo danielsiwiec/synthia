@@ -82,13 +82,11 @@ class ClaudeAgent:
         user: str,
         mcp_servers: dict[str, McpServerConfig] | None = None,
     ):
-        if mcp_servers is None:
-            mcp_servers = {}
         self.user = user
         self._mcp_servers = mcp_servers or {}
 
     def _parse_message(
-        self, message: Any, tool_calls: dict[str, ToolCall], objective: str, session_id: str, user: str | None = None
+        self, message: Any, tool_calls: dict[str, ToolCall], session_id: str, user: str | None = None
     ) -> Any | None:
         if isinstance(message, ResultMessage):
             return Result(
@@ -98,47 +96,43 @@ class ClaudeAgent:
                 user=user,
             )
 
-        elif isinstance(message, (UserMessage, AssistantMessage)):
-            content_blocks = getattr(message, "content", [])
-            if not isinstance(content_blocks, list):
-                return None
+        if not isinstance(message, (UserMessage, AssistantMessage)):
+            return None
 
-            for block in content_blocks:
-                block_type = type(block).__name__
+        content_blocks = getattr(message, "content", [])
+        if not isinstance(content_blocks, list):
+            return None
 
-                if block_type == "ToolUseBlock":
+        for block in content_blocks:
+            match type(block).__name__:
+                case "ToolUseBlock":
                     tool_use_id = getattr(block, "id", None)
-                    name = getattr(block, "name", "")
-                    input_data = getattr(block, "input", {})
-
                     if tool_use_id:
                         tool_calls[tool_use_id] = ToolCall(
-                            session_id=session_id, name=name, input=input_data, user=user
+                            session_id=session_id,
+                            name=getattr(block, "name", ""),
+                            input=getattr(block, "input", {}),
+                            user=user,
                         )
 
-                elif block_type == "ToolResultBlock":
+                case "ToolResultBlock":
                     tool_use_id = getattr(block, "tool_use_id", None)
                     output = getattr(block, "content", "")
-                    is_error = getattr(block, "is_error", False)
-                    error = "Error occurred" if is_error else None
-
                     if isinstance(output, list):
                         output = str(output)
                     elif output is None:
                         output = ""
 
                     if tool_use_id and tool_use_id in tool_calls:
-                        tool_call = tool_calls[tool_use_id]
-                        completed_tool_call = ToolCall(
+                        tool_call = tool_calls.pop(tool_use_id)
+                        return ToolCall(
                             session_id=tool_call.session_id,
                             name=tool_call.name,
                             input=tool_call.input,
                             output=output.strip(),
-                            error=error,
+                            error="Error occurred" if getattr(block, "is_error", False) else None,
                             user=user,
                         )
-                        del tool_calls[tool_use_id]
-                        return completed_tool_call
 
         return None
 
@@ -182,7 +176,7 @@ class ClaudeAgent:
                     continue
                 if session_id is None:
                     raise ValueError("Session ID is not set")
-                if transformed := self._parse_message(message, tool_calls, objective, session_id, user):
+                if transformed := self._parse_message(message, tool_calls, session_id, user):
                     yield transformed
                     if isinstance(transformed, Result):
                         break

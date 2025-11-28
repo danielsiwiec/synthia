@@ -3,6 +3,7 @@ from typing import Any
 from claude_agent_sdk import tool
 
 from synthia.agents.scheduler.service import SchedulerService
+from synthia.agents.tools import error_response, success_response
 
 
 def create_delete_job_tool(scheduler_service: SchedulerService):
@@ -21,38 +22,12 @@ def create_delete_job_tool(scheduler_service: SchedulerService):
         },
     )
     async def delete_job(args: dict[str, Any]) -> dict[str, Any]:
-        name = args.get("name", "")
-
+        name = args["name"]
         try:
-            deleted = scheduler_service.delete_job(name)
-            if deleted:
-                return {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": f"Job '{name}' deleted successfully.",
-                        }
-                    ]
-                }
-            else:
-                return {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": f"Job '{name}' not found.",
-                        }
-                    ],
-                    "isError": True,
-                }
+            if scheduler_service.delete_job(name):
+                return success_response(f"Job '{name}' deleted successfully.")
+            return error_response(f"Job '{name}' not found.")
         except Exception as error:
-            return {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": f"Error deleting job: {str(error)}",
-                    }
-                ],
-                "isError": True,
-            }
+            return error_response(f"Error deleting job: {error}")
 
     return delete_job

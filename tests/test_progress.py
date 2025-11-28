@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 
-import synthia.agents.progress  # noqa: F401
-from synthia.agents.claude import InitMessage, ToolCall
+from synthia.agents.claude import InitMessage, Message, ToolCall
+from synthia.agents.progress import analyze_progress
 from synthia.helpers.pubsub import pubsub
 from synthia.service.models import ProgressNotification
 from tests.helpers import await_until
@@ -15,6 +15,7 @@ async def test_progress(clean_pubsub):
     def capture_notification(notification: ProgressNotification):
         progress_notifications.append(notification)
 
+    pubsub.subscribe(Message, analyze_progress)
     pubsub.subscribe(ProgressNotification, capture_notification)
 
     await pubsub.start()
