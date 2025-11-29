@@ -11,7 +11,6 @@ dependencies = [
     "pydantic>=2.12.4",
     "fastapi[standard]>=0.122.0",
     "loguru>=0.7.3",
-    "python-telegram-bot>=22.5",
     "markdown>=3.10",
     "bleach>=6.3.0",
     "claude-agent-sdk>=0.1.10",
@@ -20,6 +19,9 @@ dependencies = [
     "psycopg-pool>=3.2.8",
     "pydantic-settings>=2.12.0",
     "apscheduler>=3.11.1",
+    "beautifulsoup4>=4.14.2",
+    "discord-py>=2.6.4",
+    "table2ascii>=1.1.3",
 ]
 
 [build-system]

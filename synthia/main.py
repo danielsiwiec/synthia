@@ -12,10 +12,10 @@ from synthia.agents.claude import ClaudeAgent
 from synthia.agents.memory.client import create_memory_client, create_memory_mcp_server
 from synthia.agents.scheduler.client import create_scheduler_mcp_server
 from synthia.agents.scheduler.service import SchedulerService
+from synthia.discord import Discord
 from synthia.helpers.pubsub import pubsub
 from synthia.service.models import TaskRequest, TaskResponse
 from synthia.service.task import TaskService
-from synthia.telegram import Telegram
 
 load_dotenv()
 
@@ -46,28 +46,28 @@ class Config(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     memory_user: str
-    telegram_bot_token: str
-    telegram_users: str
+    discord_bot_token: str
+    discord_users: str
     admin_user: str
     postgres_connection_string: str = ""
 
     @property
-    def telegram_users_map(self) -> dict[str, str]:
-        if not self.telegram_users:
+    def discord_users_map(self) -> dict[str, str]:
+        if not self.discord_users:
             return {}
         return {
-            user.strip(): chat_id.strip()
-            for pair in self.telegram_users.split(",")
+            user.strip(): channel_id.strip()
+            for pair in self.discord_users.split(",")
             if ":" in pair
-            for user, chat_id in [pair.split(":", 1)]
+            for user, channel_id in [pair.split(":", 1)]
         }
 
     @property
-    def admin_chat_id(self) -> str:
-        chat_id = self.telegram_users_map.get(self.admin_user)
-        if not chat_id:
-            raise ValueError(f"admin_user '{self.admin_user}' not found in telegram_users")
-        return chat_id
+    def admin_channel_id(self) -> str:
+        channel_id = self.discord_users_map.get(self.admin_user)
+        if not channel_id:
+            raise ValueError(f"admin_user '{self.admin_user}' not found in discord_users")
+        return channel_id
 
 
 def create_app(config_overrides: Config | None = None) -> FastAPI:
@@ -96,10 +96,10 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
         app.state.task_service = task_service
         app.state.scheduler_service = scheduler_service
-        app.state.telegram = Telegram(
-            config.telegram_bot_token, config.telegram_users_map, config.admin_chat_id, task_service
+        app.state.discord = Discord(
+            config.discord_bot_token, config.discord_users_map, config.admin_channel_id, task_service
         )
-        await app.state.telegram.start()
+        await app.state.discord.start()
         await pubsub.start()
 
         yield
@@ -107,7 +107,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
         with suppress(Exception):
             scheduler_service.shutdown()
         with suppress(Exception):
-            await app.state.telegram.stop()
+            await app.state.discord.stop()
         with suppress(Exception):
             await pubsub.stop()
 

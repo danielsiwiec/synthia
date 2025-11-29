@@ -14,8 +14,8 @@ def app(pgvector_container):
     os.environ["POSTGRES_CONNECTION_STRING"] = pgvector_container
     config = Config(
         memory_user="test_user",
-        telegram_bot_token="test_token",
-        telegram_users="user1:test_chat",
+        discord_bot_token="test_token",
+        discord_users="user1:123456789",
         admin_user="user1",
         postgres_connection_string=pgvector_container,
     )
