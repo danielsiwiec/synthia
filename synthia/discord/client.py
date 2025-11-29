@@ -1,0 +1,216 @@
+import asyncio
+import os
+import random
+import re
+import sys
+
+import discord
+from discord import app_commands
+from dotenv import load_dotenv
+from loguru import logger
+from table2ascii import table2ascii
+
+from synthia.helpers.pubsub import pubsub
+from synthia.service.models import ProgressNotification, ScheduledTaskCompletion
+from synthia.service.task import TaskRequest, TaskService
+
+
+def _format_tables(text: str) -> str:
+    lines = text.split("\n")
+    result = []
+    table_lines = []
+    in_table = False
+
+    for line in lines:
+        is_table_line = re.match(r"^\|.+\|$", line.strip())
+        if is_table_line:
+            if not in_table:
+                in_table = True
+            table_lines.append(line)
+        else:
+            if in_table:
+                result.append(_convert_markdown_table(table_lines))
+                table_lines = []
+                in_table = False
+            result.append(line)
+
+    if in_table:
+        result.append(_convert_markdown_table(table_lines))
+
+    return "\n".join(result)
+
+
+def _convert_markdown_table(lines: list[str]) -> str:
+    rows = []
+    header = None
+    for i, line in enumerate(lines):
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if i == 0:
+            header = cells
+        elif i == 1 and all(re.match(r"^[-:]+$", cell) for cell in cells):
+            continue
+        else:
+            rows.append(cells)
+    return "```\n" + table2ascii(header=header, body=rows) + "\n```"
+
+
+class Discord:
+    def __init__(self, token: str, discord_users_map: dict[str, str], admin_channel_id: str, task_service: TaskService):
+        self.token = token
+        self.authorized_channel_ids = set(discord_users_map.values())
+        self.discord_users_map = discord_users_map
+        self.admin_channel_id = admin_channel_id
+        self.task_service = task_service
+
+        intents = discord.Intents.default()
+        intents.message_content = True
+        self._client = discord.Client(intents=intents)
+        self._tree = app_commands.CommandTree(self._client)
+
+        self._setup_handlers()
+        pubsub.subscribe(ProgressNotification, self._handle_progress_notification)
+        pubsub.subscribe(ScheduledTaskCompletion, self._handle_scheduled_task_completion)
+
+    def _setup_handlers(self):
+        @self._client.event
+        async def on_ready():
+            await self._tree.sync()
+            logger.info(f"discord bot logged in as {self._client.user}")
+            await self._send_message_to_channel(text="*Synthia connected 👋*", channel_id=self.admin_channel_id)
+
+        @self._tree.command(name="task", description="Execute a task")
+        @app_commands.describe(description="The task to execute")
+        async def task_command(interaction: discord.Interaction, description: str):
+            if not self._is_authorized(interaction):
+                await interaction.response.send_message("Unauthorized", ephemeral=True)
+                return
+
+            await interaction.response.defer()
+            await self._add_reaction(interaction)
+
+            channel_id = str(interaction.channel_id)
+            user = self._get_user_from_channel_id(channel_id)
+            result = await self.task_service.process_task(TaskRequest(task=description, user=user), resume=False)
+            await self._send_followup(interaction, result.result)
+
+        @self._tree.command(name="stop", description="Stop the current task")
+        async def stop_command(interaction: discord.Interaction):
+            if not self._is_authorized(interaction):
+                await interaction.response.send_message("Unauthorized", ephemeral=True)
+                return
+
+            await interaction.response.defer()
+            await self._add_reaction(interaction)
+
+            stopped = await self.task_service.stop_current_task()
+            if stopped:
+                await interaction.followup.send("🛑 task stopped")
+
+        @self._client.event
+        async def on_message(message: discord.Message):
+            if message.author == self._client.user:
+                return
+
+            if message.content.startswith("/"):
+                return
+
+            channel_id = str(message.channel.id)
+            if channel_id not in self.authorized_channel_ids:
+                return
+
+            await self._add_message_reaction(message)
+
+            user = self._get_user_from_channel_id(channel_id)
+            result = await self.task_service.process_task(TaskRequest(task=message.content, user=user), resume=True)
+            await self._send_message_to_channel(text=result.result, channel_id=channel_id)
+
+    async def start(self):
+        try:
+            self._task = asyncio.create_task(self._client.start(self.token))
+            await asyncio.sleep(2)
+        except Exception as _e:
+            logger.error(f"discord bot failed to start: {_e}")
+
+    async def stop(self):
+        await self._client.close()
+        if hasattr(self, "_task"):
+            self._task.cancel()
+
+    def _is_authorized(self, interaction: discord.Interaction) -> bool:
+        channel_id = str(interaction.channel_id)
+        if channel_id not in self.authorized_channel_ids:
+            logger.warning(f"unauthorized channel_id {channel_id} from user {interaction.user.id}")
+            return False
+        return True
+
+    def _get_user_from_channel_id(self, channel_id: str) -> str | None:
+        return next(
+            (user for user, user_channel_id in self.discord_users_map.items() if user_channel_id == channel_id), None
+        )
+
+    async def _send_message_to_channel(self, text: str, channel_id: str, silent: bool = False):
+        channel = self._client.get_channel(int(channel_id))
+        if not channel or not isinstance(channel, discord.TextChannel):
+            logger.error(f"channel {channel_id} not found or not a text channel")
+            return
+        await channel.send(_format_tables(text), suppress_embeds=True, silent=silent)
+
+    async def _send_followup(self, interaction: discord.Interaction, text: str):
+        await interaction.followup.send(_format_tables(text), suppress_embeds=True)
+
+    async def _add_reaction(self, interaction: discord.Interaction):
+        emojis = ["👍", "👌", "🫡"]
+        emoji = random.choice(emojis)
+        try:
+            if interaction.message:
+                await interaction.message.add_reaction(emoji)
+        except Exception as _e:
+            logger.error(f"failed to react to message: {_e}", exc_info=True)
+
+    async def _add_message_reaction(self, message: discord.Message):
+        emojis = ["👍", "👌", "🫡"]
+        emoji = random.choice(emojis)
+        try:
+            await message.add_reaction(emoji)
+        except Exception as _e:
+            logger.error(f"failed to react to message: {_e}", exc_info=True)
+
+    async def _handle_progress_notification(self, notification: ProgressNotification):
+        emojis = ["⚙️", "🤔", "💭", "💡"]
+        emoji = random.choice(emojis)
+        if notification.user and notification.user in self.discord_users_map:
+            await self._send_message_to_channel(
+                text=f"{emoji} *{notification.summary}*",
+                channel_id=self.discord_users_map[notification.user],
+                silent=True,
+            )
+
+    async def _handle_scheduled_task_completion(self, completion: ScheduledTaskCompletion):
+        await self._send_message_to_channel(
+            text=f"✅ *Task '{completion.name}' completed*", channel_id=self.admin_channel_id
+        )
+
+
+async def _send_to_admin(message: str):
+    load_dotenv()
+    token = os.environ["DISCORD_BOT_TOKEN"]
+    admin_channel_id = "1444031662710325471"
+
+    intents = discord.Intents.default()
+    client = discord.Client(intents=intents)
+
+    @client.event
+    async def on_ready():
+        channel = client.get_channel(int(admin_channel_id))
+        if channel and isinstance(channel, discord.TextChannel):
+            await channel.send(_format_tables(message))
+        await client.close()
+
+    await client.start(token)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python -m synthia.discord.client <message>")
+        sys.exit(1)
+    asyncio.run(_send_to_admin(" ".join(sys.argv[1:])))

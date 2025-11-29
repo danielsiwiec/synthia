@@ -10,8 +10,8 @@ services:
       - "8003:8003"
     environment:
       - MEMORY_USER=${MEMORY_USER:-}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - TELEGRAM_USERS=${TELEGRAM_USERS:-}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      - DISCORD_USERS=${DISCORD_USERS:-}
       - ADMIN_USER=${ADMIN_USER:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - POSTGRES_CONNECTION_STRING=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@pgvector:5432/vector_store
