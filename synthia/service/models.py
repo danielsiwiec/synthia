@@ -19,8 +19,8 @@ class TaskCompletion(BaseModel):
     session_id: str
 
 
-class ScheduledTaskCompletion(BaseModel):
-    name: str
+class AdminNotification(BaseModel):
+    content: str
 
 
 class ProgressNotification(BaseModel):
