@@ -24,7 +24,7 @@ type:
 	uv run ty check .
 
 up:
-	docker-compose up --build -d
+	docker-compose up --build -d --remove-orphans
 
 down:
 	docker-compose down

@@ -145,6 +145,7 @@ class ClaudeAgent:
 
         mcp_servers = {
             "browser": McpHttpServerConfig(type="http", url="http://host.docker.internal:8931/mcp"),
+            "google": McpHttpServerConfig(type="http", url="http://google-mcp:8000/mcp"),
             **self._mcp_servers,
         }
 
