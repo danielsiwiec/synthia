@@ -88,7 +88,7 @@ class Discord:
             thread_name = description[:100] if len(description) <= 100 else description[:97] + "..."
             thread = await message.create_thread(name=thread_name)
 
-            request = TaskRequest(task=description, thread_id=str(thread.id))
+            request = TaskRequest(task=description, thread_id=thread.id)
             result = await self.task_service.process_task(request, resume=False)
             await self._send_message_to_thread(thread, result.result)
 
@@ -122,7 +122,7 @@ class Discord:
 
                 await self._add_message_reaction(message)
 
-                request = TaskRequest(task=message.content, thread_id=str(message.channel.id))
+                request = TaskRequest(task=message.content, thread_id=message.channel.id)
                 result = await self.task_service.process_task(request, resume=True)
                 await self._send_message_to_thread(message.channel, result.result)
             elif isinstance(message.channel, discord.TextChannel):
@@ -135,7 +135,7 @@ class Discord:
                 thread_name = message.content[:100] if len(message.content) <= 100 else message.content[:97] + "..."
                 thread = await message.create_thread(name=thread_name)
 
-                request = TaskRequest(task=message.content, thread_id=str(thread.id))
+                request = TaskRequest(task=message.content, thread_id=thread.id)
                 result = await self.task_service.process_task(request, resume=False)
                 await self._send_message_to_thread(thread, result.result)
 
@@ -204,7 +204,7 @@ class Discord:
         emojis = ["⚙️", "🤔", "💭", "💡"]
         emoji = random.choice(emojis)
         if notification.thread_id:
-            thread = self._client.get_channel(int(notification.thread_id))
+            thread = self._client.get_channel(notification.thread_id)
             if thread and isinstance(thread, discord.Thread):
                 await thread.send(f"{emoji} *{notification.summary}*", silent=True)
 

@@ -16,7 +16,7 @@ class Summary(BaseModel):
 _messages_by_session: dict[str, list[str]] = defaultdict(list)
 
 
-async def _summarize_messages(session_id: str, thread_id: str | None):
+async def _summarize_messages(session_id: str, thread_id: int | None):
     messages = _messages_by_session[session_id]
     if not messages:
         return

@@ -32,7 +32,7 @@ If you encounter access issues using the web search tool, try using the browser 
 
 class ToolCall(BaseModel):
     session_id: str
-    thread_id: str | None = None
+    thread_id: int | None = None
     name: str
     input: dict
     output: str | None = None
@@ -51,7 +51,7 @@ class ToolCall(BaseModel):
 
 class Result(BaseModel):
     session_id: str
-    thread_id: str | None = None
+    thread_id: int | None = None
     success: bool
     result: str
     error: str | None = None
@@ -64,7 +64,7 @@ class Result(BaseModel):
 
 class InitMessage(BaseModel):
     session_id: str
-    thread_id: str | None = None
+    thread_id: int | None = None
     prompt: str
 
     def render(self, short: bool = False) -> str:
@@ -84,7 +84,7 @@ class ClaudeAgent:
         self._mcp_servers = mcp_servers or {}
 
     def _parse_message(
-        self, message: Any, tool_calls: dict[str, ToolCall], session_id: str, thread_id: str | None
+        self, message: Any, tool_calls: dict[str, ToolCall], session_id: str, thread_id: int | None
     ) -> Any | None:
         if isinstance(message, ResultMessage):
             return Result(
@@ -138,7 +138,7 @@ class ClaudeAgent:
         self,
         objective: str,
         resume_from_session: str | None = None,
-        thread_id: str | None = None,
+        thread_id: int | None = None,
     ) -> AsyncIterator[Any]:
         cwd = Path(__file__).parent.parent.parent / "claude_home"
         cwd.mkdir(parents=True, exist_ok=True)
@@ -188,7 +188,7 @@ class ClaudeAgent:
         self,
         objective: str,
         resume_from_session: str | None = None,
-        thread_id: str | None = None,
+        thread_id: int | None = None,
     ) -> Result | None:
         async for message in self.run(objective, resume_from_session=resume_from_session, thread_id=thread_id):
             await pubsub.publish(message)
