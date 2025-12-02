@@ -1,17 +1,14 @@
 import asyncio
-import os
 import random
 import re
-import sys
 
 import discord
 from discord import app_commands
-from dotenv import load_dotenv
 from loguru import logger
 from table2ascii import table2ascii
 
 from synthia.helpers.pubsub import pubsub
-from synthia.service.models import ProgressNotification, ScheduledTaskCompletion
+from synthia.service.models import AdminNotification, ProgressNotification
 from synthia.service.task import TaskRequest, TaskService
 
 
@@ -69,7 +66,7 @@ class Discord:
 
         self._setup_handlers()
         pubsub.subscribe(ProgressNotification, self._handle_progress_notification)
-        pubsub.subscribe(ScheduledTaskCompletion, self._handle_scheduled_task_completion)
+        pubsub.subscribe(AdminNotification, self._handle_admin_notification)
 
     def _setup_handlers(self):
         @self._client.event
@@ -211,32 +208,5 @@ class Discord:
             if thread and isinstance(thread, discord.Thread):
                 await thread.send(f"{emoji} *{notification.summary}*", silent=True)
 
-    async def _handle_scheduled_task_completion(self, completion: ScheduledTaskCompletion):
-        await self._send_message_to_channel(
-            text=f"✅ *Task '{completion.name}' completed*", channel_id=self.admin_channel_id
-        )
-
-
-async def _send_to_admin(message: str):
-    load_dotenv()
-    token = os.environ["DISCORD_BOT_TOKEN"]
-    admin_channel_id = "1444031662710325471"
-
-    intents = discord.Intents.default()
-    client = discord.Client(intents=intents)
-
-    @client.event
-    async def on_ready():
-        channel = client.get_channel(int(admin_channel_id))
-        if channel and isinstance(channel, discord.TextChannel):
-            await channel.send(_format_tables(message))
-        await client.close()
-
-    await client.start(token)
-
-
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python -m synthia.discord.client <message>")
-        sys.exit(1)
-    asyncio.run(_send_to_admin(" ".join(sys.argv[1:])))
+    async def _handle_admin_notification(self, notification: AdminNotification):
+        await self._send_message_to_channel(text=notification.content, channel_id=self.admin_channel_id)

@@ -4,7 +4,7 @@ from synthia.agents.claude import ClaudeAgent
 from synthia.helpers.pubsub import pubsub
 from synthia.helpers.schema import validate_schema
 from synthia.output import parse_from_schema
-from synthia.service.models import ScheduledTaskCompletion, TaskCompletion, TaskRequest, TaskResponse, TaskTrigger
+from synthia.service.models import AdminNotification, TaskCompletion, TaskRequest, TaskResponse, TaskTrigger
 
 
 class TaskService:
@@ -16,7 +16,7 @@ class TaskService:
 
     async def _handle_scheduled_task(self, trigger: TaskTrigger) -> None:
         await self.process_task(TaskRequest(task=trigger.task))
-        await pubsub.publish(ScheduledTaskCompletion(name=trigger.name))
+        await pubsub.publish(AdminNotification(content=f"✅ *Task '{trigger.name}' completed*"))
 
     async def process_task(self, request: TaskRequest, resume: bool = False) -> TaskResponse:
         validate_schema(request.response_schema)

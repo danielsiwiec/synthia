@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException
 from loguru import logger
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from synthia.agents.admin.client import create_admin_mcp_server
 from synthia.agents.claude import ClaudeAgent
 from synthia.agents.memory.client import create_memory_client, create_memory_mcp_server
 from synthia.agents.scheduler.client import create_scheduler_mcp_server
@@ -83,10 +84,13 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
         scheduler_service = SchedulerService(postgres_url=config.postgres_connection_string)
         scheduler_mcp_server = create_scheduler_mcp_server(scheduler_service)
 
+        admin_mcp_server = create_admin_mcp_server()
+
         claude_agent = ClaudeAgent(
             mcp_servers={
                 "memory": memory_mcp_server,
                 "scheduler": scheduler_mcp_server,
+                "admin": admin_mcp_server,
             },
         )
         task_service = TaskService(claude_agent)
