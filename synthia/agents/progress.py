@@ -16,7 +16,7 @@ class Summary(BaseModel):
 _messages_by_session: dict[str, list[str]] = defaultdict(list)
 
 
-async def _summarize_messages(session_id: str, user: str | None = None):
+async def _summarize_messages(session_id: str, thread_id: str | None):
     messages = _messages_by_session[session_id]
     if not messages:
         return
@@ -32,7 +32,7 @@ async def _summarize_messages(session_id: str, user: str | None = None):
     )
     result = cast(Summary, await model.with_structured_output(Summary).ainvoke(prompt))
 
-    await pubsub.publish(ProgressNotification(session_id=session_id, summary=result.summary, user=user))
+    await pubsub.publish(ProgressNotification(session_id=session_id, summary=result.summary, thread_id=thread_id))
 
 
 async def analyze_progress(message: Message):
@@ -52,5 +52,5 @@ async def analyze_progress(message: Message):
     _messages_by_session[session_id].append(message.render(short=True))
 
     if len(_messages_by_session[session_id]) % 3 == 0:
-        await _summarize_messages(session_id, message.user)
+        await _summarize_messages(session_id, message.thread_id)
         _messages_by_session[session_id] = []

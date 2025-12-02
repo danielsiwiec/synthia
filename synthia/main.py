@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import sys
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -84,7 +84,6 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
         scheduler_mcp_server = create_scheduler_mcp_server(scheduler_service)
 
         claude_agent = ClaudeAgent(
-            user=config.memory_user,
             mcp_servers={
                 "memory": memory_mcp_server,
                 "scheduler": scheduler_mcp_server,
@@ -104,12 +103,9 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
         yield
 
-        with suppress(Exception):
-            scheduler_service.shutdown()
-        with suppress(Exception):
-            await app.state.discord.stop()
-        with suppress(Exception):
-            await pubsub.stop()
+        scheduler_service.shutdown()
+        await app.state.discord.stop()
+        await pubsub.stop()
 
     app = FastAPI(
         title="Synthia", description="FastAPI application with Claude Agent SDK integration", lifespan=lifespan

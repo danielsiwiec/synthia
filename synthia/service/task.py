@@ -27,7 +27,7 @@ class TaskService:
             self._claude_agent.run_for_result(
                 objective=request.task,
                 resume_from_session=resume_from_session,
-                user=request.user,
+                thread_id=request.thread_id,
             )
         )
         self._current_task = task

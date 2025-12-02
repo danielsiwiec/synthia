@@ -32,11 +32,11 @@ If you encounter access issues using the web search tool, try using the browser 
 
 class ToolCall(BaseModel):
     session_id: str
+    thread_id: str | None = None
     name: str
     input: dict
     output: str | None = None
     error: str | None = None
-    user: str | None = None
 
     def render(self, short: bool = False) -> str:
         parts = ["🔧"]
@@ -51,10 +51,10 @@ class ToolCall(BaseModel):
 
 class Result(BaseModel):
     session_id: str
+    thread_id: str | None = None
     success: bool
     result: str
     error: str | None = None
-    user: str | None = None
 
     def render(self, short: bool = False) -> str:
         parts = ["✅" if self.success else "🔴"]
@@ -64,8 +64,8 @@ class Result(BaseModel):
 
 class InitMessage(BaseModel):
     session_id: str
+    thread_id: str | None = None
     prompt: str
-    user: str | None = None
 
     def render(self, short: bool = False) -> str:
         parts = ["⚙️"]
@@ -79,21 +79,19 @@ Message = ToolCall | Result | InitMessage
 class ClaudeAgent:
     def __init__(
         self,
-        user: str,
         mcp_servers: dict[str, McpServerConfig] | None = None,
     ):
-        self.user = user
         self._mcp_servers = mcp_servers or {}
 
     def _parse_message(
-        self, message: Any, tool_calls: dict[str, ToolCall], session_id: str, user: str | None = None
+        self, message: Any, tool_calls: dict[str, ToolCall], session_id: str, thread_id: str | None
     ) -> Any | None:
         if isinstance(message, ResultMessage):
             return Result(
                 session_id=message.session_id,
+                thread_id=thread_id,
                 success=message.subtype == "success",
                 result=message.result.strip(),
-                user=user,
             )
 
         if not isinstance(message, (UserMessage, AssistantMessage)):
@@ -110,9 +108,9 @@ class ClaudeAgent:
                     if tool_use_id:
                         tool_calls[tool_use_id] = ToolCall(
                             session_id=session_id,
+                            thread_id=thread_id,
                             name=getattr(block, "name", ""),
                             input=getattr(block, "input", {}),
-                            user=user,
                         )
 
                 case "ToolResultBlock":
@@ -127,11 +125,11 @@ class ClaudeAgent:
                         tool_call = tool_calls.pop(tool_use_id)
                         return ToolCall(
                             session_id=tool_call.session_id,
+                            thread_id=tool_call.thread_id,
                             name=tool_call.name,
                             input=tool_call.input,
                             output=output.strip(),
                             error="Error occurred" if getattr(block, "is_error", False) else None,
-                            user=user,
                         )
 
         return None
@@ -140,7 +138,7 @@ class ClaudeAgent:
         self,
         objective: str,
         resume_from_session: str | None = None,
-        user: str | None = None,
+        thread_id: str | None = None,
     ) -> AsyncIterator[Any]:
         cwd = Path(__file__).parent.parent.parent / "claude_home"
         cwd.mkdir(parents=True, exist_ok=True)
@@ -172,11 +170,11 @@ class ClaudeAgent:
                 await pubsub.publish(message)
                 if isinstance(message, SystemMessage):
                     session_id = message.data["session_id"]
-                    yield InitMessage(session_id=message.data["session_id"], prompt=objective, user=user)
+                    yield InitMessage(session_id=message.data["session_id"], thread_id=thread_id, prompt=objective)
                     continue
                 if session_id is None:
                     raise ValueError("Session ID is not set")
-                if transformed := self._parse_message(message, tool_calls, session_id, user):
+                if transformed := self._parse_message(message, tool_calls, session_id, thread_id):
                     yield transformed
                     if isinstance(transformed, Result):
                         break
@@ -190,9 +188,9 @@ class ClaudeAgent:
         self,
         objective: str,
         resume_from_session: str | None = None,
-        user: str | None = None,
+        thread_id: str | None = None,
     ) -> Result | None:
-        async for message in self.run(objective, resume_from_session=resume_from_session, user=user):
+        async for message in self.run(objective, resume_from_session=resume_from_session, thread_id=thread_id):
             await pubsub.publish(message)
             if isinstance(message, Result):
                 return message

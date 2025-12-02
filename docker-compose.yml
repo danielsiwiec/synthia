@@ -8,12 +8,9 @@ services:
         USER_GID: ${USER_GID:-20}
     ports:
       - "8003:8003"
+    env_file:
+      - .env
     environment:
-      - MEMORY_USER=${MEMORY_USER:-}
-      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
-      - DISCORD_USERS=${DISCORD_USERS:-}
-      - ADMIN_USER=${ADMIN_USER:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - POSTGRES_CONNECTION_STRING=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@pgvector:5432/vector_store
       - HOME=/home/synthia
     depends_on:
