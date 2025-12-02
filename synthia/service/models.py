@@ -15,10 +15,6 @@ class TaskResponse(BaseModel):
     session_id: str
 
 
-class TaskCompletion(BaseModel):
-    session_id: str
-
-
 class AdminNotification(BaseModel):
     content: str
 

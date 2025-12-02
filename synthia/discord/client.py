@@ -55,7 +55,6 @@ class Discord:
     def __init__(self, token: str, discord_users_map: dict[str, str], admin_channel_id: str, task_service: TaskService):
         self.token = token
         self.authorized_channel_ids = set(discord_users_map.values())
-        self.discord_users_map = discord_users_map
         self.admin_channel_id = admin_channel_id
         self.task_service = task_service
 
@@ -164,11 +163,6 @@ class Discord:
             logger.warning(f"unauthorized thread parent channel_id {parent_channel_id}")
             return False
         return True
-
-    def _get_user_from_channel_id(self, channel_id: str) -> str | None:
-        return next(
-            (user for user, user_channel_id in self.discord_users_map.items() if user_channel_id == channel_id), None
-        )
 
     async def _send_message_to_thread(self, thread: discord.Thread, text: str):
         await thread.send(_format_tables(text), suppress_embeds=True)

@@ -36,11 +36,9 @@ logger.add(
 def _register_handlers():
     from synthia.agents.claude import Message
     from synthia.agents.progress import analyze_progress
-    from synthia.service.models import TaskCompletion
 
     pubsub.subscribe(Message, lambda message: logger.info(f"{message.render()}"))
     pubsub.subscribe(Message, analyze_progress)
-    pubsub.subscribe(TaskCompletion, lambda c: None)
 
 
 class Config(BaseSettings):
