@@ -5,9 +5,9 @@ from pydantic import BaseModel
 
 class TaskRequest(BaseModel):
     task: str
-    user: str | None = None
     response_schema: dict[str, Any] | None = None
     resume: bool = False
+    thread_id: str | None = None
 
 
 class TaskResponse(BaseModel):
@@ -26,7 +26,7 @@ class ScheduledTaskCompletion(BaseModel):
 class ProgressNotification(BaseModel):
     session_id: str
     summary: str
-    user: str | None = None
+    thread_id: str | None = None
 
 
 class TaskTrigger(BaseModel):

@@ -85,22 +85,27 @@ class Discord:
                 await interaction.response.send_message("Unauthorized", ephemeral=True)
                 return
 
-            await interaction.response.defer()
-            await self._add_reaction(interaction)
+            await interaction.response.send_message(f"**Task:** {description}")
+            message = await interaction.original_response()
 
-            channel_id = str(interaction.channel_id)
-            user = self._get_user_from_channel_id(channel_id)
-            result = await self.task_service.process_task(TaskRequest(task=description, user=user), resume=False)
-            await self._send_followup(interaction, result.result)
+            thread_name = description[:100] if len(description) <= 100 else description[:97] + "..."
+            thread = await message.create_thread(name=thread_name)
+
+            request = TaskRequest(task=description, thread_id=str(thread.id))
+            result = await self.task_service.process_task(request, resume=False)
+            await self._send_message_to_thread(thread, result.result)
 
         @self._tree.command(name="stop", description="Stop the current task")
         async def stop_command(interaction: discord.Interaction):
-            if not self._is_authorized(interaction):
+            if not isinstance(interaction.channel, discord.Thread):
+                await interaction.response.send_message("⚠️ /stop can only be used inside a task thread", ephemeral=True)
+                return
+
+            if not self._is_authorized_thread(interaction.channel):
                 await interaction.response.send_message("Unauthorized", ephemeral=True)
                 return
 
             await interaction.response.defer()
-            await self._add_reaction(interaction)
 
             stopped = await self.task_service.stop_current_task()
             if stopped:
@@ -114,15 +119,28 @@ class Discord:
             if message.content.startswith("/"):
                 return
 
-            channel_id = str(message.channel.id)
-            if channel_id not in self.authorized_channel_ids:
-                return
+            if isinstance(message.channel, discord.Thread):
+                if not self._is_authorized_thread(message.channel):
+                    return
 
-            await self._add_message_reaction(message)
+                await self._add_message_reaction(message)
 
-            user = self._get_user_from_channel_id(channel_id)
-            result = await self.task_service.process_task(TaskRequest(task=message.content, user=user), resume=True)
-            await self._send_message_to_channel(text=result.result, channel_id=channel_id)
+                request = TaskRequest(task=message.content, thread_id=str(message.channel.id))
+                result = await self.task_service.process_task(request, resume=True)
+                await self._send_message_to_thread(message.channel, result.result)
+            elif isinstance(message.channel, discord.TextChannel):
+                channel_id = str(message.channel.id)
+                if channel_id not in self.authorized_channel_ids:
+                    return
+
+                await self._add_message_reaction(message)
+
+                thread_name = message.content[:100] if len(message.content) <= 100 else message.content[:97] + "..."
+                thread = await message.create_thread(name=thread_name)
+
+                request = TaskRequest(task=message.content, thread_id=str(thread.id))
+                result = await self.task_service.process_task(request, resume=False)
+                await self._send_message_to_thread(thread, result.result)
 
     async def start(self):
         try:
@@ -143,10 +161,20 @@ class Discord:
             return False
         return True
 
+    def _is_authorized_thread(self, thread: discord.Thread) -> bool:
+        parent_channel_id = str(thread.parent_id)
+        if parent_channel_id not in self.authorized_channel_ids:
+            logger.warning(f"unauthorized thread parent channel_id {parent_channel_id}")
+            return False
+        return True
+
     def _get_user_from_channel_id(self, channel_id: str) -> str | None:
         return next(
             (user for user, user_channel_id in self.discord_users_map.items() if user_channel_id == channel_id), None
         )
+
+    async def _send_message_to_thread(self, thread: discord.Thread, text: str):
+        await thread.send(_format_tables(text), suppress_embeds=True)
 
     async def _send_message_to_channel(self, text: str, channel_id: str, silent: bool = False):
         channel = self._client.get_channel(int(channel_id))
@@ -178,12 +206,10 @@ class Discord:
     async def _handle_progress_notification(self, notification: ProgressNotification):
         emojis = ["⚙️", "🤔", "💭", "💡"]
         emoji = random.choice(emojis)
-        if notification.user and notification.user in self.discord_users_map:
-            await self._send_message_to_channel(
-                text=f"{emoji} *{notification.summary}*",
-                channel_id=self.discord_users_map[notification.user],
-                silent=True,
-            )
+        if notification.thread_id:
+            thread = self._client.get_channel(int(notification.thread_id))
+            if thread and isinstance(thread, discord.Thread):
+                await thread.send(f"{emoji} *{notification.summary}*", silent=True)
 
     async def _handle_scheduled_task_completion(self, completion: ScheduledTaskCompletion):
         await self._send_message_to_channel(
