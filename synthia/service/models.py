@@ -10,6 +10,7 @@ class TaskRequest(BaseModel):
 
 
 class TaskResponse(BaseModel):
+    thread_id: int
     result: Any
     session_id: str
 
@@ -27,3 +28,7 @@ class ProgressNotification(BaseModel):
 class TaskTrigger(BaseModel):
     task: str
     name: str
+
+
+class StopTaskRequest(BaseModel):
+    thread_id: int
