@@ -56,6 +56,33 @@ def _convert_markdown_table(lines: list[str]) -> str:
     return "```\n" + table2ascii(header=header, body=rows) + "\n```"
 
 
+def _split_message(text: str, max_length: int = 2000) -> list[str]:
+    if len(text) <= max_length:
+        return [text]
+
+    chunks: list[str] = []
+    current_chunk: str = ""
+
+    for line in text.split("\n"):
+        if len(line) > max_length:
+            if current_chunk:
+                chunks.append(current_chunk)
+                current_chunk = ""
+            for i in range(0, len(line), max_length):
+                chunks.append(line[i : i + max_length])
+        elif len(current_chunk) + len(line) + 1 <= max_length:
+            current_chunk = f"{current_chunk}\n{line}" if current_chunk else line
+        else:
+            if current_chunk:
+                chunks.append(current_chunk)
+            current_chunk = line
+
+    if current_chunk:
+        chunks.append(current_chunk)
+
+    return chunks
+
+
 class Discord:
     def __init__(self, token: str, authorized_channels: list[str], admin_channel_id: str):
         self.token = token
@@ -162,14 +189,16 @@ class Discord:
         return True
 
     async def _send_message_to_thread(self, thread: discord.Thread, text: str):
-        await thread.send(_format_tables(text), suppress_embeds=True)
+        for chunk in _split_message(_format_tables(text)):
+            await thread.send(chunk, suppress_embeds=True)
 
     async def _send_message_to_channel(self, text: str, channel_id: str, silent: bool = False):
         channel = self._client.get_channel(int(channel_id))
         if not channel or not isinstance(channel, discord.TextChannel):
             logger.error(f"channel {channel_id} not found or not a text channel")
             return
-        await channel.send(_format_tables(text), suppress_embeds=True, silent=silent)
+        for chunk in _split_message(_format_tables(text)):
+            await channel.send(chunk, suppress_embeds=True, silent=silent)
 
     async def _send_followup(self, interaction: discord.Interaction, text: str):
         await interaction.followup.send(_format_tables(text), suppress_embeds=True)
