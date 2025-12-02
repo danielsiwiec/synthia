@@ -46,27 +46,13 @@ class Config(BaseSettings):
 
     memory_user: str
     discord_bot_token: str
-    discord_users: str
-    admin_user: str
+    discord_channels: str
+    admin_channel: str
     postgres_connection_string: str = ""
 
     @property
-    def discord_users_map(self) -> dict[str, str]:
-        if not self.discord_users:
-            return {}
-        return {
-            user.strip(): channel_id.strip()
-            for pair in self.discord_users.split(",")
-            if ":" in pair
-            for user, channel_id in [pair.split(":", 1)]
-        }
-
-    @property
-    def admin_channel_id(self) -> str:
-        channel_id = self.discord_users_map.get(self.admin_user)
-        if not channel_id:
-            raise ValueError(f"admin_user '{self.admin_user}' not found in discord_users")
-        return channel_id
+    def discord_channels_list(self) -> list[str]:
+        return [channel.strip() for channel in self.discord_channels.split(",")]
 
 
 def create_app(config_overrides: Config | None = None) -> FastAPI:
@@ -97,7 +83,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
         app.state.task_service = task_service
         app.state.scheduler_service = scheduler_service
-        app.state.discord = Discord(config.discord_bot_token, config.discord_users_map, config.admin_channel_id)
+        app.state.discord = Discord(config.discord_bot_token, config.discord_channels_list, config.admin_channel)
         await app.state.discord.start()
         await pubsub.start()
 

@@ -15,8 +15,8 @@ def app(pgvector_container):
     config = Config(
         memory_user="test_user",
         discord_bot_token="test_token",
-        discord_users="user1:123456789",
-        admin_user="user1",
+        discord_channels="123456789",
+        admin_channel="123456789",
         postgres_connection_string=pgvector_container,
     )
     app_instance = create_app(config)
