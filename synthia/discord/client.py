@@ -200,20 +200,8 @@ class Discord:
         for chunk in _split_message(_format_tables(text)):
             await channel.send(chunk, suppress_embeds=True, silent=silent)
 
-    async def _send_followup(self, interaction: discord.Interaction, text: str):
-        await interaction.followup.send(_format_tables(text), suppress_embeds=True)
-
-    async def _add_reaction(self, interaction: discord.Interaction):
-        emojis = ["👍", "👌", "🫡"]
-        emoji = random.choice(emojis)
-        try:
-            if interaction.message:
-                await interaction.message.add_reaction(emoji)
-        except Exception as _e:
-            logger.error(f"failed to react to message: {_e}", exc_info=True)
-
     async def _add_message_reaction(self, message: discord.Message):
-        emojis = ["👍", "👌", "🫡"]
+        emojis = ["👍", "👌", "🫡", "🚀", "✨"]
         emoji = random.choice(emojis)
         try:
             await message.add_reaction(emoji)
@@ -221,7 +209,7 @@ class Discord:
             logger.error(f"failed to react to message: {_e}", exc_info=True)
 
     async def _handle_progress_notification(self, notification: ProgressNotification):
-        emojis = ["⚙️", "🤔", "💭", "💡"]
+        emojis = ["⚙️", "🤔", "💭", "💡", "🏃‍♂️"]
         emoji = random.choice(emojis)
         if notification.thread_id:
             thread = self._client.get_channel(notification.thread_id)
