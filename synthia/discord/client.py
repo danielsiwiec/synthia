@@ -88,7 +88,7 @@ class Discord:
             thread = await message.create_thread(name=thread_name)
 
             request = TaskRequest(task=description, thread_id=thread.id)
-            result = await self.task_service.process_task(request, resume=False)
+            result = await self.task_service.process_task(request)
             await self._send_message_to_thread(thread, result.result)
 
         @self._tree.command(name="stop", description="Stop the current task")
@@ -103,7 +103,7 @@ class Discord:
 
             await interaction.response.defer()
 
-            stopped = await self.task_service.stop_current_task()
+            stopped = await self.task_service.stop_task(interaction.channel.id)
             if stopped:
                 await interaction.followup.send("🛑 task stopped")
 
@@ -122,7 +122,7 @@ class Discord:
                 await self._add_message_reaction(message)
 
                 request = TaskRequest(task=message.content, thread_id=message.channel.id)
-                result = await self.task_service.process_task(request, resume=True)
+                result = await self.task_service.process_task(request)
                 await self._send_message_to_thread(message.channel, result.result)
             elif isinstance(message.channel, discord.TextChannel):
                 channel_id = str(message.channel.id)
@@ -135,7 +135,7 @@ class Discord:
                 thread = await message.create_thread(name=thread_name)
 
                 request = TaskRequest(task=message.content, thread_id=thread.id)
-                result = await self.task_service.process_task(request, resume=False)
+                result = await self.task_service.process_task(request)
                 await self._send_message_to_thread(thread, result.result)
 
     async def start(self):

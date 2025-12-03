@@ -42,7 +42,7 @@ async def client(app, lifespan_context):
 
 
 async def test_task_endpoint_basic_math(client):
-    response = await client.post("/task", json={"task": "what's 2 + 2?"})
+    response = await client.post("/task", json={"task": "what's 2 + 2?", "thread_id": 1})
 
     assert response.status_code == 200
     data = response.json()
@@ -59,7 +59,11 @@ async def test_ultimate_e2e(client):
         "required": ["number_of_legs"],
     }
 
-    response = await client.post("/task", json={"task": "how many legs does a dog have?", "response_schema": schema})
+    main_thread_id = 888888
+
+    response = await client.post(
+        "/task", json={"task": "how many legs does a dog have?", "response_schema": schema, "thread_id": main_thread_id}
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -68,21 +72,25 @@ async def test_ultimate_e2e(client):
     assert isinstance(data["result"], dict)
     assert data["result"]["number_of_legs"] == 4
 
+    stop_thread_id = 999999
+
     async def run_wait_task():
-        return await client.post("/task", json={"task": "wait 60 seconds, then say 'hello'"}, timeout=30.0)
+        return await client.post(
+            "/task", json={"task": "wait 60 seconds, then say 'hello'", "thread_id": stop_thread_id}, timeout=30.0
+        )
 
     task = asyncio.create_task(run_wait_task())
 
     await asyncio.sleep(0.5)
 
-    stop_response = await client.post("/stop")
+    stop_response = await client.post("/stop", params={"thread_id": stop_thread_id})
     assert stop_response.status_code == 200
 
     result = await asyncio.wait_for(task, timeout=6.0)
     assert result.status_code == 499, "Task should return 499 when cancelled"
 
     follow_up_response = await client.post(
-        "/task", json={"task": "what was that number again?", "response_schema": schema, "resume": True}
+        "/task", json={"task": "what was that number again?", "response_schema": schema, "thread_id": main_thread_id}
     )
 
     assert follow_up_response.status_code == 200
@@ -98,7 +106,9 @@ async def test_task_endpoint_with_invalid_schema(client):
         "properties": {"result": {"type": "number"}},
     }
 
-    response = await client.post("/task", json={"task": "what's 2 + 2?", "response_schema": invalid_schema})
+    response = await client.post(
+        "/task", json={"task": "what's 2 + 2?", "response_schema": invalid_schema, "thread_id": 2}
+    )
 
     assert response.status_code == 400
     data = response.json()
@@ -112,7 +122,9 @@ async def test_skill(client):
         "required": ["pebble"],
     }
 
-    response = await client.post("/task", json={"task": "convert 2 kilo to pebble units", "response_schema": schema})
+    response = await client.post(
+        "/task", json={"task": "convert 2 kilo to pebble units", "response_schema": schema, "thread_id": 3}
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -131,11 +143,14 @@ async def test_health_endpoint(client):
 
 async def test_memories(client):
     favorite_number = random.randint(1, 1000)
+    thread_id = 4
 
-    first_response = await client.post("/task", json={"task": f"remember my favorite number is {favorite_number}"})
+    first_response = await client.post(
+        "/task", json={"task": f"remember my favorite number is {favorite_number}", "thread_id": thread_id}
+    )
     assert first_response.status_code == 200
 
-    second_response = await client.post("/task", json={"task": "what's my favorite number?"})
+    second_response = await client.post("/task", json={"task": "what's my favorite number?", "thread_id": thread_id})
 
     assert second_response.status_code == 200
     second_data = second_response.json()

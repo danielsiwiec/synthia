@@ -117,15 +117,15 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
     async def task(request: TaskRequest) -> TaskResponse:
         task_service: TaskService = app.state.task_service
         try:
-            response = await task_service.process_task(request, resume=request.resume)
+            response = await task_service.process_task(request)
             return response
         except asyncio.CancelledError:
             raise HTTPException(status_code=499, detail="Task was cancelled") from None
 
     @app.post("/stop")
-    async def stop():
+    async def stop(thread_id: int):
         task_service: TaskService = app.state.task_service
-        await task_service.stop_current_task()
+        await task_service.stop_task(thread_id)
 
     @app.get("/health")
     async def health_check():
