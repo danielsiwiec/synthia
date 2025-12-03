@@ -7,7 +7,7 @@ class TaskRequest(BaseModel):
     task: str
     response_schema: dict[str, Any] | None = None
     resume: bool = False
-    thread_id: str | None = None
+    thread_id: int | None = None
 
 
 class TaskResponse(BaseModel):
@@ -26,7 +26,7 @@ class AdminNotification(BaseModel):
 class ProgressNotification(BaseModel):
     session_id: str
     summary: str
-    thread_id: str | None = None
+    thread_id: int | None = None
 
 
 class TaskTrigger(BaseModel):
