@@ -97,9 +97,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
         app.state.task_service = task_service
         app.state.scheduler_service = scheduler_service
-        app.state.discord = Discord(
-            config.discord_bot_token, config.discord_users_map, config.admin_channel_id, task_service
-        )
+        app.state.discord = Discord(config.discord_bot_token, config.discord_users_map, config.admin_channel_id)
         await app.state.discord.start()
         await pubsub.start()
 

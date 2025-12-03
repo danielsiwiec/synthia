@@ -8,8 +8,13 @@ from loguru import logger
 from table2ascii import table2ascii
 
 from synthia.helpers.pubsub import pubsub
-from synthia.service.models import AdminNotification, ProgressNotification
-from synthia.service.task import TaskRequest, TaskService
+from synthia.service.models import (
+    AdminNotification,
+    ProgressNotification,
+    StopTaskRequest,
+    TaskRequest,
+    TaskResponse,
+)
 
 
 def _format_tables(text: str) -> str:
@@ -52,11 +57,10 @@ def _convert_markdown_table(lines: list[str]) -> str:
 
 
 class Discord:
-    def __init__(self, token: str, discord_users_map: dict[str, str], admin_channel_id: str, task_service: TaskService):
+    def __init__(self, token: str, discord_users_map: dict[str, str], admin_channel_id: str):
         self.token = token
         self.authorized_channel_ids = set(discord_users_map.values())
         self.admin_channel_id = admin_channel_id
-        self.task_service = task_service
 
         intents = discord.Intents.default()
         intents.message_content = True
@@ -66,6 +70,7 @@ class Discord:
         self._setup_handlers()
         pubsub.subscribe(ProgressNotification, self._handle_progress_notification)
         pubsub.subscribe(AdminNotification, self._handle_admin_notification)
+        pubsub.subscribe(TaskResponse, self._handle_task_response)
 
     def _setup_handlers(self):
         @self._client.event
@@ -87,9 +92,7 @@ class Discord:
             thread_name = description[:100] if len(description) <= 100 else description[:97] + "..."
             thread = await message.create_thread(name=thread_name)
 
-            request = TaskRequest(task=description, thread_id=thread.id)
-            result = await self.task_service.process_task(request)
-            await self._send_message_to_thread(thread, result.result)
+            await pubsub.publish(TaskRequest(task=description, thread_id=thread.id))
 
         @self._tree.command(name="stop", description="Stop the current task")
         async def stop_command(interaction: discord.Interaction):
@@ -103,9 +106,8 @@ class Discord:
 
             await interaction.response.defer()
 
-            stopped = await self.task_service.stop_task(interaction.channel.id)
-            if stopped:
-                await interaction.followup.send("🛑 task stopped")
+            await pubsub.publish(StopTaskRequest(thread_id=interaction.channel.id))
+            await interaction.followup.send("🛑 task stopped")
 
         @self._client.event
         async def on_message(message: discord.Message):
@@ -120,10 +122,7 @@ class Discord:
                     return
 
                 await self._add_message_reaction(message)
-
-                request = TaskRequest(task=message.content, thread_id=message.channel.id)
-                result = await self.task_service.process_task(request)
-                await self._send_message_to_thread(message.channel, result.result)
+                await pubsub.publish(TaskRequest(task=message.content, thread_id=message.channel.id))
             elif isinstance(message.channel, discord.TextChannel):
                 channel_id = str(message.channel.id)
                 if channel_id not in self.authorized_channel_ids:
@@ -134,9 +133,7 @@ class Discord:
                 thread_name = message.content[:100] if len(message.content) <= 100 else message.content[:97] + "..."
                 thread = await message.create_thread(name=thread_name)
 
-                request = TaskRequest(task=message.content, thread_id=thread.id)
-                result = await self.task_service.process_task(request)
-                await self._send_message_to_thread(thread, result.result)
+                await pubsub.publish(TaskRequest(task=message.content, thread_id=thread.id))
 
     async def start(self):
         try:
@@ -204,3 +201,8 @@ class Discord:
 
     async def _handle_admin_notification(self, notification: AdminNotification):
         await self._send_message_to_channel(text=notification.content, channel_id=self.admin_channel_id)
+
+    async def _handle_task_response(self, response: TaskResponse):
+        thread = self._client.get_channel(response.thread_id)
+        if thread and isinstance(thread, discord.Thread):
+            await self._send_message_to_thread(thread, str(response.result))

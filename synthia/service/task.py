@@ -1,11 +1,19 @@
 import asyncio
 import random
 
+from loguru import logger
+
 from synthia.agents.claude import ClaudeAgent
 from synthia.helpers.pubsub import pubsub
 from synthia.helpers.schema import validate_schema
 from synthia.output import parse_from_schema
-from synthia.service.models import AdminNotification, TaskRequest, TaskResponse, TaskTrigger
+from synthia.service.models import (
+    AdminNotification,
+    StopTaskRequest,
+    TaskRequest,
+    TaskResponse,
+    TaskTrigger,
+)
 
 
 class TaskService:
@@ -13,11 +21,20 @@ class TaskService:
         self._claude_agent = claude_agent
         self._tasks: dict[int, tuple[str | None, asyncio.Task]] = {}
         pubsub.subscribe(TaskTrigger, self._handle_scheduled_task)
+        pubsub.subscribe(TaskRequest, self._handle_pubsub_task)
+        pubsub.subscribe(StopTaskRequest, self._handle_stop_task)
 
     async def _handle_scheduled_task(self, trigger: TaskTrigger) -> None:
         thread_id = random.randint(0, 2**63 - 1)
         await self.process_task(TaskRequest(task=trigger.task, thread_id=thread_id))
         await pubsub.publish(AdminNotification(content=f"✅ *Task '{trigger.name}' completed*"))
+
+    async def _handle_pubsub_task(self, request: TaskRequest) -> None:
+        try:
+            response = await self.process_task(request)
+            await pubsub.publish(response)
+        except Exception as e:
+            logger.error(f"error processing pubsub task: {e}")
 
     async def process_task(self, request: TaskRequest) -> TaskResponse:
         validate_schema(request.response_schema)
@@ -51,7 +68,10 @@ class TaskService:
 
         self._tasks[request.thread_id] = (result_message.session_id, task)
 
-        return TaskResponse(result=result, session_id=result_message.session_id)
+        return TaskResponse(thread_id=request.thread_id, result=result, session_id=result_message.session_id)
+
+    async def _handle_stop_task(self, request: StopTaskRequest) -> None:
+        await self.stop_task(request.thread_id)
 
     async def stop_task(self, thread_id: int) -> bool:
         entry = self._tasks.get(thread_id)
