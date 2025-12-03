@@ -4,7 +4,7 @@ from synthia.agents.claude import ClaudeAgent
 from synthia.helpers.pubsub import pubsub
 from synthia.helpers.schema import validate_schema
 from synthia.output import parse_from_schema
-from synthia.service.models import AdminNotification, TaskCompletion, TaskRequest, TaskResponse, TaskTrigger
+from synthia.service.models import AdminNotification, TaskRequest, TaskResponse, TaskTrigger
 
 
 class TaskService:
@@ -51,8 +51,6 @@ class TaskService:
         )
 
         self._last_session_id = result_message.session_id
-
-        await pubsub.publish(TaskCompletion(session_id=result_message.session_id))
 
         return TaskResponse(result=result, session_id=result_message.session_id)
 
