@@ -14,12 +14,14 @@ from synthia.service.models import (
     TaskResponse,
     TaskTrigger,
 )
+from synthia.service.session_repository import SessionRepository
 
 
 class TaskService:
-    def __init__(self, claude_agent: ClaudeAgent):
+    def __init__(self, claude_agent: ClaudeAgent, session_repository: SessionRepository):
         self._claude_agent = claude_agent
-        self._tasks: dict[int, tuple[str | None, asyncio.Task]] = {}
+        self._tasks: dict[int, asyncio.Task] = {}
+        self._session_repository = session_repository
         pubsub.subscribe(TaskTrigger, self._handle_scheduled_task)
         pubsub.subscribe(TaskRequest, self._handle_pubsub_task)
         pubsub.subscribe(StopTaskRequest, self._handle_stop_task)
@@ -39,7 +41,7 @@ class TaskService:
     async def process_task(self, request: TaskRequest) -> TaskResponse:
         validate_schema(request.response_schema)
 
-        resume_from_session = self._tasks[request.thread_id][0] if request.thread_id in self._tasks else None
+        resume_from_session = self._session_repository.get(request.thread_id)
 
         task = asyncio.create_task(
             self._claude_agent.run_for_result(
@@ -48,7 +50,7 @@ class TaskService:
                 thread_id=request.thread_id,
             )
         )
-        self._tasks[request.thread_id] = (resume_from_session, task)
+        self._tasks[request.thread_id] = task
 
         try:
             result_message = await task
@@ -66,7 +68,8 @@ class TaskService:
             else result_message.result
         )
 
-        self._tasks[request.thread_id] = (result_message.session_id, task)
+        self._tasks.pop(request.thread_id, None)
+        await self._session_repository.save(request.thread_id, result_message.session_id)
 
         return TaskResponse(thread_id=request.thread_id, result=result, session_id=result_message.session_id)
 
@@ -74,10 +77,9 @@ class TaskService:
         await self.stop_task(request.thread_id)
 
     async def stop_task(self, thread_id: int) -> bool:
-        entry = self._tasks.get(thread_id)
-        if not entry:
+        task = self._tasks.get(thread_id)
+        if not task:
             return False
-        _, task = entry
         task.cancel()
         try:
             await task
