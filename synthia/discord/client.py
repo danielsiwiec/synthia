@@ -57,9 +57,9 @@ def _convert_markdown_table(lines: list[str]) -> str:
 
 
 class Discord:
-    def __init__(self, token: str, discord_users_map: dict[str, str], admin_channel_id: str):
+    def __init__(self, token: str, authorized_channels: list[str], admin_channel_id: str):
         self.token = token
-        self.authorized_channel_ids = set(discord_users_map.values())
+        self._authorized_channels = set(authorized_channels)
         self.admin_channel_id = admin_channel_id
 
         intents = discord.Intents.default()
@@ -125,7 +125,7 @@ class Discord:
                 await pubsub.publish(TaskRequest(task=message.content, thread_id=message.channel.id))
             elif isinstance(message.channel, discord.TextChannel):
                 channel_id = str(message.channel.id)
-                if channel_id not in self.authorized_channel_ids:
+                if channel_id not in self._authorized_channels:
                     return
 
                 await self._add_message_reaction(message)
@@ -149,14 +149,14 @@ class Discord:
 
     def _is_authorized(self, interaction: discord.Interaction) -> bool:
         channel_id = str(interaction.channel_id)
-        if channel_id not in self.authorized_channel_ids:
+        if channel_id not in self._authorized_channels:
             logger.warning(f"unauthorized channel_id {channel_id} from user {interaction.user.id}")
             return False
         return True
 
     def _is_authorized_thread(self, thread: discord.Thread) -> bool:
         parent_channel_id = str(thread.parent_id)
-        if parent_channel_id not in self.authorized_channel_ids:
+        if parent_channel_id not in self._authorized_channels:
             logger.warning(f"unauthorized thread parent channel_id {parent_channel_id}")
             return False
         return True
