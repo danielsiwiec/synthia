@@ -10,9 +10,6 @@ services:
       - "8003:8003"
     env_file:
       - .env
-    environment:
-      - POSTGRES_CONNECTION_STRING=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@pgvector:5432/vector_store
-      - HOME=/home/synthia
     depends_on:
       pgvector:
         condition: service_healthy

@@ -16,14 +16,9 @@ async def _publish_task_trigger(task: str, name: str) -> None:
 
 class SchedulerService:
     def __init__(self, postgres_url: str):
-        if postgres_url:
-            url = postgres_url.replace("postgresql://", "postgresql+psycopg://")
-            jobstores = {
-                "default": SQLAlchemyJobStore(url=url),
-            }
-            self._scheduler = AsyncIOScheduler(jobstores=jobstores)
-        else:
-            self._scheduler = AsyncIOScheduler()
+        url = postgres_url.replace("postgresql://", "postgresql+psycopg://")
+        jobstores = {"default": SQLAlchemyJobStore(url=url)}
+        self._scheduler = AsyncIOScheduler(jobstores=jobstores)
 
     def start(self) -> None:
         self._scheduler.start()

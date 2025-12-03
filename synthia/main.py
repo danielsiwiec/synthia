@@ -16,6 +16,7 @@ from synthia.agents.scheduler.service import SchedulerService
 from synthia.discord import Discord
 from synthia.helpers.pubsub import pubsub
 from synthia.service.models import TaskRequest, TaskResponse
+from synthia.service.session_repository import SessionRepository
 from synthia.service.task import TaskService
 
 load_dotenv()
@@ -48,7 +49,7 @@ class Config(BaseSettings):
     discord_bot_token: str
     discord_channels: str
     admin_channel: str
-    postgres_connection_string: str = ""
+    postgres_connection_string: str
 
     @property
     def discord_channels_list(self) -> list[str]:
@@ -62,13 +63,16 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         _register_handlers()
 
-        memory_client = await create_memory_client()
+        memory_client = await create_memory_client(config.postgres_connection_string)
         memory_mcp_server = create_memory_mcp_server(user=config.memory_user, memory_client=memory_client)
 
         scheduler_service = SchedulerService(postgres_url=config.postgres_connection_string)
         scheduler_mcp_server = create_scheduler_mcp_server(scheduler_service)
 
         admin_mcp_server = create_admin_mcp_server()
+
+        session_repository = SessionRepository(config.postgres_connection_string)
+        await session_repository.initialize()
 
         claude_agent = ClaudeAgent(
             mcp_servers={
@@ -77,7 +81,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
                 "admin": admin_mcp_server,
             },
         )
-        task_service = TaskService(claude_agent)
+        task_service = TaskService(claude_agent, session_repository)
 
         scheduler_service.start()
 
