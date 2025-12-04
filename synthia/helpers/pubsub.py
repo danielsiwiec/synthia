@@ -1,46 +1,57 @@
 import asyncio
 import inspect
+import types
 from collections import defaultdict
 from collections.abc import Callable, Coroutine
-from typing import Any, TypeVar, cast, get_args
+from typing import Any, cast, get_args
 
 from loguru import logger
 
-T = TypeVar("T")
+type TopicType = type | types.UnionType
 
 
-def _is_union_type(topic: type) -> bool:
+def _is_union_type(topic: TopicType) -> bool:
     return hasattr(topic, "__args__") and type(topic).__name__ == "UnionType"
 
 
-def _matches_topic(message: Any, topic: type) -> bool:
+def _get_topic_name(topic: TopicType) -> str:
+    if isinstance(topic, type):
+        return topic.__name__
+    return str(topic)
+
+
+def _matches_topic(message: Any, topic: TopicType) -> bool:
     if _is_union_type(topic):
         union_args = get_args(topic)
         return any(isinstance(message, arg) for arg in union_args)
-    return isinstance(message, topic)
+    if isinstance(topic, type):
+        return isinstance(message, topic)
+    return False
 
 
 class PubSub:
     def __init__(self):
-        self.async_subscribers: dict[type, list[Callable[[Any], Coroutine]]] = defaultdict(list)
-        self.sync_subscribers: dict[type, list[Callable[[Any], None]]] = defaultdict(list)
-        self.queues: dict[type, asyncio.Queue] = defaultdict(asyncio.Queue)
-        self.tasks: list[asyncio.Task] = []
+        self.async_subscribers: dict[TopicType, list[Callable[[Any], Coroutine[Any, Any, Any]]]] = defaultdict(list)
+        self.sync_subscribers: dict[TopicType, list[Callable[[Any], None]]] = defaultdict(list)
+        self.queues: dict[TopicType, asyncio.Queue[Any]] = defaultdict(asyncio.Queue)
+        self.tasks: list[asyncio.Task[None]] = []
 
-    def subscribe(self, topic: type[T], handler: Callable[[T], Coroutine] | Callable[[T], None]):
+    def subscribe[T](
+        self, topic: type[T] | types.UnionType, handler: Callable[[T], Coroutine[Any, Any, Any]] | Callable[[T], None]
+    ):
         if inspect.iscoroutinefunction(handler):
-            self.async_subscribers[topic].append(cast(Callable[[Any], Coroutine], handler))
+            self.async_subscribers[topic].append(cast(Callable[[Any], Coroutine[Any, Any, Any]], handler))
         else:
             self.sync_subscribers[topic].append(cast(Callable[[Any], None], handler))
 
-    async def publish(self, message: T):
+    async def publish[T](self, message: T):
         all_topics = set(self.async_subscribers.keys()) | set(self.sync_subscribers.keys())
 
         for topic in all_topics:
             if _matches_topic(message, topic):
                 await self.queues[topic].put(message)
 
-    async def _dispatch(self, topic: type):
+    async def _dispatch(self, topic: TopicType):
         while True:
             msg = await self.queues[topic].get()
 
@@ -49,7 +60,7 @@ class PubSub:
                 try:
                     handler(msg)
                 except Exception as e:
-                    logger.error(f"error in sync handler for {topic.__name__}: {e}")
+                    logger.error(f"error in sync handler for {_get_topic_name(topic)}: {e}")
 
             async_handlers = self.async_subscribers.get(topic, [])
             for handler in async_handlers:
