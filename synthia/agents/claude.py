@@ -80,8 +80,10 @@ class ClaudeAgent:
     def __init__(
         self,
         mcp_servers: dict[str, McpServerConfig] | None = None,
+        cwd: str | Path | None = None,
     ):
         self._mcp_servers = mcp_servers or {}
+        self._cwd = cwd
 
     def _parse_message(
         self, message: Any, tool_calls: dict[str, ToolCall], session_id: str, thread_id: int | None
@@ -134,15 +136,12 @@ class ClaudeAgent:
 
         return None
 
-    async def run(
+    async def _run(
         self,
         objective: str,
         resume_from_session: str | None = None,
         thread_id: int | None = None,
     ) -> AsyncIterator[Any]:
-        cwd = Path(__file__).parent.parent.parent / "claude_home"
-        cwd.mkdir(parents=True, exist_ok=True)
-
         mcp_servers = {
             "browser": McpHttpServerConfig(type="http", url="http://host.docker.internal:8931/mcp"),
             "google": McpHttpServerConfig(type="http", url="http://google-mcp:8000/mcp"),
@@ -150,7 +149,7 @@ class ClaudeAgent:
         }
 
         options = ClaudeAgentOptions(
-            cwd=str(cwd),
+            cwd=self._cwd,
             setting_sources=["project"],
             allowed_tools=["Skill"],
             permission_mode="bypassPermissions",
@@ -191,7 +190,7 @@ class ClaudeAgent:
         resume_from_session: str | None = None,
         thread_id: int | None = None,
     ) -> Result | None:
-        async for message in self.run(objective, resume_from_session=resume_from_session, thread_id=thread_id):
+        async for message in self._run(objective, resume_from_session=resume_from_session, thread_id=thread_id):
             await pubsub.publish(message)
             if isinstance(message, Result):
                 return message

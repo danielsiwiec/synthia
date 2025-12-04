@@ -2,6 +2,7 @@ import asyncio
 import logging
 import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -50,6 +51,7 @@ class Config(BaseSettings):
     discord_channels: str
     admin_channel: str
     postgres_connection_string: str
+    claude_cwd: Path | None = None
 
     @property
     def discord_channels_list(self) -> list[str]:
@@ -80,6 +82,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
                 "scheduler": scheduler_mcp_server,
                 "admin": admin_mcp_server,
             },
+            cwd=config.claude_cwd,
         )
         task_service = TaskService(claude_agent, session_repository)
 

@@ -2,6 +2,7 @@ import asyncio
 import os
 import random
 import secrets
+from pathlib import Path
 
 import httpx
 import pytest
@@ -18,6 +19,7 @@ def app(pgvector_container):
         discord_channels="123456789",
         admin_channel="123456789",
         postgres_connection_string=pgvector_container,
+        claude_cwd=Path(__file__).parent,
     )
     app_instance = create_app(config)
     yield app_instance
