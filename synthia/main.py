@@ -11,9 +11,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from synthia.agents.admin.client import create_admin_mcp_server
 from synthia.agents.claude import ClaudeAgent
-from synthia.agents.memory.client import create_memory_client, create_memory_mcp_server
+from synthia.agents.memory.client import create_memory_mcp_server
 from synthia.agents.scheduler.client import create_scheduler_mcp_server
-from synthia.agents.scheduler.service import SchedulerService
+from synthia.agents.sessions.client import create_sessions_mcp_server
 from synthia.discord import Discord
 from synthia.helpers.pubsub import pubsub
 from synthia.service.models import TaskRequest, TaskResponse
@@ -65,22 +65,20 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         _register_handlers()
 
-        memory_client = await create_memory_client(config.postgres_connection_string)
-        memory_mcp_server = create_memory_mcp_server(user=config.memory_user, memory_client=memory_client)
-
-        scheduler_service = SchedulerService(postgres_url=config.postgres_connection_string)
-        scheduler_mcp_server = create_scheduler_mcp_server(scheduler_service)
-
+        memory_mcp_server = await create_memory_mcp_server(
+            user=config.memory_user, postgres_url=config.postgres_connection_string
+        )
+        scheduler_mcp_server, scheduler_service = create_scheduler_mcp_server(config.postgres_connection_string)
         admin_mcp_server = create_admin_mcp_server()
-
-        session_repository = SessionRepository(config.postgres_connection_string)
-        await session_repository.initialize()
+        sessions_mcp_server = create_sessions_mcp_server(Path.home() / ".claude" / "projects")
+        session_repository = await SessionRepository.create(config.postgres_connection_string)
 
         claude_agent = ClaudeAgent(
             mcp_servers={
                 "memory": memory_mcp_server,
                 "scheduler": scheduler_mcp_server,
                 "admin": admin_mcp_server,
+                "sessions": sessions_mcp_server,
             },
             cwd=config.claude_cwd,
         )

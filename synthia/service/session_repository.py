@@ -7,7 +7,13 @@ class SessionRepository:
         self._conn_string = postgres_url
         self._sessions: dict[int, str] = {}
 
-    async def initialize(self) -> None:
+    @classmethod
+    async def create(cls, postgres_url: str) -> "SessionRepository":
+        repository = cls(postgres_url)
+        await repository._initialize()
+        return repository
+
+    async def _initialize(self) -> None:
         async with await psycopg.AsyncConnection.connect(self._conn_string) as conn:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS thread_sessions (
