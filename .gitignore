@@ -281,5 +281,5 @@ wip
 
 # Claude sessions directory (auto-generated skills and session data)
 claude_home/*
-!claude_home/.claude/
-!claude_home/.claude/**
+!claude_home/skills/
+!claude_home/skills/**
