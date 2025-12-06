@@ -10,6 +10,7 @@ from table2ascii import table2ascii
 from synthia.helpers.pubsub import pubsub
 from synthia.service.models import (
     AdminNotification,
+    ImageCreated,
     ProgressNotification,
     StopTaskRequest,
     TaskRequest,
@@ -98,12 +99,12 @@ class Discord:
         pubsub.subscribe(ProgressNotification, self._handle_progress_notification)
         pubsub.subscribe(AdminNotification, self._handle_admin_notification)
         pubsub.subscribe(TaskResponse, self._handle_task_response)
+        pubsub.subscribe(ImageCreated, self._handle_image_created)
 
     def _setup_handlers(self):
         @self._client.event
         async def on_ready():
             await self._tree.sync()
-            logger.info(f"discord bot logged in as {self._client.user}")
             await self._send_message_to_channel(text="*Synthia connected 👋*", channel_id=self.admin_channel_id)
 
         @self._tree.command(name="task", description="Execute a task")
@@ -223,3 +224,13 @@ class Discord:
         thread = self._client.get_channel(response.thread_id)
         if thread and isinstance(thread, discord.Thread):
             await self._send_message_to_thread(thread, str(response.result))
+
+    async def _handle_image_created(self, image_created: ImageCreated):
+        thread = self._client.get_channel(image_created.thread_id)
+        if thread and isinstance(thread, discord.Thread):
+            try:
+                await thread.send(file=discord.File(image_created.filename))
+            except FileNotFoundError:
+                logger.error(f"image file not found: {image_created.filename}")
+            except Exception as _e:
+                logger.error(f"failed to send image: {_e}", exc_info=True)
