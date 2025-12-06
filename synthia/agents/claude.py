@@ -1,3 +1,4 @@
+import os
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +14,7 @@ from claude_agent_sdk import (
     UserMessage,
 )
 from claude_agent_sdk.types import McpHttpServerConfig
+from loguru import logger
 from pydantic import BaseModel
 
 from synthia.helpers.pubsub import pubsub
@@ -139,14 +141,20 @@ class ClaudeAgent:
     async def _run(
         self,
         objective: str,
+        thread_id: int,
         resume_from_session: str | None = None,
-        thread_id: int | None = None,
     ) -> AsyncIterator[Any]:
+        from synthia.agents.image.client import create_image_mcp_server
+
         mcp_servers = {
             "browser": McpHttpServerConfig(type="http", url="http://host.docker.internal:8931/mcp"),
             "google": McpHttpServerConfig(type="http", url="http://google-mcp:8000/mcp"),
             **self._mcp_servers,
         }
+
+        if os.getenv("GEMINI_API_KEY"):
+            logger.info("Enabling image MCP server...")
+            mcp_servers["image"] = create_image_mcp_server(thread_id)
 
         options = ClaudeAgentOptions(
             cwd=self._cwd,
@@ -187,8 +195,8 @@ class ClaudeAgent:
     async def run_for_result(
         self,
         objective: str,
+        thread_id: int,
         resume_from_session: str | None = None,
-        thread_id: int | None = None,
     ) -> Result | None:
         async for message in self._run(objective, resume_from_session=resume_from_session, thread_id=thread_id):
             await pubsub.publish(message)

@@ -32,3 +32,8 @@ class TaskTrigger(BaseModel):
 
 class StopTaskRequest(BaseModel):
     thread_id: int
+
+
+class ImageCreated(BaseModel):
+    thread_id: int
+    filename: str
