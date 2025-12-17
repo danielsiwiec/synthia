@@ -82,6 +82,30 @@ class SessionsClient:
             duration_s=duration_s,
         )
 
+    def _truncate_tool_result_content(self, tool_result_content: Any) -> Any:
+        if isinstance(tool_result_content, str):
+            if len(tool_result_content) > 500:
+                return tool_result_content[:500]
+            return tool_result_content
+        elif isinstance(tool_result_content, list):
+            truncated_text_blocks = []
+            total_length = 0
+            for block in tool_result_content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text = block.get("text", "")
+                    if total_length + len(text) > 500:
+                        remaining = 500 - total_length
+                        if remaining > 0:
+                            truncated_text_blocks.append({**block, "text": text[:remaining]})
+                        break
+                    else:
+                        truncated_text_blocks.append(block)
+                        total_length += len(text)
+                else:
+                    truncated_text_blocks.append(block)
+            return truncated_text_blocks
+        return tool_result_content
+
     def _read_messages(self, session_file: Path) -> list[dict[str, Any]]:
         messages = []
         with session_file.open() as f:
@@ -89,7 +113,24 @@ class SessionsClient:
                 line = line.strip()
                 if line:
                     try:
-                        messages.append(json.loads(line))
+                        msg = json.loads(line)
+                        if msg.get("type") == "user":
+                            message_content = msg.get("message", {})
+                            if message_content.get("role") == "user":
+                                content = message_content.get("content", [])
+                                if isinstance(content, list):
+                                    truncated_content = []
+                                    for item in content:
+                                        if isinstance(item, dict) and item.get("type") == "tool_result":
+                                            tool_result_content = item.get("content", "")
+                                            truncated_content_item = self._truncate_tool_result_content(
+                                                tool_result_content
+                                            )
+                                            item = {**item, "content": truncated_content_item}
+                                        truncated_content.append(item)
+                                    message_content = {**message_content, "content": truncated_content}
+                                    msg = {**msg, "message": message_content}
+                        messages.append(msg)
                     except json.JSONDecodeError:
                         continue
         return messages
