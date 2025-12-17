@@ -17,6 +17,7 @@ class TaskResponse(BaseModel):
 
 class AdminNotification(BaseModel):
     content: str
+    silent: bool = False
 
 
 class ProgressNotification(BaseModel):
