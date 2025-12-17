@@ -146,3 +146,82 @@ def test_get_session_returns_session(temp_projects_dir: Path, sessions_client: S
 def test_get_session_not_found(sessions_client: SessionsClient) -> None:
     result = sessions_client.get_session("nonexistent-session")
     assert result is None
+
+
+def test_get_session_truncates_tool_outputs_string(temp_projects_dir: Path, sessions_client: SessionsClient) -> None:
+    project_dir = temp_projects_dir / "-home-test"
+    long_output = "x" * 600
+    messages = [
+        {
+            "type": "user",
+            "message": {"role": "user", "content": "hello"},
+            "timestamp": "2025-12-04T06:39:49.447Z",
+        },
+        {
+            "type": "assistant",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": "Hi!"}]},
+            "timestamp": "2025-12-04T06:39:52.447Z",
+        },
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "tool_use_id": "toolu_123",
+                        "type": "tool_result",
+                        "content": long_output,
+                    }
+                ],
+            },
+            "timestamp": "2025-12-04T06:39:53.447Z",
+        },
+    ]
+    _create_session_file(project_dir, "test-session-tool", messages)
+
+    result = sessions_client.get_session("test-session-tool")
+
+    assert result is not None
+    tool_result = result.messages[2]["message"]["content"][0]
+    assert tool_result["type"] == "tool_result"
+    assert len(tool_result["content"]) == 500
+    assert tool_result["content"] == "x" * 500
+
+
+def test_get_session_truncates_tool_outputs_text_blocks(
+    temp_projects_dir: Path, sessions_client: SessionsClient
+) -> None:
+    project_dir = temp_projects_dir / "-home-test"
+    long_text = "y" * 600
+    messages = [
+        {
+            "type": "user",
+            "message": {"role": "user", "content": "hello"},
+            "timestamp": "2025-12-04T06:39:49.447Z",
+        },
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "tool_use_id": "toolu_456",
+                        "type": "tool_result",
+                        "content": [{"type": "text", "text": long_text}],
+                    }
+                ],
+            },
+            "timestamp": "2025-12-04T06:39:53.447Z",
+        },
+    ]
+    _create_session_file(project_dir, "test-session-tool-blocks", messages)
+
+    result = sessions_client.get_session("test-session-tool-blocks")
+
+    assert result is not None
+    tool_result = result.messages[1]["message"]["content"][0]
+    assert tool_result["type"] == "tool_result"
+    text_block = tool_result["content"][0]
+    assert text_block["type"] == "text"
+    assert len(text_block["text"]) == 500
+    assert text_block["text"] == "y" * 500

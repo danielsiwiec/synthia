@@ -15,7 +15,6 @@ services:
         condition: service_healthy
     volumes:
       - ./claude_home:/home/synthia/.claude
-      - ${HOME}/.claude/.credentials.json:/home/synthia/.claude/.credentials.json
       - /Users/dansiwiec/arr/:/mounts/arr
       - /Volumes/media:/mounts/media
       - /Users/dansiwiec/Downloads:/mounts/downloads

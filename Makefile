@@ -42,3 +42,6 @@ install-playwright-mcp:
 uninstall-playwright-mcp:
 	-launchctl bootout gui/$$(id -u)/com.dansiwiec.playwright-mcp 2>/dev/null || true
 	rm -f ~/Library/LaunchAgents/com.dansiwiec.playwright-mcp.plist
+
+get-credentials:
+	ks -k login show "Claude Code-credentials" > ./claude_home/.credentials.json
