@@ -218,7 +218,9 @@ class Discord:
                 await thread.send(f"{emoji} *{notification.summary}*", silent=True)
 
     async def _handle_admin_notification(self, notification: AdminNotification):
-        await self._send_message_to_channel(text=notification.content, channel_id=self.admin_channel_id)
+        await self._send_message_to_channel(
+            text=notification.content, channel_id=self.admin_channel_id, silent=notification.silent
+        )
 
     async def _handle_task_response(self, response: TaskResponse):
         thread = self._client.get_channel(response.thread_id)
