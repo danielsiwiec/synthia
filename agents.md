@@ -1,3 +1,6 @@
+## Architecture
+Detailed system architecture documentation is available in `claude_home/data/synthia_architecture.md`
+
 ## Running tests
 uv run pytest ... -n auto --testmon
 
