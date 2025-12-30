@@ -158,7 +158,7 @@ class ClaudeAgent:
 
         options = ClaudeAgentOptions(
             cwd=self._cwd,
-            setting_sources=["project"],
+            setting_sources=["user", "project"],
             allowed_tools=["Skill"],
             permission_mode="bypassPermissions",
             system_prompt=SYSTEM_PROMPT,

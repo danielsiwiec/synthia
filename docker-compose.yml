@@ -15,6 +15,7 @@ services:
         condition: service_healthy
     volumes:
       - ./claude_home:/home/synthia/.claude
+      - ./skills:/home/synthia/workdir/.claude/skills
       - /Users/dansiwiec/arr/:/mounts/arr
       - /Volumes/media:/mounts/media
       - /Users/dansiwiec/Downloads:/mounts/downloads

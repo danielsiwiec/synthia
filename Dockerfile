@@ -19,7 +19,7 @@ RUN (groupadd -g ${USER_GID} synthia 2>/dev/null || groupadd synthia 2>/dev/null
     npm install -g @anthropic-ai/claude-code && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /home/synthia
+WORKDIR /home/synthia/workdir
 
 RUN pip install uv
 
@@ -32,7 +32,7 @@ RUN chown -R synthia:synthia /home/synthia
 
 USER synthia
 
-RUN mkdir ~/.claude
+RUN mkdir -p ~/.claude /home/synthia/workdir/.claude
 
 CMD ["uv", "run", "uvicorn", "synthia.main:app", "--host", "0.0.0.0", "--port", "8003"]
 
