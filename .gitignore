@@ -282,6 +282,6 @@ wip
 # Claude sessions directory (auto-generated session data)
 claude_home/
 
-# Skill files (stored locally, not in version control)
+# Skill files and local Claude config (stored locally, not in version control)
 **/skills/
-.claude/sauna-controls/
+.claude/
