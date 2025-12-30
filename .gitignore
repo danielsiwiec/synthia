@@ -283,5 +283,4 @@ wip
 claude_home/
 
 # Skill files and local Claude config (stored locally, not in version control)
-**/skills/
-.claude/
+claude_home/skills/
