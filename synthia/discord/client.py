@@ -43,11 +43,21 @@ def _format_tables(text: str) -> str:
     return "\n".join(result)
 
 
+def _strip_markdown(text: str) -> str:
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    text = re.sub(r"\*(.+?)\*", r"\1", text)
+    text = re.sub(r"__(.+?)__", r"\1", text)
+    text = re.sub(r"_(.+?)_", r"\1", text)
+    text = re.sub(r"~~(.+?)~~", r"\1", text)
+    text = re.sub(r"`(.+?)`", r"\1", text)
+    return text
+
+
 def _convert_markdown_table(lines: list[str]) -> str:
     rows = []
     header = None
     for i, line in enumerate(lines):
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        cells = [_strip_markdown(cell.strip()) for cell in line.strip().strip("|").split("|")]
         if i == 0:
             header = cells
         elif i == 1 and all(re.match(r"^[-:]+$", cell) for cell in cells):
