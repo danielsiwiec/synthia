@@ -279,7 +279,9 @@ logs/
 
 wip
 
-# Claude sessions directory (auto-generated skills and session data)
-claude_home/*
-!claude_home/skills/
-!claude_home/skills/**
+# Claude sessions directory (auto-generated session data)
+claude_home/
+
+# Skill files (stored locally, not in version control)
+**/skills/
+.claude/sauna-controls/
