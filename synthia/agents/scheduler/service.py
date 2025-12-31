@@ -10,8 +10,8 @@ from synthia.helpers.pubsub import pubsub
 from synthia.service.models import TaskTrigger
 
 
-async def _publish_task_trigger(task: str, name: str) -> None:
-    await pubsub.publish(TaskTrigger(task=task, name=name))
+async def _publish_task_trigger(task: str, name: str, silent: bool = False) -> None:
+    await pubsub.publish(TaskTrigger(task=task, name=name, silent=silent))
 
 
 class SchedulerService:
@@ -27,7 +27,9 @@ class SchedulerService:
         self._scheduler.shutdown()
         logger.info("Scheduler shut down")
 
-    def add_job(self, name: str, start_date: datetime | str, seconds: int | float, task: str) -> dict[str, Any]:
+    def add_job(
+        self, name: str, start_date: datetime | str, seconds: int | float, task: str, silent: bool = False
+    ) -> dict[str, Any]:
         trigger = IntervalTrigger(seconds=seconds, start_date=start_date)
 
         self._scheduler.add_job(
@@ -35,7 +37,7 @@ class SchedulerService:
             trigger=trigger,
             id=name,
             replace_existing=True,
-            args=[task, name],
+            args=[task, name, silent],
         )
         logger.info(f"Added job '{name}' with start_date '{start_date}' and interval {seconds} seconds")
         return {"name": name, "start_date": str(start_date), "seconds": seconds, "task": task}

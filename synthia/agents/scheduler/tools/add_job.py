@@ -35,13 +35,20 @@ def create_add_job_tool(scheduler_service: SchedulerService):
                     "type": "string",
                     "description": "The task description to execute when the job triggers",
                 },
+                "silent": {
+                    "type": "boolean",
+                    "description": "If true, suppress admin notifications when the job completes. Defaults to false.",
+                },
             },
             "required": ["name", "start_date", "seconds", "task"],
         },
     )
     async def add_job(args: dict[str, Any]) -> dict[str, Any]:
         try:
-            job_info = scheduler_service.add_job(args["name"], args["start_date"], args["seconds"], args["task"])
+            silent = args.get("silent", False)
+            job_info = scheduler_service.add_job(
+                args["name"], args["start_date"], args["seconds"], args["task"], silent
+            )
             return success_response(
                 f"Job '{job_info['name']}' added successfully with start_date "
                 f"'{job_info['start_date']}' and interval {job_info['seconds']} seconds"
