@@ -29,7 +29,8 @@ class TaskService:
     async def _handle_scheduled_task(self, trigger: TaskTrigger) -> None:
         thread_id = random.randint(0, 2**63 - 1)
         await self.process_task(TaskRequest(task=trigger.task, thread_id=thread_id))
-        await pubsub.publish(AdminNotification(content=f"✅ *Task '{trigger.name}' completed*", silent=True))
+        if not trigger.silent:
+            await pubsub.publish(AdminNotification(content=f"✅ *Task '{trigger.name}' completed*", silent=True))
 
     async def _handle_pubsub_task(self, request: TaskRequest) -> None:
         try:

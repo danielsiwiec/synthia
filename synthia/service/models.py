@@ -29,6 +29,7 @@ class ProgressNotification(BaseModel):
 class TaskTrigger(BaseModel):
     task: str
     name: str
+    silent: bool = False
 
 
 class StopTaskRequest(BaseModel):
