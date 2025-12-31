@@ -42,9 +42,8 @@ This skill extracts lessons learned, edge cases discovered, better approaches fo
    - Edge cases that should be handled
 
 4. **Read the existing skill file**
-   ```bash
-   cat /app/claude_home/.claude/skills/<skill-name>/SKILL.md
-   ```
+   - For user-defined skills: `/home/synthia/.claude/skills/<skill-name>/SKILL.md`
+   - For built-in skills: `/home/synthia/workdir/.claude/skills/<skill-name>/SKILL.md`
 
 5. **Update the skill with improvements**
    - Add new troubleshooting entries

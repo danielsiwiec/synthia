@@ -5,12 +5,40 @@ description: Create a new Claude skill based on actions taken in the current ses
 ## Overview
 Creates a new skill in `/home/synthia/.claude/skills/` based on the history of actions taken in the current session. Skills capture repeatable workflows so they can be easily executed again.
 
+## Skill Types
+
+There are two types of skills in Synthia:
+
+### 1. Built-in Skills (Project-level)
+**Location:** `/home/synthia/workdir/.claude/skills/`
+
+These are core skills that come with the Synthia project. They are:
+- Version-controlled with the project repository
+- Shared across all users of the project
+- Typically created by developers maintaining Synthia
+- Examples: `synthia-skill`, `synthia-learn`, `pdfreport`, `architecture-analyzer`
+
+### 2. User-defined Skills (User-level)
+**Location:** `/home/synthia/.claude/skills/`
+
+These are custom skills created by users for their personal workflows. They are:
+- Specific to the user's environment and needs
+- Not version-controlled with the project
+- Created dynamically based on user sessions and requests
+- Examples: `sauna-controls`, `download-book`, `kavita-rescan`, `arr`, `shopping-research`
+
+**When creating a new skill, always use the user-defined location** (`/home/synthia/.claude/skills/`) unless explicitly asked to create a built-in skill.
+
 ## Skill Structure
 
 Each skill lives in its own subfolder with a `SKILL.md` file:
 ```
-/home/synthia/.claude/skills/
+/home/synthia/.claude/skills/        # User-defined skills
    my-skill-name/
+      SKILL.md
+
+/home/synthia/workdir/.claude/skills/ # Built-in skills
+   core-skill-name/
       SKILL.md
 ```
 

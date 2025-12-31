@@ -222,7 +222,8 @@ Mode 2: Download specific magazines), Error handling...
 ## Known Paths
 
 - Main app: `/home/synthia/`
-- Skills: `/home/synthia/.claude/skills/`
+- Built-in skills: `/home/synthia/workdir/.claude/skills/`
+- User-defined skills: `/home/synthia/.claude/skills/`
 - Documentation output: `/home/synthia/.claude/data/synthia_architecture.md`
 - Config files: `/home/synthia/pyproject.toml`, `/home/synthia/docker-compose.yml`
 
