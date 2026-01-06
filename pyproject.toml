@@ -62,7 +62,8 @@ line-ending = "auto"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 markers = [
-    "smoke: marks tests as smoke tests (quick tests for basic functionality)"
+    "smoke: marks tests as smoke tests (quick tests for basic functionality)",
+    "voice: marks tests for voice/PWA functionality (requires running server)"
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:testcontainers.*",
@@ -79,4 +80,5 @@ dev = [
     "ruff>=0.14.7",
     "ty>=0.0.1a30",
     "testcontainers>=4.13.3",
+    "pytest-playwright>=0.7.2",
 ]

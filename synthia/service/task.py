@@ -44,9 +44,21 @@ class TaskService:
 
         resume_from_session = self._session_repository.get(request.thread_id)
 
+        objective = request.task
+        if request.audio_mode:
+            objective = f"""[AUDIO RESPONSE MODE]
+Your response will be read aloud via text-to-speech. Be BRIEF - aim for 1-3 sentences maximum.
+- Write numbers as words (e.g., "forty-two" not "42")
+- No markdown, symbols, or formatting
+- Conversational language only
+- Spell out abbreviations
+- Ignore misspellings of your name (Cyntia, Cynthia, etc.) - they mean you, Synthia
+
+User's request: {request.task}"""
+
         task = asyncio.create_task(
             self._claude_agent.run_for_result(
-                objective=request.task,
+                objective=objective,
                 resume_from_session=resume_from_session,
                 thread_id=request.thread_id,
             )

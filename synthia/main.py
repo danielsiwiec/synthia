@@ -1,12 +1,12 @@
-import asyncio
 import logging
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from loguru import logger
+from openai import AsyncOpenAI
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from synthia.agents.admin.client import create_admin_mcp_server
@@ -16,7 +16,7 @@ from synthia.agents.scheduler.client import create_scheduler_mcp_server
 from synthia.agents.sessions.client import create_sessions_mcp_server
 from synthia.discord import Discord
 from synthia.helpers.pubsub import pubsub
-from synthia.service.models import TaskRequest, TaskResponse
+from synthia.routes import audio_router, health_router, mount_static, task_router, voice_router
 from synthia.service.session_repository import SessionRepository
 from synthia.service.task import TaskService
 
@@ -90,6 +90,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
         app.state.task_service = task_service
         app.state.claude_agent = claude_agent
         app.state.scheduler_service = scheduler_service
+        app.state.openai_client = AsyncOpenAI()
         app.state.discord = Discord(config.discord_bot_token, config.discord_channels_list, config.admin_channel)
         await app.state.discord.start()
         await pubsub.start()
@@ -105,23 +106,11 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
         title="Synthia", description="FastAPI application with Claude Agent SDK integration", lifespan=lifespan
     )
 
-    @app.post("/task", response_model=TaskResponse)
-    async def task(request: TaskRequest) -> TaskResponse:
-        task_service: TaskService = app.state.task_service
-        try:
-            response = await task_service.process_task(request)
-            return response
-        except asyncio.CancelledError:
-            raise HTTPException(status_code=499, detail="Task was cancelled") from None
-
-    @app.post("/stop")
-    async def stop(thread_id: int):
-        task_service: TaskService = app.state.task_service
-        await task_service.stop_task(thread_id)
-
-    @app.get("/health")
-    async def health_check():
-        return {"status": "healthy"}
+    app.include_router(task_router)
+    app.include_router(audio_router)
+    app.include_router(health_router)
+    app.include_router(voice_router)
+    mount_static(app)
 
     return app
 
