@@ -70,7 +70,7 @@ class TaskService:
         )
 
         self._tasks.pop(request.thread_id, None)
-        await self._session_repository.save(request.thread_id, result_message.session_id)
+        asyncio.create_task(self._session_repository.save(request.thread_id, result_message.session_id))
 
         return TaskResponse(thread_id=request.thread_id, result=result, session_id=result_message.session_id)
 
