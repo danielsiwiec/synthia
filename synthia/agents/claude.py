@@ -1,4 +1,6 @@
+import asyncio
 import os
+import time
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +20,9 @@ from loguru import logger
 from pydantic import BaseModel
 
 from synthia.helpers.pubsub import pubsub
+
+_FRESH_POOL_SIZE = 2
+_SESSION_TTL_SECONDS = 30 * 60
 
 SYSTEM_PROMPT = f"""
 Your name is Synthia. You are a helpful assistant that can help with tasks and questions.
@@ -41,9 +46,7 @@ class ToolCall(BaseModel):
     error: str | None = None
 
     def render(self, short: bool = False) -> str:
-        parts = ["🔧"]
-        parts.append(f"[{self.name}]")
-        parts.append(f"input={self.input}")
+        parts = [f"🔧 [{self.name}] input={self.input}"]
         if not short and self.output is not None:
             parts.append(f"output='{self.output}'")
         if self.error is not None:
@@ -59,9 +62,7 @@ class Result(BaseModel):
     error: str | None = None
 
     def render(self, short: bool = False) -> str:
-        parts = ["✅" if self.success else "🔴"]
-        parts.append(self.result if self.success else self.error)
-        return " ".join(parts)
+        return f"{'✅' if self.success else '🔴'} {self.result if self.success else self.error}"
 
 
 class InitMessage(BaseModel):
@@ -70,12 +71,128 @@ class InitMessage(BaseModel):
     prompt: str
 
     def render(self, short: bool = False) -> str:
-        parts = ["⚙️"]
-        parts.append(self.prompt)
-        return " ".join(parts)
+        return f"⚙️ {self.prompt}"
 
 
 Message = ToolCall | Result | InitMessage
+
+
+class ClaudeClientPool:
+    def __init__(self, mcp_servers: dict[str, McpServerConfig], cwd: str | Path | None = None):
+        self._mcp_servers = mcp_servers
+        self._cwd = cwd
+        self._fresh_clients: list[ClaudeSDKClient] = []
+        self._session_cache: dict[str, tuple[ClaudeSDKClient, float]] = {}  # session_id -> (client, last_used)
+        self._cleanup_task: asyncio.Task | None = None
+        self._init_loop_id: int | None = None
+
+    def _create_options(self, resume: str | None = None) -> ClaudeAgentOptions:
+        return ClaudeAgentOptions(
+            cwd=self._cwd,
+            setting_sources=["user", "project"],
+            allowed_tools=["Skill"],
+            permission_mode="bypassPermissions",
+            system_prompt=SYSTEM_PROMPT,
+            resume=resume,
+            mcp_servers=self._mcp_servers,
+        )
+
+    async def _connect_client(self, resume: str | None = None) -> ClaudeSDKClient:
+        client = ClaudeSDKClient(self._create_options(resume))
+        logger.debug("🔌 Claude SDK connecting...")
+        await client.connect()
+        logger.debug("🔌 Claude SDK connected")
+        return client
+
+    async def _cleanup_loop(self) -> None:
+        while True:
+            await asyncio.sleep(60)
+            now = time.monotonic()
+            expired = [
+                sid for sid, (_, last_used) in self._session_cache.items() if now - last_used > _SESSION_TTL_SECONDS
+            ]
+            for sid in expired:
+                client, last_used = self._session_cache.pop(sid)
+                logger.info(f"Expiring session {sid[:8]}... (idle {int(now - last_used)}s)")
+                await self._safe_disconnect(client)
+
+    async def _replenish_fresh_clients(self) -> None:
+        needed = _FRESH_POOL_SIZE - len(self._fresh_clients)
+        if needed > 0:
+            logger.info(f"Replenishing {needed} fresh client(s)...")
+            new_clients = await asyncio.gather(*[self._connect_client() for _ in range(needed)])
+            self._fresh_clients.extend(new_clients)
+
+    async def initialize(self, skip_prewarm: bool = False) -> None:
+        self._init_loop_id = id(asyncio.get_running_loop())
+        if skip_prewarm:
+            logger.info("Pool initialized without pre-warming")
+        else:
+            logger.info(f"Initializing pool with {_FRESH_POOL_SIZE} fresh clients...")
+            self._fresh_clients = list(await asyncio.gather(*[self._connect_client() for _ in range(_FRESH_POOL_SIZE)]))
+            self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+            logger.info(f"Pool initialized with {len(self._fresh_clients)} fresh clients")
+
+    async def execute(self, prompt: str, resume: str | None = None) -> AsyncIterator[Any]:
+        same_loop = id(asyncio.get_running_loop()) == self._init_loop_id
+
+        if not same_loop:
+            logger.info("Different event loop, creating fresh client...")
+            client = await self._connect_client(resume=resume)
+        elif resume and resume in self._session_cache:
+            client, _ = self._session_cache.pop(resume)
+            logger.info(f"Reusing cached session {resume[:8]}...")
+        elif resume:
+            logger.info(f"Connecting to session {resume[:8]}...")
+            client = await self._connect_client(resume=resume)
+        elif self._fresh_clients:
+            client = self._fresh_clients.pop(0)
+            logger.info(f"Using fresh client ({len(self._fresh_clients)} remaining)")
+            asyncio.create_task(self._replenish_fresh_clients())
+        else:
+            logger.info("No fresh clients, connecting new...")
+            client = await self._connect_client()
+
+        session_id: str | None = None
+        try:
+            logger.debug(f"📤 Claude SDK query: {prompt[:50]}...")
+            await client.query(prompt=prompt)
+            logger.debug("📤 Claude SDK query sent, receiving messages...")
+
+            async for message in client.receive_messages():
+                if isinstance(message, SystemMessage):
+                    session_id = message.data.get("session_id")
+                if isinstance(message, ResultMessage):
+                    logger.debug(f"📥 Claude SDK ResultMessage received: {(message.result or '')[:50]}...")
+                yield message
+                if isinstance(message, ResultMessage):
+                    break
+        finally:
+            if not same_loop:
+                await self._safe_disconnect(client)
+            elif session_id:
+                self._session_cache[session_id] = (client, time.monotonic())
+                logger.debug(f"Cached session {session_id[:8]}... ({len(self._session_cache)} total)")
+
+    async def _safe_disconnect(self, client: ClaudeSDKClient) -> None:
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+
+    async def shutdown(self) -> None:
+        logger.info("Shutting down pool...")
+        if self._cleanup_task:
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
+        for client in self._fresh_clients:
+            await self._safe_disconnect(client)
+        for client, _ in self._session_cache.values():
+            await self._safe_disconnect(client)
+        logger.info("Pool shut down")
 
 
 class ClaudeAgent:
@@ -86,6 +203,27 @@ class ClaudeAgent:
     ):
         self._mcp_servers = mcp_servers or {}
         self._cwd = cwd
+        self._pool: ClaudeClientPool | None = None
+
+    async def initialize_pool(self, skip_prewarm: bool = False) -> None:
+        from synthia.agents.image.client import create_image_mcp_server
+
+        mcp_servers = {
+            "browser": McpHttpServerConfig(type="http", url="http://host.docker.internal:8931/mcp"),
+            "google": McpHttpServerConfig(type="http", url="http://google-mcp:8000/mcp"),
+            **self._mcp_servers,
+        }
+
+        if os.getenv("GEMINI_API_KEY"):
+            logger.info("Enabling image MCP server...")
+            mcp_servers["image"] = create_image_mcp_server()
+
+        self._pool = ClaudeClientPool(mcp_servers, self._cwd)
+        await self._pool.initialize(skip_prewarm=skip_prewarm)
+
+    async def shutdown_pool(self) -> None:
+        if self._pool:
+            await self._pool.shutdown()
 
     def _parse_message(
         self, message: Any, tool_calls: dict[str, ToolCall], session_id: str, thread_id: int | None
@@ -144,53 +282,25 @@ class ClaudeAgent:
         thread_id: int,
         resume_from_session: str | None = None,
     ) -> AsyncIterator[Any]:
-        from synthia.agents.image.client import create_image_mcp_server
+        if self._pool is None:
+            raise RuntimeError("Pool not initialized. Call initialize_pool() first.")
 
-        mcp_servers = {
-            "browser": McpHttpServerConfig(type="http", url="http://host.docker.internal:8931/mcp"),
-            "google": McpHttpServerConfig(type="http", url="http://google-mcp:8000/mcp"),
-            **self._mcp_servers,
-        }
-
-        if os.getenv("GEMINI_API_KEY"):
-            logger.info("Enabling image MCP server...")
-            mcp_servers["image"] = create_image_mcp_server(thread_id)
-
-        options = ClaudeAgentOptions(
-            cwd=self._cwd,
-            setting_sources=["user", "project"],
-            allowed_tools=["Skill"],
-            permission_mode="bypassPermissions",
-            system_prompt=SYSTEM_PROMPT,
-            resume=resume_from_session,
-            mcp_servers=mcp_servers,
-        )
-        client = ClaudeSDKClient(options)
-
-        await client.connect()
-        await client.query(prompt=objective)
-
-        tool_calls = {}  # tool_use_id -> ToolCall
-
+        prompt_with_thread_id = f"{objective}\n\nthread_id: {thread_id}"
+        tool_calls: dict[str, ToolCall] = {}
         session_id = None
-        try:
-            async for message in client.receive_messages():
-                await pubsub.publish(message)
-                if isinstance(message, SystemMessage):
-                    session_id = message.data["session_id"]
-                    yield InitMessage(session_id=message.data["session_id"], thread_id=thread_id, prompt=objective)
-                    continue
-                if session_id is None:
-                    raise ValueError("Session ID is not set")
-                if transformed := self._parse_message(message, tool_calls, session_id, thread_id):
-                    yield transformed
-                    if isinstance(transformed, Result):
-                        break
-        finally:
-            try:
-                await client.disconnect()
-            except Exception:
-                pass
+
+        async for message in self._pool.execute(prompt_with_thread_id, resume=resume_from_session):
+            await pubsub.publish(message)
+            if isinstance(message, SystemMessage):
+                session_id = message.data["session_id"]
+                yield InitMessage(session_id=session_id, thread_id=thread_id, prompt=objective)
+                continue
+            if session_id is None:
+                raise ValueError("Session ID is not set")
+            if transformed := self._parse_message(message, tool_calls, session_id, thread_id):
+                yield transformed
+                if isinstance(transformed, Result):
+                    break
 
     async def run_for_result(
         self,
