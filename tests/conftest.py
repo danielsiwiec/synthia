@@ -60,5 +60,7 @@ async def clean_pubsub():
         task.cancel()
     pubsub.tasks = []
     pubsub.queues.clear()
+    pubsub.async_subscribers.clear()
+    pubsub.sync_subscribers.clear()
     yield pubsub
     await pubsub.stop()
