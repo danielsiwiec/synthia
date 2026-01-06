@@ -117,21 +117,6 @@ class Discord:
             await self._tree.sync()
             await self._send_message_to_channel(text="*Synthia connected 👋*", channel_id=self.admin_channel_id)
 
-        @self._tree.command(name="task", description="Execute a task")
-        @app_commands.describe(description="The task to execute")
-        async def task_command(interaction: discord.Interaction, description: str):
-            if not self._is_authorized(interaction):
-                await interaction.response.send_message("Unauthorized", ephemeral=True)
-                return
-
-            await interaction.response.send_message(f"**Task:** {description}")
-            message = await interaction.original_response()
-
-            thread_name = description[:100] if len(description) <= 100 else description[:97] + "..."
-            thread = await message.create_thread(name=thread_name)
-
-            await pubsub.publish(TaskRequest(task=description, thread_id=thread.id))
-
         @self._tree.command(name="stop", description="Stop the current task")
         async def stop_command(interaction: discord.Interaction):
             if not isinstance(interaction.channel, discord.Thread):
