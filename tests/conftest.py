@@ -1,11 +1,13 @@
 import os
 from pathlib import Path
 
+import httpx
 import pytest
 from testcontainers.core.image import DockerImage
 from testcontainers.postgres import PostgresContainer
 
 from synthia.helpers.pubsub import pubsub
+from synthia.main import Config, create_app
 
 
 @pytest.fixture(scope="session")
@@ -22,6 +24,34 @@ def pgvector_container():
         with PostgresContainer(str(image)) as postgres:
             connection_url = postgres.get_connection_url(host="127.0.0.1", driver=None)
             yield connection_url
+
+
+@pytest.fixture(scope="session")
+def app(pgvector_container):
+    os.environ["POSTGRES_CONNECTION_STRING"] = pgvector_container
+    config = Config(
+        memory_user="test_user",
+        discord_bot_token="test_token",
+        discord_channels="123456789",
+        admin_channel="123456789",
+        postgres_connection_string=pgvector_container,
+        claude_cwd=Path(__file__).parent,
+    )
+    app_instance = create_app(config)
+    yield app_instance
+    os.environ.pop("POSTGRES_CONNECTION_STRING", None)
+
+
+@pytest.fixture(scope="session")
+async def lifespan_context(app):
+    async with app.router.lifespan_context(app):
+        yield
+
+
+@pytest.fixture
+async def client(app, lifespan_context):
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        yield client
 
 
 @pytest.fixture

@@ -159,6 +159,7 @@ class Discord:
                 if not self._is_authorized_thread(message.channel):
                     return
 
+                logger.debug(f"📥 Discord message received in thread {message.channel.id}: {message.content[:50]}...")
                 await self._add_message_reaction(message)
                 await pubsub.publish(TaskRequest(task=message.content, thread_id=message.channel.id))
             elif isinstance(message.channel, discord.TextChannel):
@@ -166,6 +167,7 @@ class Discord:
                 if channel_id not in self._authorized_channels:
                     return
 
+                logger.debug(f"📥 Discord message received in channel {channel_id}: {message.content[:50]}...")
                 await self._add_message_reaction(message)
 
                 thread_name = message.content[:100] if len(message.content) <= 100 else message.content[:97] + "..."
@@ -200,6 +202,7 @@ class Discord:
         return True
 
     async def _send_message_to_thread(self, thread: discord.Thread, text: str):
+        logger.debug(f"📤 Sending message to thread {thread.id}: {text[:50]}...")
         for chunk in _split_message(_format_tables(text)):
             await thread.send(chunk, suppress_embeds=True)
 

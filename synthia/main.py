@@ -82,11 +82,13 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             },
             cwd=config.claude_cwd,
         )
+        await claude_agent.initialize_pool(skip_prewarm=config_overrides is not None)
         task_service = TaskService(claude_agent, session_repository)
 
         scheduler_service.start()
 
         app.state.task_service = task_service
+        app.state.claude_agent = claude_agent
         app.state.scheduler_service = scheduler_service
         app.state.discord = Discord(config.discord_bot_token, config.discord_channels_list, config.admin_channel)
         await app.state.discord.start()
@@ -97,6 +99,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
         scheduler_service.shutdown()
         await app.state.discord.stop()
         await pubsub.stop()
+        await claude_agent.shutdown_pool()
 
     app = FastAPI(
         title="Synthia", description="FastAPI application with Claude Agent SDK integration", lifespan=lifespan
