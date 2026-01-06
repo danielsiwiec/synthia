@@ -238,7 +238,11 @@ class Discord:
     async def _handle_task_response(self, response: TaskResponse):
         thread = self._client.get_channel(response.thread_id)
         if thread and isinstance(thread, discord.Thread):
-            await self._send_message_to_thread(thread, str(response.result))
+            result_str = str(response.result) if response.result is not None else ""
+            if result_str.strip():
+                await self._send_message_to_thread(thread, result_str)
+            else:
+                logger.warning(f"skipping empty response for thread {response.thread_id}")
 
     async def _handle_image_created(self, image_created: ImageCreated):
         thread = self._client.get_channel(image_created.thread_id)
