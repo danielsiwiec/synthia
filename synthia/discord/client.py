@@ -160,7 +160,7 @@ class Discord:
                     return
 
                 logger.debug(f"📥 Discord message received in thread {message.channel.id}: {message.content[:50]}...")
-                await self._add_message_reaction(message)
+                asyncio.create_task(self._add_message_reaction(message))
                 await pubsub.publish(TaskRequest(task=message.content, thread_id=message.channel.id))
             elif isinstance(message.channel, discord.TextChannel):
                 channel_id = str(message.channel.id)
@@ -168,7 +168,7 @@ class Discord:
                     return
 
                 logger.debug(f"📥 Discord message received in channel {channel_id}: {message.content[:50]}...")
-                await self._add_message_reaction(message)
+                asyncio.create_task(self._add_message_reaction(message))
 
                 thread_name = message.content[:100] if len(message.content) <= 100 else message.content[:97] + "..."
                 thread = await message.create_thread(name=thread_name)
