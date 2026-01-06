@@ -1,8 +1,10 @@
 import logging
+import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from claude_agent_sdk.types import McpHttpServerConfig, McpStdioServerConfig
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from loguru import logger
@@ -13,7 +15,6 @@ from synthia.agents.admin.client import create_admin_mcp_server
 from synthia.agents.claude import ClaudeAgent
 from synthia.agents.memory.client import create_memory_mcp_server
 from synthia.agents.scheduler.client import create_scheduler_mcp_server
-from synthia.agents.sessions.client import create_sessions_mcp_server
 from synthia.discord import Discord
 from synthia.helpers.pubsub import pubsub
 from synthia.routes import audio_router, health_router, mount_static, task_router, voice_router
@@ -70,18 +71,28 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
         )
         scheduler_mcp_server, scheduler_service = create_scheduler_mcp_server(config.postgres_connection_string)
         admin_mcp_server = create_admin_mcp_server()
-        sessions_mcp_server = create_sessions_mcp_server(Path.home() / ".claude" / "projects")
         session_repository = await SessionRepository.create(config.postgres_connection_string)
 
-        claude_agent = ClaudeAgent(
-            mcp_servers={
-                "memory": memory_mcp_server,
-                "scheduler": scheduler_mcp_server,
-                "admin": admin_mcp_server,
-                "sessions": sessions_mcp_server,
-            },
-            cwd=config.claude_cwd,
-        )
+        mcp_servers = {
+            "memory": memory_mcp_server,
+            "scheduler": scheduler_mcp_server,
+            "admin": admin_mcp_server,
+            "browser": McpHttpServerConfig(type="http", url="http://host.docker.internal:8931/mcp"),
+            "google": McpHttpServerConfig(type="http", url="http://google-mcp:8000/mcp"),
+            "historian": McpStdioServerConfig(
+                type="stdio",
+                command="claude-historian-mcp",
+                env={"CLAUDE_LOCAL_PATH": str(Path.home() / ".claude")},
+            ),
+        }
+
+        if os.getenv("GEMINI_API_KEY"):
+            from synthia.agents.image.client import create_image_mcp_server
+
+            logger.info("Enabling image MCP server...")
+            mcp_servers["image"] = create_image_mcp_server()
+
+        claude_agent = ClaudeAgent(mcp_servers=mcp_servers, cwd=config.claude_cwd)
         await claude_agent.initialize_pool(skip_prewarm=config_overrides is not None)
         task_service = TaskService(claude_agent, session_repository)
 
