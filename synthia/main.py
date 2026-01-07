@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -79,12 +80,14 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             "admin": admin_mcp_server,
             "browser": McpHttpServerConfig(type="http", url="http://host.docker.internal:8931/mcp"),
             "google": McpHttpServerConfig(type="http", url="http://google-mcp:8000/mcp"),
-            "historian": McpStdioServerConfig(
-                type="stdio",
-                command="claude-historian-mcp",
-                env={"CLAUDE_LOCAL_PATH": str(Path.home() / ".claude")},
-            ),
         }
+
+        if shutil.which("episodic-memory-mcp-server"):
+            logger.info("Enabling episodic-memory MCP server...")
+            mcp_servers["episodic-memory"] = McpStdioServerConfig(
+                type="stdio",
+                command="episodic-memory-mcp-server",
+            )
 
         if os.getenv("GEMINI_API_KEY"):
             from synthia.agents.image.client import create_image_mcp_server
