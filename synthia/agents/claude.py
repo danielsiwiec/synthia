@@ -1,5 +1,4 @@
 import asyncio
-import os
 import time
 from collections.abc import AsyncIterator
 from datetime import datetime
@@ -15,7 +14,6 @@ from claude_agent_sdk import (
     SystemMessage,
     UserMessage,
 )
-from claude_agent_sdk.types import McpHttpServerConfig
 from loguru import logger
 from pydantic import BaseModel
 
@@ -206,19 +204,7 @@ class ClaudeAgent:
         self._pool: ClaudeClientPool | None = None
 
     async def initialize_pool(self, skip_prewarm: bool = False) -> None:
-        from synthia.agents.image.client import create_image_mcp_server
-
-        mcp_servers = {
-            "browser": McpHttpServerConfig(type="http", url="http://host.docker.internal:8931/mcp"),
-            "google": McpHttpServerConfig(type="http", url="http://google-mcp:8000/mcp"),
-            **self._mcp_servers,
-        }
-
-        if os.getenv("GEMINI_API_KEY"):
-            logger.info("Enabling image MCP server...")
-            mcp_servers["image"] = create_image_mcp_server()
-
-        self._pool = ClaudeClientPool(mcp_servers, self._cwd)
+        self._pool = ClaudeClientPool(self._mcp_servers, self._cwd)
         await self._pool.initialize(skip_prewarm=skip_prewarm)
 
     async def shutdown_pool(self) -> None:

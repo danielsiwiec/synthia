@@ -16,7 +16,7 @@ RUN (groupadd -g ${USER_GID} synthia 2>/dev/null || groupadd synthia 2>/dev/null
     usermod -aG docker synthia && \
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y nodejs && \
-    npm install -g @anthropic-ai/claude-code && \
+    npm install -g @anthropic-ai/claude-code claude-historian-mcp && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /home/synthia/workdir
