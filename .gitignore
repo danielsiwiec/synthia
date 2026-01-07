@@ -284,3 +284,6 @@ claude_home/
 
 # Skill files and local Claude config (stored locally, not in version control)
 claude_home/skills/
+
+# Local docker compose overrides (user-specific mounts)
+docker-compose.override.yml

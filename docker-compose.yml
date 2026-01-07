@@ -16,9 +16,6 @@ services:
     volumes:
       - ./claude_home:/home/synthia/.claude
       - ./skills:/home/synthia/workdir/.claude/skills
-      - /Users/dansiwiec/arr/:/mounts/arr
-      - /Volumes/media:/mounts/media
-      - /Users/dansiwiec/Downloads:/mounts/downloads
       - /var/run/docker.sock:/var/run/docker.sock
     group_add:
       - "0"
