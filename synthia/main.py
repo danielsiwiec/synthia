@@ -18,6 +18,7 @@ from synthia.agents.memory.client import create_memory_mcp_server
 from synthia.agents.scheduler.client import create_scheduler_mcp_server
 from synthia.discord import Discord
 from synthia.helpers.pubsub import pubsub
+from synthia.metrics import create_instrumentator
 from synthia.routes import audio_router, health_router, mount_static, task_router, voice_router
 from synthia.service.session_repository import SessionRepository
 from synthia.service.task import TaskService
@@ -125,6 +126,9 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(voice_router)
     mount_static(app)
+
+    instrumentator = create_instrumentator()
+    instrumentator.instrument(app).expose(app)
 
     return app
 
