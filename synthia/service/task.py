@@ -15,6 +15,7 @@ from synthia.service.models import (
     TaskTrigger,
 )
 from synthia.service.session_repository import SessionRepository
+from synthia.telemetry import traced
 
 
 class TaskService:
@@ -39,6 +40,7 @@ class TaskService:
         except Exception as e:
             logger.error(f"error processing pubsub task: {e}")
 
+    @traced("process_task")
     async def process_task(self, request: TaskRequest) -> TaskResponse:
         validate_schema(request.response_schema)
 
@@ -75,11 +77,10 @@ User's request: {request.task}"""
             self._tasks.pop(request.thread_id, None)
             raise Exception("Timeout: No ResultMessage received within expected time")
 
-        result = (
-            await parse_from_schema(result_message.result, request.response_schema)
-            if request.response_schema
-            else result_message.result
-        )
+        if request.response_schema:
+            result = await parse_from_schema(result_message.result, request.response_schema)
+        else:
+            result = result_message.result
 
         self._tasks.pop(request.thread_id, None)
         asyncio.create_task(self._session_repository.save(request.thread_id, result_message.session_id))
