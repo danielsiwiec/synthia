@@ -7,6 +7,7 @@ class TaskRequest(BaseModel):
     task: str
     response_schema: dict[str, Any] | None = None
     thread_id: int
+    audio_mode: bool = False
 
 
 class TaskResponse(BaseModel):
