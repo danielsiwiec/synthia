@@ -53,8 +53,6 @@ services:
     image: otel/opentelemetry-collector-contrib:latest
     volumes:
       - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
-    depends_on:
-      - synthia
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

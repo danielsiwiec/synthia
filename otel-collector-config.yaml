@@ -1,4 +1,11 @@
 receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
   prometheus:
     config:
       scrape_configs:
@@ -9,6 +16,9 @@ receivers:
                 - synthia:8003
 
 exporters:
+  debug:
+    verbosity: detailed
+
   otlp:
     endpoint: host.docker.internal:4317
     tls:
@@ -16,8 +26,21 @@ exporters:
 
 service:
   pipelines:
+    traces:
+      receivers:
+        - otlp
+      exporters:
+        - debug
+
     metrics:
       receivers:
+        - otlp
         - prometheus
       exporters:
+        - debug
+
+    logs:
+      receivers:
         - otlp
+      exporters:
+        - debug

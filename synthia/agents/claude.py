@@ -18,6 +18,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 from synthia.helpers.pubsub import pubsub
+from synthia.telemetry import current_span, start_span, traced
 
 _FRESH_POOL_SIZE = 2
 _SESSION_TTL_SECONDS = 30 * 60
@@ -152,6 +153,7 @@ class ClaudeClientPool:
             client = await self._connect_client()
 
         session_id: str | None = None
+
         try:
             logger.debug(f"📤 Claude SDK query: {prompt[:50]}...")
             await client.query(prompt=prompt)
@@ -288,13 +290,21 @@ class ClaudeAgent:
                 if isinstance(transformed, Result):
                     break
 
+    @traced("claude_run")
     async def run_for_result(
         self,
         objective: str,
         thread_id: int,
         resume_from_session: str | None = None,
     ) -> Result | None:
+        message_count = 0
+        message_span = start_span("claude_message_0")
         async for message in self._run(objective, resume_from_session=resume_from_session, thread_id=thread_id):
+            message_count += 1
             await pubsub.publish(message)
             if isinstance(message, Result):
+                message_span.end()
+                current_span().set_attribute("message_count", message_count)
                 return message
+            message_span.end()
+            message_span = start_span(f"claude_message_{message_count}")

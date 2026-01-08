@@ -16,6 +16,7 @@ from synthia.service.models import (
     TaskRequest,
     TaskResponse,
 )
+from synthia.telemetry import traced
 
 
 def _format_tables(text: str) -> str:
@@ -141,24 +142,12 @@ class Discord:
                 return
 
             if isinstance(message.channel, discord.Thread):
-                if not self._is_authorized_thread(message.channel):
-                    return
+                if self._is_authorized_thread(message.channel):
+                    await self._handle_thread_message(message)
 
-                logger.debug(f"📥 Discord message received in thread {message.channel.id}: {message.content[:50]}...")
-                asyncio.create_task(self._add_message_reaction(message))
-                await pubsub.publish(TaskRequest(task=message.content, thread_id=message.channel.id))
             elif isinstance(message.channel, discord.TextChannel):
-                channel_id = str(message.channel.id)
-                if channel_id not in self._authorized_channels:
-                    return
-
-                logger.debug(f"📥 Discord message received in channel {channel_id}: {message.content[:50]}...")
-                asyncio.create_task(self._add_message_reaction(message))
-
-                thread_name = message.content[:100] if len(message.content) <= 100 else message.content[:97] + "..."
-                thread = await message.create_thread(name=thread_name)
-
-                await pubsub.publish(TaskRequest(task=message.content, thread_id=thread.id))
+                if str(message.channel.id) in self._authorized_channels:
+                    await self._handle_channel_message(message)
 
     async def start(self):
         try:
@@ -206,6 +195,20 @@ class Discord:
             await message.add_reaction(emoji)
         except Exception as _e:
             logger.error(f"failed to react to message: {_e}", exc_info=True)
+
+    @traced("discord_thread_message")
+    async def _handle_thread_message(self, message: discord.Message):
+        logger.debug(f"📥 Discord message received in thread {message.channel.id}: {message.content[:50]}...")
+        asyncio.create_task(self._add_message_reaction(message))
+        await pubsub.publish(TaskRequest(task=message.content, thread_id=message.channel.id))
+
+    @traced("discord_channel_message")
+    async def _handle_channel_message(self, message: discord.Message):
+        logger.debug(f"📥 Discord message received in channel {message.channel.id}: {message.content[:50]}...")
+        asyncio.create_task(self._add_message_reaction(message))
+        thread_name = message.content[:100] if len(message.content) <= 100 else message.content[:97] + "..."
+        thread = await message.create_thread(name=thread_name)
+        await pubsub.publish(TaskRequest(task=message.content, thread_id=thread.id))
 
     async def _handle_progress_notification(self, notification: ProgressNotification):
         emojis = ["⚙️", "🤔", "💭", "💡", "🏃‍♂️"]

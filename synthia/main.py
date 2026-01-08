@@ -22,8 +22,11 @@ from synthia.metrics import create_instrumentator
 from synthia.routes import audio_router, health_router, mount_static, task_router, voice_router
 from synthia.service.session_repository import SessionRepository
 from synthia.service.task import TaskService
+from synthia.telemetry import instrument_fastapi, loguru_otel_sink, setup_telemetry
 
 load_dotenv()
+
+setup_telemetry()
 
 logging.getLogger("uvicorn.access").disabled = True
 logging.getLogger("uvicorn.error").disabled = True
@@ -36,6 +39,7 @@ logger.add(
     level="DEBUG",
     colorize=True,
 )
+logger.add(loguru_otel_sink, level="DEBUG")
 
 
 def _register_handlers():
@@ -129,6 +133,8 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
     instrumentator = create_instrumentator()
     instrumentator.instrument(app).expose(app)
+
+    instrument_fastapi(app)
 
     return app
 
