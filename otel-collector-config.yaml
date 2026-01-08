@@ -15,10 +15,16 @@ receivers:
             - targets:
                 - synthia:8003
 
-exporters:
-  debug:
-    verbosity: detailed
+processors:
+  transform/logs:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - set(attributes["trace_id"], trace_id.string)
+          - set(attributes["span_id"], span_id.string)
 
+exporters:
   otlp:
     endpoint: host.docker.internal:4317
     tls:
@@ -30,17 +36,19 @@ service:
       receivers:
         - otlp
       exporters:
-        - debug
+        - otlp
 
     metrics:
       receivers:
         - otlp
         - prometheus
       exporters:
-        - debug
+        - otlp
 
     logs:
       receivers:
         - otlp
+      processors:
+        - transform/logs
       exporters:
-        - debug
+        - otlp

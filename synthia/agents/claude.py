@@ -73,7 +73,17 @@ class InitMessage(BaseModel):
         return f"⚙️ {self.prompt}"
 
 
-Message = ToolCall | Result | InitMessage
+class Thought(BaseModel):
+    session_id: str
+    thread_id: int | None = None
+    thinking: str
+
+    def render(self, short: bool = False) -> str:
+        preview = self.thinking[:100] + "..." if len(self.thinking) > 100 else self.thinking
+        return f"💭 {preview}"
+
+
+Message = ToolCall | Result | InitMessage | Thought
 
 
 class ClaudeClientPool:
@@ -233,6 +243,15 @@ class ClaudeAgent:
 
         for block in content_blocks:
             match type(block).__name__:
+                case "ThinkingBlock":
+                    thinking = getattr(block, "thinking", "")
+                    if thinking:
+                        return Thought(
+                            session_id=session_id,
+                            thread_id=thread_id,
+                            thinking=thinking,
+                        )
+
                 case "ToolUseBlock":
                     tool_use_id = getattr(block, "id", None)
                     if tool_use_id:
@@ -298,13 +317,11 @@ class ClaudeAgent:
         resume_from_session: str | None = None,
     ) -> Result | None:
         message_count = 0
-        message_span = start_span("claude_message_0")
         async for message in self._run(objective, resume_from_session=resume_from_session, thread_id=thread_id):
             message_count += 1
-            await pubsub.publish(message)
+            message_type = type(message).__name__
+            with start_span(message_type):
+                await pubsub.publish(message)
             if isinstance(message, Result):
-                message_span.end()
                 current_span().set_attribute("message_count", message_count)
                 return message
-            message_span.end()
-            message_span = start_span(f"claude_message_{message_count}")

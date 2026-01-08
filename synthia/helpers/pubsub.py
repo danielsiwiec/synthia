@@ -6,6 +6,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any, cast, get_args
 
 from loguru import logger
+from opentelemetry import context as otel_context
 
 type TopicType = type | types.UnionType
 
@@ -29,6 +30,12 @@ def _matches_topic(message: Any, topic: TopicType) -> bool:
     return False
 
 
+class _MessageWithContext:
+    def __init__(self, message: Any, ctx: otel_context.Context | None):
+        self.message = message
+        self.ctx = ctx
+
+
 class PubSub:
     def __init__(self):
         self.async_subscribers: dict[TopicType, list[Callable[[Any], Coroutine[Any, Any, Any]]]] = defaultdict(list)
@@ -46,25 +53,43 @@ class PubSub:
 
     async def publish[T](self, message: T):
         all_topics = set(self.async_subscribers.keys()) | set(self.sync_subscribers.keys())
+        current_ctx = otel_context.get_current()
 
         for topic in all_topics:
             if _matches_topic(message, topic):
-                await self.queues[topic].put(message)
+                await self.queues[topic].put(_MessageWithContext(message, current_ctx))
 
     async def _dispatch(self, topic: TopicType):
         while True:
-            msg = await self.queues[topic].get()
+            wrapped = await self.queues[topic].get()
+            msg = wrapped.message
+            ctx = wrapped.ctx
 
-            sync_handlers = self.sync_subscribers.get(topic, [])
-            for handler in sync_handlers:
-                try:
-                    handler(msg)
-                except Exception as e:
-                    logger.error(f"error in sync handler for {_get_topic_name(topic)}: {e}")
+            token = otel_context.attach(ctx) if ctx else None
+            try:
+                sync_handlers = self.sync_subscribers.get(topic, [])
+                for handler in sync_handlers:
+                    try:
+                        handler(msg)
+                    except Exception as e:
+                        logger.error(f"error in sync handler for {_get_topic_name(topic)}: {e}")
 
-            async_handlers = self.async_subscribers.get(topic, [])
-            for handler in async_handlers:
-                asyncio.create_task(handler(msg))
+                async_handlers = self.async_subscribers.get(topic, [])
+                for handler in async_handlers:
+                    asyncio.create_task(self._dispatch_async(handler, msg, ctx))
+            finally:
+                if token is not None:
+                    otel_context.detach(token)
+
+    async def _dispatch_async(
+        self, handler: Callable[[Any], Coroutine[Any, Any, Any]], msg: Any, ctx: otel_context.Context | None
+    ):
+        token = otel_context.attach(ctx) if ctx else None
+        try:
+            await handler(msg)
+        finally:
+            if token is not None:
+                otel_context.detach(token)
 
     async def start(self):
         all_topics = set(self.async_subscribers.keys()) | set(self.sync_subscribers.keys())
