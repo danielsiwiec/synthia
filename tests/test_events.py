@@ -1,6 +1,9 @@
 import asyncio
 from unittest.mock import Mock
 
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+
 from synthia.helpers.pubsub import PubSub
 
 
@@ -165,5 +168,95 @@ async def test_pubsub_union_type_subscription():
     assert handler.call_count == 2
     assert isinstance(handler.call_args[0][0], Bar)
     assert handler.call_args[0][0].value == 42
+
+    await pubsub.stop()
+
+
+async def test_pubsub_retains_otel_context_for_sync_handlers():
+    trace.set_tracer_provider(TracerProvider())
+    tracer = trace.get_tracer("test")
+
+    pubsub = PubSub()
+    captured_span_ids: list[str] = []
+
+    def sync_handler(msg):
+        span = trace.get_current_span()
+        span_context = span.get_span_context()
+        if span_context.is_valid:
+            captured_span_ids.append(format(span_context.span_id, "016x"))
+
+    pubsub.subscribe(TaskAgentMessage, sync_handler)
+    await pubsub.start()
+
+    with tracer.start_as_current_span("test-span") as span:
+        expected_span_id = format(span.get_span_context().span_id, "016x")
+        await pubsub.publish(TaskAgentMessage("test message"))
+
+    await asyncio.sleep(0.1)
+
+    assert len(captured_span_ids) == 1
+    assert captured_span_ids[0] == expected_span_id
+
+    await pubsub.stop()
+
+
+async def test_pubsub_retains_otel_context_for_async_handlers():
+    trace.set_tracer_provider(TracerProvider())
+    tracer = trace.get_tracer("test")
+
+    pubsub = PubSub()
+    captured_span_ids: list[str] = []
+
+    async def async_handler(msg):
+        span = trace.get_current_span()
+        span_context = span.get_span_context()
+        if span_context.is_valid:
+            captured_span_ids.append(format(span_context.span_id, "016x"))
+
+    pubsub.subscribe(TaskAgentMessage, async_handler)
+    await pubsub.start()
+
+    with tracer.start_as_current_span("test-span") as span:
+        expected_span_id = format(span.get_span_context().span_id, "016x")
+        await pubsub.publish(TaskAgentMessage("test message"))
+
+    await asyncio.sleep(0.1)
+
+    assert len(captured_span_ids) == 1
+    assert captured_span_ids[0] == expected_span_id
+
+    await pubsub.stop()
+
+
+async def test_pubsub_context_differs_per_publish():
+    trace.set_tracer_provider(TracerProvider())
+    tracer = trace.get_tracer("test")
+
+    pubsub = PubSub()
+    captured_span_ids: list[str] = []
+
+    def sync_handler(msg):
+        span = trace.get_current_span()
+        span_context = span.get_span_context()
+        if span_context.is_valid:
+            captured_span_ids.append(format(span_context.span_id, "016x"))
+
+    pubsub.subscribe(TaskAgentMessage, sync_handler)
+    await pubsub.start()
+
+    with tracer.start_as_current_span("span-1") as span1:
+        expected_span_id_1 = format(span1.get_span_context().span_id, "016x")
+        await pubsub.publish(TaskAgentMessage("message 1"))
+
+    with tracer.start_as_current_span("span-2") as span2:
+        expected_span_id_2 = format(span2.get_span_context().span_id, "016x")
+        await pubsub.publish(TaskAgentMessage("message 2"))
+
+    await asyncio.sleep(0.1)
+
+    assert len(captured_span_ids) == 2
+    assert captured_span_ids[0] == expected_span_id_1
+    assert captured_span_ids[1] == expected_span_id_2
+    assert captured_span_ids[0] != captured_span_ids[1]
 
     await pubsub.stop()

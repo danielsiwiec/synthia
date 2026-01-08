@@ -1,10 +1,11 @@
 import logging
 import os
 from collections.abc import Awaitable, Callable
+from contextlib import AbstractContextManager
 from functools import wraps
 from typing import Any, TypeVar
 
-from opentelemetry import metrics, trace
+from opentelemetry import _logs, metrics, trace
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
@@ -45,11 +46,13 @@ def setup_telemetry() -> None:
     logger_provider = LoggerProvider(resource=resource)
     log_exporter = OTLPLogExporter(endpoint=_OTEL_ENDPOINT, insecure=True)
     logger_provider.add_log_record_processor(BatchLogRecordProcessor(log_exporter))
+    _logs.set_logger_provider(logger_provider)
 
     handler = LoggingHandler(level=logging.DEBUG, logger_provider=logger_provider)
     _otel_logger = logging.getLogger("synthia.otel")
     _otel_logger.setLevel(logging.DEBUG)
     _otel_logger.addHandler(handler)
+    _otel_logger.propagate = False
 
 
 def loguru_otel_sink(message: Any) -> None:
@@ -78,9 +81,9 @@ def current_span() -> trace.Span:
     return trace.get_current_span()
 
 
-def start_span(name: str) -> trace.Span:
+def start_span(name: str) -> AbstractContextManager[trace.Span]:
     tracer = _tracer or trace.get_tracer(_SERVICE_NAME)
-    return tracer.start_span(name)
+    return tracer.start_as_current_span(name)
 
 
 def traced(name: str | None = None) -> Callable[[F], F]:

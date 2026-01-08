@@ -16,7 +16,11 @@ from synthia.service.models import (
     TaskRequest,
     TaskResponse,
 )
-from synthia.telemetry import traced
+from synthia.telemetry import current_span, traced
+
+
+def _truncate_message(message: str, max_len: int = 200) -> str:
+    return message[:max_len] if len(message) <= max_len else message[: max_len - 3] + "..."
 
 
 def _format_tables(text: str) -> str:
@@ -198,12 +202,14 @@ class Discord:
 
     @traced("discord_thread_message")
     async def _handle_thread_message(self, message: discord.Message):
+        current_span().update_name(_truncate_message(message.content))
         logger.debug(f"📥 Discord message received in thread {message.channel.id}: {message.content[:50]}...")
         asyncio.create_task(self._add_message_reaction(message))
         await pubsub.publish(TaskRequest(task=message.content, thread_id=message.channel.id))
 
     @traced("discord_channel_message")
     async def _handle_channel_message(self, message: discord.Message):
+        current_span().update_name(_truncate_message(message.content))
         logger.debug(f"📥 Discord message received in channel {message.channel.id}: {message.content[:50]}...")
         asyncio.create_task(self._add_message_reaction(message))
         thread_name = message.content[:100] if len(message.content) <= 100 else message.content[:97] + "..."
