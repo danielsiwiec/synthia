@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+export PATH="$HOME/.local/bin:$PATH"
+
 PLUGIN_INSTALLED_MARKER="/home/synthia/.claude/plugins/.episodic-memory-installed"
 
 if [ ! -f "$PLUGIN_INSTALLED_MARKER" ]; then
