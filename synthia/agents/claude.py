@@ -23,6 +23,7 @@ from synthia.telemetry import current_span, start_span, traced
 
 _FRESH_POOL_SIZE = 2
 _SESSION_TTL_SECONDS = 30 * 60
+_MAX_SESSION_CACHE_SIZE = 10
 
 SYSTEM_PROMPT = f"""
 Your name is Synthia. You are a helpful assistant that can help with tasks and questions.
@@ -188,6 +189,11 @@ class ClaudeClientPool:
             if not same_loop:
                 await self._safe_disconnect(client)
             elif session_id:
+                if len(self._session_cache) >= _MAX_SESSION_CACHE_SIZE:
+                    oldest_sid = min(self._session_cache, key=lambda k: self._session_cache[k][1])
+                    old_client, _ = self._session_cache.pop(oldest_sid)
+                    logger.info(f"Evicting oldest session {oldest_sid[:8]}... (cache full)")
+                    await self._safe_disconnect(old_client)
                 self._session_cache[session_id] = (client, time.monotonic())
                 logger.debug(f"Cached session {session_id[:8]}... ({len(self._session_cache)} total)")
 
