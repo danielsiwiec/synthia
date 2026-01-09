@@ -18,6 +18,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 from synthia.helpers.pubsub import pubsub
+from synthia.metrics import record_session_cost
 from synthia.telemetry import current_span, start_span, traced
 
 _FRESH_POOL_SIZE = 2
@@ -174,6 +175,11 @@ class ClaudeClientPool:
                     session_id = message.data.get("session_id")
                 if isinstance(message, ResultMessage):
                     logger.debug(f"📥 Claude SDK ResultMessage received: {(message.result or '')[:50]}...")
+                    cost = getattr(message, "total_cost_usd", None)
+                    usage = getattr(message, "usage", None)
+                    logger.info(f"💰 Session cost: ${cost}, usage: {usage}")
+                    if cost:
+                        record_session_cost(cost)
                 yield message
                 if isinstance(message, ResultMessage):
                     break
