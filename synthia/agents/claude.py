@@ -60,6 +60,7 @@ class Result(BaseModel):
     success: bool
     result: str
     error: str | None = None
+    cost_usd: float | None = None
 
     def render(self, short: bool = False) -> str:
         return f"{'✅' if self.success else '🔴'} {self.result if self.success else self.error}"
@@ -238,6 +239,7 @@ class ClaudeAgent:
                 thread_id=thread_id,
                 success=message.subtype == "success",
                 result=message.result.strip(),
+                cost_usd=getattr(message, "total_cost_usd", None),
             )
 
         if not isinstance(message, (UserMessage, AssistantMessage)):
@@ -330,4 +332,6 @@ class ClaudeAgent:
                 await pubsub.publish(message)
             if isinstance(message, Result):
                 current_span().set_attribute("message_count", message_count)
+                if message.cost_usd is not None:
+                    current_span().set_attribute("session_cost_usd", message.cost_usd)
                 return message
