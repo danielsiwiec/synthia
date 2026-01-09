@@ -1,63 +1,18 @@
-import json
-from pathlib import Path
-
 import psutil
-from prometheus_client import REGISTRY
+from prometheus_client import REGISTRY, Counter
 from prometheus_client.core import GaugeMetricFamily
 from prometheus_fastapi_instrumentator import Instrumentator
 
-_MODEL_PRICING = {
-    "claude-opus-4-5-20251101": {
-        "input": 15.0,
-        "output": 75.0,
-        "cache_read": 1.5,
-        "cache_write": 18.75,
-    },
-    "claude-sonnet-4-20250514": {
-        "input": 3.0,
-        "output": 15.0,
-        "cache_read": 0.30,
-        "cache_write": 3.75,
-    },
-}
-
-_STATS_CACHE_PATH = Path.home() / ".claude" / "stats-cache.json"
+llm_cost_usd_total = Counter("llm_cost_usd_total", "Total LLM cost in USD")
 
 
-def _calculate_llm_cost() -> float:
-    if not _STATS_CACHE_PATH.exists():
-        return 0.0
-
-    try:
-        stats = json.loads(_STATS_CACHE_PATH.read_text())
-    except (json.JSONDecodeError, OSError):
-        return 0.0
-
-    total_cost = 0.0
-    for model, usage in stats.get("modelUsage", {}).items():
-        pricing = _MODEL_PRICING.get(model)
-        if not pricing:
-            continue
-
-        input_tokens = usage.get("inputTokens", 0)
-        output_tokens = usage.get("outputTokens", 0)
-        cache_read_tokens = usage.get("cacheReadInputTokens", 0)
-        cache_write_tokens = usage.get("cacheCreationInputTokens", 0)
-
-        total_cost += input_tokens * pricing["input"] / 1_000_000
-        total_cost += output_tokens * pricing["output"] / 1_000_000
-        total_cost += cache_read_tokens * pricing["cache_read"] / 1_000_000
-        total_cost += cache_write_tokens * pricing["cache_write"] / 1_000_000
-
-    return total_cost
+def record_session_cost(cost: float) -> None:
+    if cost > 0:
+        llm_cost_usd_total.inc(cost)
 
 
 class _MetricsCollector:
     def collect(self):  # type: ignore[override]
-        yield GaugeMetricFamily(
-            "llm_cost_usd_total", "Total LLM cost in USD based on token usage", value=_calculate_llm_cost()
-        )
-
         total_cpu = 0.0
         total_memory = 0
         count = 0
