@@ -20,6 +20,7 @@ from synthia.discord import Discord
 from synthia.helpers.pubsub import pubsub
 from synthia.metrics import create_instrumentator
 from synthia.routes import audio_router, health_router, mount_static, task_router, voice_router
+from synthia.service.episodic_memory_sync import EpisodicMemorySyncService
 from synthia.service.session_repository import SessionRepository
 from synthia.service.task import TaskService
 from synthia.telemetry import instrument_fastapi, loguru_otel_sink, setup_telemetry
@@ -103,6 +104,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
         claude_agent = ClaudeAgent(mcp_servers=mcp_servers, cwd=config.claude_cwd)
         await claude_agent.initialize_pool(skip_prewarm=config_overrides is not None)
         task_service = TaskService(claude_agent, session_repository)
+        EpisodicMemorySyncService()
 
         scheduler_service.start()
 

@@ -16,7 +16,7 @@ RUN (groupadd -g ${USER_GID} synthia 2>/dev/null || groupadd synthia 2>/dev/null
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian trixie stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get update && \
-    apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin nodejs && \
+    apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin nodejs git && \
     npm install -g @anthropic-ai/claude-code && \
     apt-get purge -y gnupg && apt-get autoremove -y && \
     (groupadd -g 999 docker 2>/dev/null || groupadd -f docker) && \
@@ -31,13 +31,25 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen
 
 COPY synthia synthia
-COPY --chmod=755 scripts/init-plugins.sh /usr/local/bin/init-plugins.sh
+
+# Install plugin using secret mount - copy to writable location since claude CLI writes to it
+RUN --mount=type=secret,id=claude_credentials,target=/run/secrets/claude.json \
+    cp /run/secrets/claude.json /root/.claude.json && \
+    claude plugin marketplace add danielsiwiec/episodic-memory && \
+    claude plugin install episodic-memory@episodic-memory-dev && \
+    rm /root/.claude.json && \
+    PLUGIN_DIR=$(find /root/.claude/plugins/cache -path "*/episodic-memory/*/cli" -type d 2>/dev/null | head -1 | xargs dirname) && \
+    cd "$PLUGIN_DIR" && npm install && \
+    mkdir -p /home/synthia/.claude && \
+    mv /root/.claude/plugins /home/synthia/.claude/plugins
 
 RUN chown -R synthia:synthia /home/synthia
 
 USER synthia
 
-RUN mkdir -p ~/.claude /home/synthia/workdir/.claude
+ENV PATH="/home/synthia/.local/bin:$PATH"
 
-ENTRYPOINT ["/usr/local/bin/init-plugins.sh"]
+RUN mkdir -p ~/.claude /home/synthia/workdir/.claude /home/synthia/.local/bin && \
+    CLI_PATH=$(find /home/synthia/.claude/plugins/cache -path "*/episodic-memory/*/cli/episodic-memory" -type f 2>/dev/null | head -1) && \
+    ln -sf "$CLI_PATH" /home/synthia/.local/bin/episodic-memory
 CMD ["uv", "run", "uvicorn", "synthia.main:app", "--host", "0.0.0.0", "--port", "8003"]
