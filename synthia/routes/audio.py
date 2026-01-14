@@ -9,7 +9,7 @@ router = APIRouter()
 async def text_to_speech(request: Request, text: str, voice: str = "shimmer"):
     response = await request.app.state.openai_client.audio.speech.create(
         model="tts-1",
-        voice=voice,  # type: ignore[arg-type]
+        voice=voice,
         input=text,
         response_format="mp3",
     )
