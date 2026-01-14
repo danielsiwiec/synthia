@@ -1,4 +1,4 @@
-.PHONY: start smoke dev test test-voice lint check format install-playwright-mcp start-playwright-mcp stop-playwright-mcp uninstall-playwright-mcp
+.PHONY: start smoke dev test test-voice lint check format toml-sort install-playwright-mcp start-playwright-mcp stop-playwright-mcp uninstall-playwright-mcp
 
 start:
 	uv run uvicorn synthia.main:app --host 0.0.0.0 --port 8003
@@ -18,13 +18,16 @@ test-voice:
 lint:
 	uv run ruff check . --fix --unsafe-fixes
 
-check: format type lint
+check: format type lint toml-sort
 
 format:
 	uv run ruff format .
 
 type:
 	uv run ty check .
+
+toml-sort:
+	uv run toml-sort --in-place pyproject.toml
 
 up:
 	docker compose up --build -d --remove-orphans
