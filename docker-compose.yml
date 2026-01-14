@@ -10,10 +10,6 @@ services:
         USER_GID: ${USER_GID:-20}
     ports:
       - "8003:8003"
-    environment:
-      - ENABLE_EPISODIC_MEMORY=true
-      - EPISODIC_MEMORY_DB_PROVIDER=postgresql
-      - EPISODIC_MEMORY_POSTGRES_URL=postgresql://postgres:postgres@pgvector:5432/vector_store
     env_file:
       - .env
     depends_on:
@@ -21,7 +17,6 @@ services:
         condition: service_healthy
     volumes:
       - ./claude_home:/home/synthia/.claude
-      - /home/synthia/.claude/plugins  # Anonymous volume masks host plugins, preserves image's
       - ./skills:/home/synthia/workdir/.claude/skills
       - /var/run/docker.sock:/var/run/docker.sock
       - ~/.claude.json:/home/synthia/.claude.json
