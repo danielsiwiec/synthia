@@ -21,6 +21,7 @@ from opentelemetry.trace import Status, StatusCode
 
 _SERVICE_NAME = "synthia"
 _OTEL_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4317")
+_OTEL_ENABLED = os.getenv("OTEL_ENABLED", "false").lower() == "true"
 
 _tracer: trace.Tracer | None = None
 _otel_logger: logging.Logger | None = None
@@ -32,20 +33,23 @@ def setup_telemetry() -> None:
     resource = Resource.create({"service.name": _SERVICE_NAME, "service.version": "0.1.0"})
 
     trace_provider = TracerProvider(resource=resource)
-    trace_exporter = OTLPSpanExporter(endpoint=_OTEL_ENDPOINT, insecure=True)
-    trace_provider.add_span_processor(BatchSpanProcessor(trace_exporter))
+    if _OTEL_ENABLED:
+        trace_exporter = OTLPSpanExporter(endpoint=_OTEL_ENDPOINT, insecure=True)
+        trace_provider.add_span_processor(BatchSpanProcessor(trace_exporter))
     trace.set_tracer_provider(trace_provider)
     _tracer = trace.get_tracer(_SERVICE_NAME)
 
-    metric_reader = PeriodicExportingMetricReader(
-        OTLPMetricExporter(endpoint=_OTEL_ENDPOINT, insecure=True),
-        export_interval_millis=15000,
-    )
-    metrics.set_meter_provider(MeterProvider(resource=resource, metric_readers=[metric_reader]))
+    if _OTEL_ENABLED:
+        metric_reader = PeriodicExportingMetricReader(
+            OTLPMetricExporter(endpoint=_OTEL_ENDPOINT, insecure=True),
+            export_interval_millis=15000,
+        )
+        metrics.set_meter_provider(MeterProvider(resource=resource, metric_readers=[metric_reader]))
 
     logger_provider = LoggerProvider(resource=resource)
-    log_exporter = OTLPLogExporter(endpoint=_OTEL_ENDPOINT, insecure=True)
-    logger_provider.add_log_record_processor(BatchLogRecordProcessor(log_exporter))
+    if _OTEL_ENABLED:
+        log_exporter = OTLPLogExporter(endpoint=_OTEL_ENDPOINT, insecure=True)
+        logger_provider.add_log_record_processor(BatchLogRecordProcessor(log_exporter))
     _logs.set_logger_provider(logger_provider)
 
     handler = LoggingHandler(level=logging.DEBUG, logger_provider=logger_provider)
