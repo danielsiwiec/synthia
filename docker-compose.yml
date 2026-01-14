@@ -12,6 +12,8 @@ services:
       - "8003:8003"
     env_file:
       - .env
+    environment:
+      - OTEL_ENABLED=true
     depends_on:
       pgvector:
         condition: service_healthy
