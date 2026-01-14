@@ -1,4 +1,4 @@
-.PHONY: start smoke dev test lint check format install-playwright-mcp start-playwright-mcp stop-playwright-mcp uninstall-playwright-mcp
+.PHONY: start smoke dev test test-voice lint check format install-playwright-mcp start-playwright-mcp stop-playwright-mcp uninstall-playwright-mcp
 
 start:
 	uv run uvicorn synthia.main:app --host 0.0.0.0 --port 8003
@@ -7,10 +7,13 @@ dev:
 	uv run uvicorn synthia.main:app --host 0.0.0.0 --port 8003 --reload
 
 test:
-	uv run pytest tests/ -n auto --testmon
+	uv run pytest tests/ -n auto --testmon -m "not voice"
 
 smoke:
 	uv run pytest tests/ -m smoke
+
+test-voice:
+	uv run pytest tests/ -m voice
 
 lint:
 	uv run ruff check . --fix --unsafe-fixes
