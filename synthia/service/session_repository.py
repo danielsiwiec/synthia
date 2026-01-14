@@ -15,14 +15,6 @@ class SessionRepository:
 
     async def _initialize(self) -> None:
         async with await psycopg.AsyncConnection.connect(self._conn_string) as conn:
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS thread_sessions (
-                    thread_id BIGINT PRIMARY KEY,
-                    session_id TEXT NOT NULL
-                )
-            """)
-            await conn.commit()
-
             async with conn.cursor() as cur:
                 await cur.execute("SELECT thread_id, session_id FROM thread_sessions")
                 rows = await cur.fetchall()

@@ -1,11 +1,11 @@
 import logging
 import os
-import shutil
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from claude_agent_sdk.types import McpHttpServerConfig, McpStdioServerConfig
+import asyncpg
+from claude_agent_sdk.types import McpHttpServerConfig
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from loguru import logger
@@ -14,13 +14,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from synthia.agents.admin.client import create_admin_mcp_server
 from synthia.agents.claude import ClaudeAgent
+from synthia.agents.episodic.client import create_episodic_mcp_server
+from synthia.agents.episodic.sync import EpisodicMemoryService
 from synthia.agents.memory.client import create_memory_mcp_server
 from synthia.agents.scheduler.client import create_scheduler_mcp_server
 from synthia.discord import Discord
 from synthia.helpers.pubsub import pubsub
 from synthia.metrics import create_instrumentator
+from synthia.migrations.runner import run_migrations
 from synthia.routes import audio_router, health_router, mount_static, task_router, voice_router
-from synthia.service.episodic_memory_sync import EpisodicMemorySyncService
 from synthia.service.session_repository import SessionRepository
 from synthia.service.task import TaskService
 from synthia.telemetry import instrument_fastapi, loguru_otel_sink, setup_telemetry
@@ -43,12 +45,13 @@ logger.add(
 logger.add(loguru_otel_sink, level="DEBUG")
 
 
-def _register_handlers():
+def _register_handlers(episodic_memory_service: EpisodicMemoryService):
     from synthia.agents.claude import Message
     from synthia.agents.progress import analyze_progress
 
     pubsub.subscribe(Message, lambda message: logger.info(f"{message.render()}"))
     pubsub.subscribe(Message, analyze_progress)
+    pubsub.subscribe(Message, episodic_memory_service.track_message)
 
 
 class Config(BaseSettings):
@@ -71,7 +74,9 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        _register_handlers()
+        run_migrations(config.postgres_connection_string)
+
+        db_pool = await asyncpg.create_pool(config.postgres_connection_string, min_size=2, max_size=10)
 
         memory_mcp_server = await create_memory_mcp_server(
             user=config.memory_user, postgres_url=config.postgres_connection_string
@@ -80,20 +85,17 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
         admin_mcp_server = create_admin_mcp_server()
         session_repository = await SessionRepository.create(config.postgres_connection_string)
 
+        logger.info("Enabling episodic memory MCP server...")
+        episodic_mcp_server = create_episodic_mcp_server(db_pool)
+
         mcp_servers = {
             "memory": memory_mcp_server,
             "scheduler": scheduler_mcp_server,
             "admin": admin_mcp_server,
+            "episodic": episodic_mcp_server,
             "browser": McpHttpServerConfig(type="http", url="http://host.docker.internal:8931/mcp"),
             "google": McpHttpServerConfig(type="http", url="http://google-mcp:8000/mcp"),
         }
-
-        if shutil.which("episodic-memory-mcp-server"):
-            logger.info("Enabling episodic-memory MCP server...")
-            mcp_servers["episodic-memory"] = McpStdioServerConfig(
-                type="stdio",
-                command="episodic-memory-mcp-server",
-            )
 
         if os.getenv("GEMINI_API_KEY"):
             from synthia.agents.image.client import create_image_mcp_server
@@ -103,8 +105,12 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
         claude_agent = ClaudeAgent(mcp_servers=mcp_servers, cwd=config.claude_cwd)
         await claude_agent.initialize_pool(skip_prewarm=config_overrides is not None)
+
+        episodic_memory_service = EpisodicMemoryService(pool=db_pool, cwd=config.claude_cwd)
+
+        _register_handlers(episodic_memory_service)
+
         task_service = TaskService(claude_agent, session_repository)
-        EpisodicMemorySyncService()
 
         scheduler_service.start()
 
@@ -122,6 +128,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
         await app.state.discord.stop()
         await pubsub.stop()
         await claude_agent.shutdown_pool()
+        await db_pool.close()
 
     app = FastAPI(
         title="Synthia", description="FastAPI application with Claude Agent SDK integration", lifespan=lifespan

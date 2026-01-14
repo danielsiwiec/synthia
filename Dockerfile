@@ -31,25 +31,12 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen
 
 COPY synthia synthia
-
-# Install plugin using secret mount - copy to writable location since claude CLI writes to it
-RUN --mount=type=secret,id=claude_credentials,target=/run/secrets/claude.json \
-    cp /run/secrets/claude.json /root/.claude.json && \
-    claude plugin marketplace add danielsiwiec/episodic-memory && \
-    claude plugin install episodic-memory@episodic-memory-dev && \
-    rm /root/.claude.json && \
-    PLUGIN_DIR=$(find /root/.claude/plugins/cache -path "*/episodic-memory/*/cli" -type d 2>/dev/null | head -1 | xargs dirname) && \
-    cd "$PLUGIN_DIR" && npm install && \
-    mkdir -p /home/synthia/.claude && \
-    mv /root/.claude/plugins /home/synthia/.claude/plugins
+COPY alembic.ini alembic.ini
 
 RUN chown -R synthia:synthia /home/synthia
 
 USER synthia
 
-ENV PATH="/home/synthia/.local/bin:$PATH"
+RUN mkdir -p ~/.claude /home/synthia/workdir/.claude
 
-RUN mkdir -p ~/.claude /home/synthia/workdir/.claude /home/synthia/.local/bin && \
-    CLI_PATH=$(find /home/synthia/.claude/plugins/cache -path "*/episodic-memory/*/cli/episodic-memory" -type f 2>/dev/null | head -1) && \
-    ln -sf "$CLI_PATH" /home/synthia/.local/bin/episodic-memory
 CMD ["uv", "run", "uvicorn", "synthia.main:app", "--host", "0.0.0.0", "--port", "8003"]
