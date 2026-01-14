@@ -23,11 +23,7 @@ version = "0.1.0"
 description = "FastAPI application with Claude Agent SDK integration"
 requires-python = ">=3.13"
 dependencies = [
-  "langchain-core>=1.1.0",
   "python-dotenv>=1.2.1",
-  "jsonschema>=4.25.1",
-  "langchain-openai>=1.1.0",
-  "pydantic>=2.12.4",
   "fastapi[standard]>=0.123.5",
   "loguru>=0.7.3",
   "markdown>=3.10",
@@ -54,7 +50,11 @@ dependencies = [
   "anthropic>=0.75.0",
   "sentence-transformers>=5.2.0",
   "alembic>=1.18.0",
-  "sqlalchemy>=2.0.44"
+  "sqlalchemy>=2.0.44",
+  "langchain-core>=1.2.7",
+  "jsonschema>=4.26.0",
+  "langchain-openai>=1.1.7",
+  "pydantic>=2.12.5"
 ]
 
 [tool.hatch.build.targets.wheel]
