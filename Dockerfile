@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.4
 FROM python:3.13-slim
 
 ARG USER_UID=501
@@ -5,9 +6,12 @@ ARG USER_GID=20
 
 SHELL ["/bin/bash", "-c"]
 
-RUN (groupadd -g ${USER_GID} synthia 2>/dev/null || groupadd synthia 2>/dev/null || true) && \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    (groupadd -g ${USER_GID} synthia 2>/dev/null || groupadd synthia 2>/dev/null || true) && \
     useradd -m -u ${USER_UID} -g ${USER_GID} synthia 2>/dev/null || \
     (useradd -m -u ${USER_UID} synthia && usermod -g ${USER_GID} synthia) && \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
     apt-get update && \
     apt-get install -y --no-install-recommends curl ca-certificates gnupg && \
     install -m 0755 -d /etc/apt/keyrings && \
@@ -17,26 +21,27 @@ RUN (groupadd -g ${USER_GID} synthia 2>/dev/null || groupadd synthia 2>/dev/null
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get update && \
     apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin nodejs git && \
-    npm install -g @anthropic-ai/claude-code && \
     apt-get purge -y gnupg && apt-get autoremove -y && \
     (groupadd -g 999 docker 2>/dev/null || groupadd -f docker) && \
-    usermod -aG docker synthia && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+    usermod -aG docker synthia
 
-WORKDIR /home/synthia/workdir
+RUN --mount=type=cache,target=/root/.npm \
+    npm install -g @anthropic-ai/claude-code
 
 RUN pip install uv
 
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen
-
-COPY synthia synthia
-COPY alembic.ini alembic.ini
-
-RUN chown -R synthia:synthia /home/synthia
+WORKDIR /home/synthia/workdir
+RUN mkdir -p /home/synthia/.cache && chown -R synthia:synthia /home/synthia
 
 USER synthia
 
-RUN mkdir -p ~/.claude /home/synthia/workdir/.claude
+COPY --chown=synthia:synthia pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/home/synthia/.cache/uv,uid=${USER_UID},gid=${USER_GID} \
+    uv sync --frozen
+
+COPY --chown=synthia:synthia synthia synthia
+COPY --chown=synthia:synthia alembic.ini alembic.ini
+
+RUN mkdir -p ~/.claude ~/.cache /home/synthia/workdir/.claude
 
 CMD ["uv", "run", "uvicorn", "synthia.main:app", "--host", "0.0.0.0", "--port", "8003"]
