@@ -20,6 +20,9 @@ always add and remove packages using uv add/uv remove
 ## Tests
 - when writing tests, do not use any mocks or patches, unless instructed to
 
+## Git workflow
+- Push commits directly to main branch, do not create PRs
+
 ## Deploy and verify
 - run `make up`
 - check synthia's docker compose logs
