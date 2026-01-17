@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractContextManager
 from functools import wraps
@@ -11,7 +12,7 @@ from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExp
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
-from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.sdk._logs.export import SimpleLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
@@ -20,17 +21,26 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import Status, StatusCode
 
 _SERVICE_NAME = "synthia"
+_SERVICE_INSTANCE_ID = str(uuid.uuid4())[:8]
 _OTEL_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4317")
 _OTEL_ENABLED = os.getenv("OTEL_ENABLED", "false").lower() == "true"
 
 _tracer: trace.Tracer | None = None
 _otel_logger: logging.Logger | None = None
+_logger_provider: LoggerProvider | None = None
+_log_handler: LoggingHandler | None = None
 
 
 def setup_telemetry() -> None:
-    global _tracer, _otel_logger
+    global _tracer, _otel_logger, _logger_provider, _log_handler
 
-    resource = Resource.create({"service.name": _SERVICE_NAME, "service.version": "0.1.0"})
+    resource = Resource.create(
+        {
+            "service.name": _SERVICE_NAME,
+            "service.version": "0.1.0",
+            "service.instance.id": _SERVICE_INSTANCE_ID,
+        }
+    )
 
     trace_provider = TracerProvider(resource=resource)
     if _OTEL_ENABLED:
@@ -46,21 +56,22 @@ def setup_telemetry() -> None:
         )
         metrics.set_meter_provider(MeterProvider(resource=resource, metric_readers=[metric_reader]))
 
-    logger_provider = LoggerProvider(resource=resource)
+    _logger_provider = LoggerProvider(resource=resource)
     if _OTEL_ENABLED:
         log_exporter = OTLPLogExporter(endpoint=_OTEL_ENDPOINT, insecure=True)
-        logger_provider.add_log_record_processor(BatchLogRecordProcessor(log_exporter))
-    _logs.set_logger_provider(logger_provider)
+        _logger_provider.add_log_record_processor(SimpleLogRecordProcessor(log_exporter))
+    _logs.set_logger_provider(_logger_provider)
 
-    handler = LoggingHandler(level=logging.DEBUG, logger_provider=logger_provider)
+    _log_handler = LoggingHandler(level=logging.DEBUG, logger_provider=_logger_provider)
     _otel_logger = logging.getLogger("synthia.otel")
     _otel_logger.setLevel(logging.DEBUG)
-    _otel_logger.addHandler(handler)
+    _otel_logger.addHandler(_log_handler)
     _otel_logger.propagate = False
 
 
 def loguru_otel_sink(message: Any) -> None:
     otel_logger = _otel_logger or logging.getLogger("synthia.otel")
+    otel_logger.disabled = False
     record = message.record
     level_map = {
         "TRACE": logging.DEBUG,
