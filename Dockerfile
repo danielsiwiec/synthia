@@ -20,7 +20,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian trixie stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get update && \
-    apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin nodejs git && \
+    apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin nodejs git procps && \
     apt-get purge -y gnupg && apt-get autoremove -y && \
     (groupadd -g 999 docker 2>/dev/null || groupadd -f docker) && \
     usermod -aG docker synthia
