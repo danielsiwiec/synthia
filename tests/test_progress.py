@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 
-from synthia.agents.claude import InitMessage, Message, ToolCall
+from synthia.agents.agent import InitMessage, Message, ToolCall
 from synthia.agents.progress import analyze_progress
 from synthia.helpers.pubsub import pubsub
 from synthia.service.models import ProgressNotification

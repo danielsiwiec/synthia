@@ -3,7 +3,7 @@ import random
 
 from loguru import logger
 
-from synthia.agents.claude import ClaudeAgent
+from synthia.agents.pool import ClaudeAgentPool
 from synthia.helpers.pubsub import pubsub
 from synthia.helpers.schema import validate_schema
 from synthia.output import parse_from_schema
@@ -19,8 +19,8 @@ from synthia.telemetry import traced
 
 
 class TaskService:
-    def __init__(self, claude_agent: ClaudeAgent, session_repository: SessionRepository):
-        self._claude_agent = claude_agent
+    def __init__(self, pool: ClaudeAgentPool, session_repository: SessionRepository):
+        self._pool = pool
         self._tasks: dict[int, asyncio.Task] = {}
         self._session_repository = session_repository
         pubsub.subscribe(TaskTrigger, self._handle_scheduled_task)
@@ -58,10 +58,10 @@ Your response will be read aloud via text-to-speech. Be BRIEF - aim for 1-3 sent
 
 User's request: {request.task}"""
 
+        agent = await self._pool.acquire(resume=resume_from_session)
         task = asyncio.create_task(
-            self._claude_agent.run_for_result(
+            agent.run_for_result(
                 objective=objective,
-                resume_from_session=resume_from_session,
                 thread_id=request.thread_id,
             )
         )
@@ -71,10 +71,12 @@ User's request: {request.task}"""
             result_message = await task
         except asyncio.CancelledError:
             self._tasks.pop(request.thread_id, None)
+            await self._pool.release(agent)
             raise
 
         if not result_message:
             self._tasks.pop(request.thread_id, None)
+            await self._pool.release(agent)
             raise Exception("Timeout: No ResultMessage received within expected time")
 
         if request.response_schema:
@@ -83,6 +85,7 @@ User's request: {request.task}"""
             result = result_message.result
 
         self._tasks.pop(request.thread_id, None)
+        await self._pool.release(agent)
         asyncio.create_task(self._session_repository.save(request.thread_id, result_message.session_id))
 
         return TaskResponse(thread_id=request.thread_id, result=result, session_id=result_message.session_id)

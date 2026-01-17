@@ -13,16 +13,20 @@ from openai import AsyncOpenAI
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from synthia.agents.admin.client import create_admin_mcp_server
-from synthia.agents.claude import ClaudeAgent
 from synthia.agents.episodic.client import create_episodic_mcp_server
 from synthia.agents.episodic.sync import EpisodicMemoryService
 from synthia.agents.memory.client import create_memory_mcp_server
+from synthia.agents.pool import ClaudeAgentPool
 from synthia.agents.scheduler.client import create_scheduler_mcp_server
-from synthia.discord import Discord
+from synthia.discord.client import Discord
 from synthia.helpers.pubsub import pubsub
 from synthia.metrics import create_instrumentator
 from synthia.migrations.runner import run_migrations
-from synthia.routes import audio_router, health_router, mount_static, task_router, voice_router
+from synthia.routes.audio import router as audio_router
+from synthia.routes.health import router as health_router
+from synthia.routes.task import router as task_router
+from synthia.routes.voice import mount_static
+from synthia.routes.voice import router as voice_router
 from synthia.service.session_repository import SessionRepository
 from synthia.service.task import TaskService
 from synthia.telemetry import instrument_fastapi, loguru_otel_sink, setup_telemetry
@@ -46,7 +50,7 @@ logger.add(loguru_otel_sink, level="DEBUG")
 
 
 def _register_handlers(episodic_memory_service: EpisodicMemoryService):
-    from synthia.agents.claude import Message
+    from synthia.agents.agent import Message
     from synthia.agents.progress import analyze_progress
 
     pubsub.subscribe(Message, lambda message: logger.info(f"{message.render()}"))
@@ -63,6 +67,7 @@ class Config(BaseSettings):
     admin_channel: str
     postgres_connection_string: str
     claude_cwd: Path | None = None
+    enable_claude_pool: bool = True
 
     @property
     def discord_channels_list(self) -> list[str]:
@@ -103,19 +108,20 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             logger.info("Enabling image MCP server...")
             mcp_servers["image"] = create_image_mcp_server()
 
-        claude_agent = ClaudeAgent(mcp_servers=mcp_servers, cwd=config.claude_cwd)
-        await claude_agent.initialize_pool(skip_prewarm=config_overrides is not None)
+        agent_pool = await ClaudeAgentPool.create(
+            mcp_servers=mcp_servers, cwd=config.claude_cwd, enabled=config.enable_claude_pool
+        )
 
         episodic_memory_service = EpisodicMemoryService(pool=db_pool, cwd=config.claude_cwd)
 
         _register_handlers(episodic_memory_service)
 
-        task_service = TaskService(claude_agent, session_repository)
+        task_service = TaskService(agent_pool, session_repository)
 
         scheduler_service.start()
 
         app.state.task_service = task_service
-        app.state.claude_agent = claude_agent
+        app.state.agent_pool = agent_pool
         app.state.scheduler_service = scheduler_service
         app.state.openai_client = AsyncOpenAI()
         app.state.discord = Discord(config.discord_bot_token, config.discord_channels_list, config.admin_channel)
@@ -127,7 +133,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
         scheduler_service.shutdown()
         await app.state.discord.stop()
         await pubsub.stop()
-        await claude_agent.shutdown_pool()
+        await agent_pool.shutdown()
         await db_pool.close()
 
     app = FastAPI(

@@ -9,7 +9,7 @@ import asyncpg
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, ResultMessage
 from loguru import logger
 
-from synthia.agents.claude import InitMessage, Message, Result, Thought, ToolCall
+from synthia.agents.agent import InitMessage, Message, Result, Thought, ToolCall
 from synthia.agents.episodic.db import generate_embedding
 from synthia.telemetry import start_span, traced
 

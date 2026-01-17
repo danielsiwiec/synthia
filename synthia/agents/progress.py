@@ -4,7 +4,7 @@ from typing import cast
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
-from synthia.agents.claude import InitMessage, Message, Result
+from synthia.agents.agent import InitMessage, Message, Result
 from synthia.helpers.pubsub import pubsub
 from synthia.service.models import ProgressNotification
 
