@@ -1,25 +1,12 @@
+import os
+
 import psutil
 from loguru import logger
-from prometheus_client import Counter, Gauge
+from prometheus_client import REGISTRY, Counter
+from prometheus_client.metrics_core import GaugeMetricFamily
 from prometheus_fastapi_instrumentator import Instrumentator
-from prometheus_fastapi_instrumentator.metrics import Info
 
 llm_cost_usd_total = Counter("llm_cost_usd_total", "Total LLM cost in USD")
-
-_memory_gauge = Gauge(
-    "claude_process_memory_rss_bytes",
-    "RSS memory per Claude subprocess",
-    ["pid"],
-)
-_cpu_gauge = Gauge(
-    "claude_process_cpu_percent",
-    "CPU percentage per Claude subprocess",
-    ["pid"],
-)
-_count_gauge = Gauge(
-    "claude_process_count",
-    "Number of active Claude subprocesses",
-)
 
 
 def record_session_cost(cost: float) -> None:
@@ -27,25 +14,42 @@ def record_session_cost(cost: float) -> None:
         llm_cost_usd_total.inc(cost)
 
 
-async def _claude_process_metrics(_: Info) -> None:
-    _memory_gauge.clear()
-    _cpu_gauge.clear()
-    try:
-        procs = [
-            proc
-            for proc in psutil.process_iter(["pid", "cmdline", "status"])
-            if (cmdline := proc.info.get("cmdline") or [])
-            and len(cmdline) > 0
-            and cmdline[0] == "claude"
-            and proc.info.get("status") != psutil.STATUS_ZOMBIE
-        ]
-        for proc in procs:
-            pid = str(proc.info["pid"])
-            _memory_gauge.labels(pid=pid).set(proc.memory_info().rss)
-            _cpu_gauge.labels(pid=pid).set(proc.cpu_percent())
-        _count_gauge.set(len(procs))
-    except Exception as e:
-        logger.warning(f"Failed to collect Claude process metrics: {e}")
+class _ClaudeProcessCollector:
+    def collect(self):
+        memory_gauge = GaugeMetricFamily(
+            "claude_process_memory_rss_bytes", "RSS memory per Claude subprocess", labels=["pid"]
+        )
+        cpu_gauge = GaugeMetricFamily(
+            "claude_process_cpu_percent", "CPU percentage per Claude subprocess", labels=["pid"]
+        )
+        count_gauge = GaugeMetricFamily("claude_process_count", "Number of active Claude subprocesses")
+
+        try:
+            procs = [
+                p
+                for p in psutil.process_iter(["pid", "cmdline", "status"])
+                if (cmd := p.info.get("cmdline"))
+                and os.path.basename(cmd[0]) == "claude"
+                and p.info.get("status") != psutil.STATUS_ZOMBIE
+            ]
+            for p in procs:
+                pid = str(p.info["pid"])
+                try:
+                    memory_gauge.add_metric([pid], p.memory_info().rss)
+                    cpu_gauge.add_metric([pid], p.cpu_percent())
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            count_gauge.add_metric([], len(procs))
+        except Exception as e:
+            logger.warning(f"Failed to collect Claude process metrics: {e}")
+            count_gauge.add_metric([], 0)
+
+        yield memory_gauge
+        yield cpu_gauge
+        yield count_gauge
+
+
+REGISTRY.register(_ClaudeProcessCollector())
 
 
 def create_instrumentator() -> Instrumentator:
@@ -57,4 +61,4 @@ def create_instrumentator() -> Instrumentator:
         excluded_handlers=["/health", "/metrics"],
         inprogress_name="http_requests_inprogress",
         inprogress_labels=True,
-    ).add(_claude_process_metrics)
+    )
