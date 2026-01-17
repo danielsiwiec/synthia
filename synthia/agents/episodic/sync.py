@@ -11,6 +11,7 @@ from loguru import logger
 
 from synthia.agents.agent import InitMessage, Message, Result, Thought, ToolCall
 from synthia.agents.episodic.db import generate_embedding
+from synthia.metrics import record_session_cost
 from synthia.telemetry import start_span, traced
 
 _SUMMARIZATION_MARKER = "[EPISODIC_SUMMARIZATION]"
@@ -58,6 +59,9 @@ Transcript:
                     async for message in client.receive_messages():
                         if isinstance(message, ResultMessage):
                             summary = message.result
+                            cost = getattr(message, "total_cost_usd", None)
+                            if cost:
+                                record_session_cost(cost)
                             break
             finally:
                 await client.disconnect()
