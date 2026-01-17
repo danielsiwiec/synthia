@@ -287,3 +287,6 @@ claude_home/skills/
 
 # Local docker compose overrides (user-specific mounts)
 docker-compose.override.yml
+
+# extra .md file, as claude.md extension
+extra.md

@@ -23,9 +23,5 @@ always add and remove packages using uv add/uv remove
 ## Git workflow
 - Push commits directly to main branch, do not create PRs
 
-## Deploy and verify
-- run `make up`
-- check synthia's docker compose logs
-- use the task endpoint to say 'hello'
-- confirm the response is 200
-- check logs again for errors
+## Additional resources
+IMPORTANT: review extra.md for additional instructions

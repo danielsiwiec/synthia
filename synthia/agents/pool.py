@@ -22,6 +22,8 @@ class ClaudeAgentPool:
         self._cleanup_task: asyncio.Task | None = None
         self._init_loop_id: int | None = None
         self._non_cacheable_agents: set[int] = set()
+        self._init_task: asyncio.Task | None = None
+        self._init_lock: asyncio.Lock = asyncio.Lock()
 
     @classmethod
     async def create(
@@ -38,14 +40,18 @@ class ClaudeAgentPool:
 
         pool._init_loop_id = id(asyncio.get_running_loop())
         pool._cleanup_task = asyncio.create_task(pool._cleanup_loop())
-
-        logger.info(f"Initializing pool with {_FRESH_POOL_SIZE} fresh agents...")
-        pool._fresh_agents = list(
-            await asyncio.gather(*[ClaudeAgent.create(mcp_servers, cwd) for _ in range(_FRESH_POOL_SIZE)])
-        )
-        logger.info(f"Pool initialized with {len(pool._fresh_agents)} fresh agents")
+        pool._init_task = asyncio.create_task(pool._lazy_init())
 
         return pool
+
+    async def _lazy_init(self) -> None:
+        logger.info(f"Initializing pool with {_FRESH_POOL_SIZE} fresh agents (background)...")
+        agents = list(
+            await asyncio.gather(*[ClaudeAgent.create(self._mcp_servers, self._cwd) for _ in range(_FRESH_POOL_SIZE)])
+        )
+        async with self._init_lock:
+            self._fresh_agents.extend(agents)
+        logger.info(f"Pool initialized with {len(self._fresh_agents)} fresh agents")
 
     async def _cleanup_loop(self) -> None:
         while True:
@@ -124,12 +130,13 @@ class ClaudeAgentPool:
 
     async def shutdown(self) -> None:
         logger.info("Shutting down pool...")
-        if self._cleanup_task:
-            self._cleanup_task.cancel()
-            try:
-                await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
+        for task in [self._cleanup_task, self._init_task]:
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
         for agent in self._fresh_agents:
             await agent.disconnect()
         for agent, _ in self._session_cache.values():
