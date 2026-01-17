@@ -15,6 +15,7 @@ from synthia.metrics import record_session_cost
 from synthia.telemetry import start_span, traced
 
 _SUMMARIZATION_MARKER = "[EPISODIC_SUMMARIZATION]"
+_MAX_CONCURRENT_SUMMARIZATIONS = 2
 
 
 class EpisodicMemoryService:
@@ -23,13 +24,15 @@ class EpisodicMemoryService:
         self._cwd = cwd
         self._transcripts_by_session: dict[str, list[str]] = defaultdict(list)
         self._prompts_by_session: dict[str, str] = {}
+        self._summarization_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_SUMMARIZATIONS)
 
     def _is_summarization_session(self, prompt: str) -> bool:
         return _SUMMARIZATION_MARKER in prompt
 
     @traced("episodic_memory.summarize_and_store")
     async def _summarize_and_store(self, session_id: str, transcript: str, original_prompt: str) -> None:
-        summarization_prompt = f"""{_SUMMARIZATION_MARKER}
+        async with self._summarization_semaphore:
+            summarization_prompt = f"""{_SUMMARIZATION_MARKER}
 Summarize the following conversation transcript in 2-3 sentences. Focus on:
 - What task was requested
 - What actions were taken
@@ -43,51 +46,51 @@ Transcript:
 {transcript[:8000]}
 """
 
-        try:
-            options = ClaudeAgentOptions(
-                cwd=self._cwd,
-                permission_mode="bypassPermissions",
-            )
-            client = ClaudeSDKClient(options)
-            await client.connect()
-
             try:
-                with start_span("episodic_memory.claude_summarization") as span:
-                    span.set_attribute("session_id", session_id[:8])
-                    await client.query(prompt=summarization_prompt)
-                    summary = None
-                    async for message in client.receive_messages():
-                        if isinstance(message, ResultMessage):
-                            summary = message.result
-                            cost = getattr(message, "total_cost_usd", None)
-                            if cost:
-                                record_session_cost(cost)
-                            break
-            finally:
-                await client.disconnect()
-
-            if not summary:
-                logger.error(f"Failed to summarize session {session_id[:8]}: no result")
-                return
-
-            combined_text = f"{summary}\n\n{transcript[:4000]}"
-            embedding = generate_embedding(combined_text)
-
-            async with self._pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO conversations (transcript, summary, embedding)
-                    VALUES ($1, $2, $3::vector)
-                    """,
-                    transcript,
-                    summary,
-                    json.dumps(embedding),
+                options = ClaudeAgentOptions(
+                    cwd=self._cwd,
+                    permission_mode="bypassPermissions",
                 )
+                client = ClaudeSDKClient(options)
+                await client.connect()
 
-            logger.info(f"Stored episodic memory for session {session_id[:8]}")
+                try:
+                    with start_span("episodic_memory.claude_summarization") as span:
+                        span.set_attribute("session_id", session_id[:8])
+                        await client.query(prompt=summarization_prompt)
+                        summary = None
+                        async for message in client.receive_messages():
+                            if isinstance(message, ResultMessage):
+                                summary = message.result
+                                cost = getattr(message, "total_cost_usd", None)
+                                if cost:
+                                    record_session_cost(cost)
+                                break
+                finally:
+                    await client.disconnect()
 
-        except Exception as e:
-            logger.error(f"Error storing episodic memory for session {session_id[:8]}: {e}")
+                if not summary:
+                    logger.error(f"Failed to summarize session {session_id[:8]}: no result")
+                    return
+
+                combined_text = f"{summary}\n\n{transcript[:4000]}"
+                embedding = generate_embedding(combined_text)
+
+                async with self._pool.acquire() as conn:
+                    await conn.execute(
+                        """
+                        INSERT INTO conversations (transcript, summary, embedding)
+                        VALUES ($1, $2, $3::vector)
+                        """,
+                        transcript,
+                        summary,
+                        json.dumps(embedding),
+                    )
+
+                logger.info(f"Stored episodic memory for session {session_id[:8]}")
+
+            except Exception as e:
+                logger.error(f"Error storing episodic memory for session {session_id[:8]}: {e}")
 
     @traced("episodic_memory.track_message")
     async def track_message(self, message: Message) -> None:
