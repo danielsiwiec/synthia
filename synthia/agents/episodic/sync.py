@@ -6,13 +6,11 @@ from collections import defaultdict
 from pathlib import Path
 
 import asyncpg
-from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, ResultMessage
 from loguru import logger
 
-from synthia.agents.agent import InitMessage, Message, Result, Thought, ToolCall
+from synthia.agents.agent import ClaudeAgent, InitMessage, Message, Result, Thought, ToolCall
 from synthia.agents.episodic.db import generate_embedding
-from synthia.metrics import record_session_cost
-from synthia.telemetry import start_span, traced
+from synthia.telemetry import traced
 
 _SUMMARIZATION_MARKER = "[EPISODIC_SUMMARIZATION]"
 _MAX_CONCURRENT_SUMMARIZATIONS = 2
@@ -47,21 +45,9 @@ Transcript:
 """
 
             try:
-                options = ClaudeAgentOptions(
-                    cwd=self._cwd,
-                    permission_mode="bypassPermissions",
-                )
-                async with ClaudeSDKClient(options=options) as client:
-                    with start_span("episodic_memory.claude_summarization") as span:
-                        span.set_attribute("session_id", session_id[:8])
-                        await client.query(summarization_prompt)
-                        summary = None
-                        async for message in client.receive_response():
-                            if isinstance(message, ResultMessage) and summary is None:
-                                summary = message.result
-                                cost = getattr(message, "total_cost_usd", None)
-                                if cost:
-                                    record_session_cost(cost)
+                async with await ClaudeAgent.create(cwd=self._cwd, system_prompt="") as agent:
+                    result = await agent.run_for_result(summarization_prompt)
+                    summary = result.result if result and result.success else None
 
                 if not summary:
                     logger.error(f"Failed to summarize session {session_id[:8]}: no result")

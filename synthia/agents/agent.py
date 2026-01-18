@@ -1,6 +1,6 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -93,13 +93,14 @@ class ClaudeAgent:
         mcp_servers: dict[str, McpServerConfig] | None = None,
         cwd: str | Path | None = None,
         resume: str | None = None,
+        system_prompt: str | None = None,
     ) -> "ClaudeAgent":
         options = ClaudeAgentOptions(
             cwd=cwd,
             setting_sources=["user", "project"],
             allowed_tools=["Skill"],
             permission_mode="bypassPermissions",
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=system_prompt if system_prompt is not None else SYSTEM_PROMPT,
             mcp_servers=mcp_servers or {},
             resume=resume,
         )
@@ -114,6 +115,14 @@ class ClaudeAgent:
             await self._client.disconnect()
         except Exception:
             pass
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self, _exc_type: type[BaseException] | None, _exc_val: BaseException | None, _exc_tb: Any
+    ) -> None:
+        await self.disconnect()
 
     def _parse_message(
         self, message: Any, tool_calls: dict[str, ToolCall], session_id: str, thread_id: int | None
@@ -177,24 +186,26 @@ class ClaudeAgent:
         return None
 
     @traced("claude_run")
-    async def run_for_result(self, objective: str, thread_id: int) -> Result | None:
-        prompt_with_thread_id = f"{objective}\n\nthread_id: {thread_id}"
+    async def run_for_result(self, objective: str, thread_id: int | None = None) -> Result | None:
+        prompt = f"{objective}\n\nthread_id: {thread_id}" if thread_id else objective
         tool_calls: dict[str, ToolCall] = {}
 
-        logger.debug(f"📤 Claude SDK query: {prompt_with_thread_id[:50]}...")
-        await self._client.query(prompt=prompt_with_thread_id)
+        logger.debug(f"📤 Claude SDK query: {prompt[:50]}...")
+        await self._client.query(prompt=prompt)
         logger.debug("📤 Claude SDK query sent, receiving messages...")
 
         message_count = 0
         result: Result | None = None
         async for message in self._client.receive_response():
-            await pubsub.publish(message)
+            if thread_id:
+                await pubsub.publish(message)
             if isinstance(message, SystemMessage):
                 self._session_id = message.data["session_id"]
                 message_count += 1
-                init_msg = InitMessage(session_id=self._session_id, thread_id=thread_id, prompt=objective)
-                with start_span("InitMessage"):
-                    await pubsub.publish(init_msg)
+                if thread_id:
+                    init_msg = InitMessage(session_id=self._session_id, thread_id=thread_id, prompt=objective)
+                    with start_span("InitMessage"):
+                        await pubsub.publish(init_msg)
                 continue
             if isinstance(message, ResultMessage):
                 logger.debug(f"📥 Claude SDK ResultMessage received: {(message.result or '')[:50]}...")
@@ -207,12 +218,14 @@ class ClaudeAgent:
                 raise ValueError("Session ID is not set")
             if transformed := self._parse_message(message, tool_calls, self._session_id, thread_id):
                 message_count += 1
-                message_type = type(transformed).__name__
-                with start_span(message_type):
-                    await pubsub.publish(transformed)
+                if thread_id:
+                    message_type = type(transformed).__name__
+                    with start_span(message_type):
+                        await pubsub.publish(transformed)
                 if isinstance(transformed, Result) and result is None:
                     result = transformed
-                    current_span().set_attribute("message_count", message_count)
-                    if transformed.cost_usd is not None:
-                        current_span().set_attribute("session_cost_usd", transformed.cost_usd)
+                    if thread_id:
+                        current_span().set_attribute("message_count", message_count)
+                        if transformed.cost_usd is not None:
+                            current_span().set_attribute("session_cost_usd", transformed.cost_usd)
         return result
