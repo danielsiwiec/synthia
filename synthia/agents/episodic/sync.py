@@ -51,23 +51,17 @@ Transcript:
                     cwd=self._cwd,
                     permission_mode="bypassPermissions",
                 )
-                client = ClaudeSDKClient(options)
-                await client.connect()
-
-                try:
+                async with ClaudeSDKClient(options=options) as client:
                     with start_span("episodic_memory.claude_summarization") as span:
                         span.set_attribute("session_id", session_id[:8])
-                        await client.query(prompt=summarization_prompt)
+                        await client.query(summarization_prompt)
                         summary = None
-                        async for message in client.receive_messages():
-                            if isinstance(message, ResultMessage):
+                        async for message in client.receive_response():
+                            if isinstance(message, ResultMessage) and summary is None:
                                 summary = message.result
                                 cost = getattr(message, "total_cost_usd", None)
                                 if cost:
                                     record_session_cost(cost)
-                                break
-                finally:
-                    await client.disconnect()
 
                 if not summary:
                     logger.error(f"Failed to summarize session {session_id[:8]}: no result")

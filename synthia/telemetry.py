@@ -6,6 +6,7 @@ from contextlib import AbstractContextManager
 from functools import wraps
 from typing import Any, TypeVar
 
+from langsmith.integrations.claude_agent_sdk import configure_claude_agent_sdk
 from opentelemetry import _logs, metrics, trace
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
@@ -24,6 +25,7 @@ _SERVICE_NAME = "synthia"
 _SERVICE_INSTANCE_ID = str(uuid.uuid4())[:8]
 _OTEL_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4317")
 _OTEL_ENABLED = os.getenv("OTEL_ENABLED", "false").lower() == "true"
+_LANGSMITH_ENABLED = bool(os.getenv("LANGSMITH_API_KEY"))
 
 _tracer: trace.Tracer | None = None
 _otel_logger: logging.Logger | None = None
@@ -33,6 +35,9 @@ _log_handler: LoggingHandler | None = None
 
 def setup_telemetry() -> None:
     global _tracer, _otel_logger, _logger_provider, _log_handler
+
+    if _LANGSMITH_ENABLED:
+        configure_claude_agent_sdk()
 
     resource = Resource.create(
         {

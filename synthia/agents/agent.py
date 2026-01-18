@@ -1,4 +1,3 @@
-from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -177,7 +176,8 @@ class ClaudeAgent:
 
         return None
 
-    async def _run(self, objective: str, thread_id: int) -> AsyncIterator[Any]:
+    @traced("claude_run")
+    async def run_for_result(self, objective: str, thread_id: int) -> Result | None:
         prompt_with_thread_id = f"{objective}\n\nthread_id: {thread_id}"
         tool_calls: dict[str, ToolCall] = {}
 
@@ -185,11 +185,16 @@ class ClaudeAgent:
         await self._client.query(prompt=prompt_with_thread_id)
         logger.debug("📤 Claude SDK query sent, receiving messages...")
 
-        async for message in self._client.receive_messages():
+        message_count = 0
+        result: Result | None = None
+        async for message in self._client.receive_response():
             await pubsub.publish(message)
             if isinstance(message, SystemMessage):
                 self._session_id = message.data["session_id"]
-                yield InitMessage(session_id=self._session_id, thread_id=thread_id, prompt=objective)
+                message_count += 1
+                init_msg = InitMessage(session_id=self._session_id, thread_id=thread_id, prompt=objective)
+                with start_span("InitMessage"):
+                    await pubsub.publish(init_msg)
                 continue
             if isinstance(message, ResultMessage):
                 logger.debug(f"📥 Claude SDK ResultMessage received: {(message.result or '')[:50]}...")
@@ -201,20 +206,13 @@ class ClaudeAgent:
             if self._session_id is None:
                 raise ValueError("Session ID is not set")
             if transformed := self._parse_message(message, tool_calls, self._session_id, thread_id):
-                yield transformed
-                if isinstance(transformed, Result):
-                    break
-
-    @traced("claude_run")
-    async def run_for_result(self, objective: str, thread_id: int) -> Result | None:
-        message_count = 0
-        async for message in self._run(objective, thread_id=thread_id):
-            message_count += 1
-            message_type = type(message).__name__
-            with start_span(message_type):
-                await pubsub.publish(message)
-            if isinstance(message, Result):
-                current_span().set_attribute("message_count", message_count)
-                if message.cost_usd is not None:
-                    current_span().set_attribute("session_cost_usd", message.cost_usd)
-                return message
+                message_count += 1
+                message_type = type(transformed).__name__
+                with start_span(message_type):
+                    await pubsub.publish(transformed)
+                if isinstance(transformed, Result) and result is None:
+                    result = transformed
+                    current_span().set_attribute("message_count", message_count)
+                    if transformed.cost_usd is not None:
+                        current_span().set_attribute("session_cost_usd", transformed.cost_usd)
+        return result

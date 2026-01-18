@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+os.environ["LANGSMITH_PROJECT"] = "tests"
+
 import httpx
 import pytest
 from testcontainers.core.image import DockerImage
