@@ -18,15 +18,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
     chmod a+r /etc/apt/keyrings/docker.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian trixie stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get update && \
-    apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin nodejs git procps && \
+    apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin git procps && \
     apt-get purge -y gnupg && apt-get autoremove -y && \
     (groupadd -g 999 docker 2>/dev/null || groupadd -f docker) && \
     usermod -aG docker synthia
-
-RUN --mount=type=cache,target=/root/.npm \
-    npm install -g @anthropic-ai/claude-code
 
 RUN pip install uv
 
