@@ -5,7 +5,8 @@ Detailed system architecture documentation is available in `claude_home/data/syn
 uv run pytest ... -n auto --testmon
 
 ## Package management
-always add and remove packages using uv add/uv remove
+- always add and remove packages using uv add/uv remove
+- to update dependencies, use the `/update-dependencies` skill
 
 ## Verifying changes
 - run `make check` after all changes
