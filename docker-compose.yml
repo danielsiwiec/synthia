@@ -55,15 +55,6 @@ services:
     ports:
       - "8001:8000"
 
-  otel-collector:
-    container_name: otel-collector
-    image: otel/opentelemetry-collector-contrib:latest
-    volumes:
-      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: unless-stopped
-
 volumes:
   pgvector_data:
 
