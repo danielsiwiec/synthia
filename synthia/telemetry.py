@@ -23,8 +23,8 @@ from opentelemetry.trace import Status, StatusCode
 
 _SERVICE_NAME = "synthia"
 _SERVICE_INSTANCE_ID = str(uuid.uuid4())[:8]
-_OTEL_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4317")
-_OTEL_ENABLED = os.getenv("OTEL_ENABLED", "false").lower() == "true"
+_OTEL_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+_OTEL_ENABLED = bool(_OTEL_ENDPOINT)
 _LANGSMITH_ENABLED = bool(os.getenv("LANGSMITH_API_KEY"))
 
 _tracer: trace.Tracer | None = None
