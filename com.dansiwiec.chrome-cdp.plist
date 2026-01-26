@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.dansiwiec.chrome-cdp</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Applications/Google Chrome.app/Contents/MacOS/Google Chrome</string>
+        <string>--remote-debugging-port=9222</string>
+        <string>--remote-debugging-address=0.0.0.0</string>
+        <string>--remote-allow-origins=*</string>
+        <string>--user-data-dir=/Users/dansiwiec/Library/Application Support/Google/Chrome-CDP</string>
+        <string>--password-store=basic</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/dansiwiec/Library/Logs/chrome-cdp.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/dansiwiec/Library/Logs/chrome-cdp.error.log</string>
+</dict>
+</plist>

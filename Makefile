@@ -1,4 +1,4 @@
-.PHONY: start smoke dev test test-voice lint check format toml-sort install-playwright-mcp start-playwright-mcp stop-playwright-mcp uninstall-playwright-mcp
+.PHONY: start smoke dev test test-voice lint check format toml-sort install-chrome-cdp uninstall-chrome-cdp
 
 start:
 	uv run uvicorn synthia.main:app --host 0.0.0.0 --port 8003
@@ -38,16 +38,16 @@ down:
 restart:
 	docker compose restart
 
-install-playwright-mcp:
-	mkdir -p ~/Library/LaunchAgents/
-	cp com.dansiwiec.playwright-mcp.plist ~/Library/LaunchAgents/
-	-launchctl bootout gui/$$(id -u)/com.dansiwiec.playwright-mcp 2>/dev/null || true
-	-launchctl unload ~/Library/LaunchAgents/com.dansiwiec.playwright-mcp.plist 2>/dev/null || true
-	launchctl bootstrap gui/$$(id -u) ~/Library/LaunchAgents/com.dansiwiec.playwright-mcp.plist
-
-uninstall-playwright-mcp:
-	-launchctl bootout gui/$$(id -u)/com.dansiwiec.playwright-mcp 2>/dev/null || true
-	rm -f ~/Library/LaunchAgents/com.dansiwiec.playwright-mcp.plist
-
 get-credentials:
 	ks -k login show "Claude Code-credentials" > ./claude_home/.credentials.json
+
+install-chrome-cdp:
+	cp com.dansiwiec.chrome-cdp.plist ~/Library/LaunchAgents/
+	launchctl load ~/Library/LaunchAgents/com.dansiwiec.chrome-cdp.plist
+	@echo "✓ Chrome CDP service installed and started"
+	@echo "Chrome will start automatically on login"
+
+uninstall-chrome-cdp:
+	-launchctl unload ~/Library/LaunchAgents/com.dansiwiec.chrome-cdp.plist
+	rm -f ~/Library/LaunchAgents/com.dansiwiec.chrome-cdp.plist
+	@echo "✓ Chrome CDP service uninstalled"

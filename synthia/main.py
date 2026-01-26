@@ -98,7 +98,6 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             "scheduler": scheduler_mcp_server,
             "admin": admin_mcp_server,
             "episodic": episodic_mcp_server,
-            "browser": McpHttpServerConfig(type="http", url="http://host.docker.internal:8931/mcp"),
             "google": McpHttpServerConfig(type="http", url="http://google-mcp:8000/mcp"),
         }
 
