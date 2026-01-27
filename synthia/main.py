@@ -26,10 +26,12 @@ from synthia.helpers.pubsub import pubsub
 from synthia.metrics import create_instrumentator
 from synthia.migrations.runner import run_migrations
 from synthia.routes.audio import router as audio_router
+from synthia.routes.chat import router as chat_router
 from synthia.routes.health import router as health_router
 from synthia.routes.task import router as task_router
 from synthia.routes.voice import mount_static
 from synthia.routes.voice import router as voice_router
+from synthia.service.chat import ChatService
 from synthia.service.session_repository import SessionRepository
 from synthia.service.task import TaskService
 from synthia.telemetry import instrument_fastapi, loguru_otel_sink, setup_telemetry
@@ -52,13 +54,16 @@ logger.add(
 logger.add(loguru_otel_sink, level="DEBUG")
 
 
-def _register_handlers(episodic_memory_service: EpisodicMemoryService):
+def _register_handlers(episodic_memory_service: EpisodicMemoryService, chat_service: ChatService):
     from synthia.agents.agent import Message
     from synthia.agents.progress import analyze_progress
+    from synthia.service.models import ProgressNotification
 
     pubsub.subscribe(Message, lambda message: logger.info(f"{message.render()}"))
     pubsub.subscribe(Message, analyze_progress)
     pubsub.subscribe(Message, episodic_memory_service.track_message)
+    pubsub.subscribe(Message, chat_service.handle_message)
+    pubsub.subscribe(ProgressNotification, chat_service.handle_progress)
 
 
 class Config(BaseSettings):
@@ -122,7 +127,11 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
         episodic_memory_service = EpisodicMemoryService(pool=db_pool, cwd=config.claude_cwd)
 
-        _register_handlers(episodic_memory_service)
+        chat_service = ChatService(db_pool)
+        await chat_service.initialize()
+        app.state.chat_service = chat_service
+
+        _register_handlers(episodic_memory_service, chat_service)
 
         task_service = TaskService(agent_pool, session_repository)
 
@@ -155,6 +164,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
     app.include_router(audio_router)
     app.include_router(health_router)
     app.include_router(voice_router)
+    app.include_router(chat_router)
     mount_static(app)
 
     instrumentator = create_instrumentator()

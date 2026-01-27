@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Synthia">
+    <meta name="theme-color" content="#1a1a2e">
+    <title>Synthia</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/15.0.7/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-tertiary: #0f3460;
+            --bg-input: #1e2a4a;
+            --text-primary: #e0e0e0;
+            --text-secondary: #aaa;
+            --text-muted: #666;
+            --accent: #00d4ff;
+            --accent-dim: rgba(0, 212, 255, 0.15);
+            --user-bubble: #0f3460;
+            --border: #2a2a4a;
+            --danger: #ff4757;
+            --success: #2ecc71;
+            --warning: #ffa502;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 300px;
+            min-width: 300px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            transition: width 0.2s ease, min-width 0.2s ease;
+        }
+
+        .sidebar.collapsed {
+            width: 0;
+            min-width: 0;
+            overflow: hidden;
+            border-right: none;
+        }
+
+        .sidebar-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .sidebar-header h1 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .new-thread-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-size: 1.3rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+            flex-shrink: 0;
+        }
+
+        .new-thread-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+        .thread-list {
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .thread-item {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            transition: background 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        @media (hover: hover) {
+            .thread-item:hover { background: rgba(255,255,255,0.03); }
+        }
+        .thread-item.active { background: var(--accent-dim); border-left: 3px solid var(--accent); }
+
+        .thread-item-content { flex: 1; min-width: 0; }
+
+        .thread-title {
+            font-size: 0.9rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .thread-time {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .thread-delete {
+            opacity: 0;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 1rem;
+            padding: 4px;
+            transition: all 0.15s;
+            flex-shrink: 0;
+        }
+
+        @media (hover: hover) {
+            .thread-item:hover .thread-delete { opacity: 1; }
+            .thread-delete:hover { color: var(--danger); }
+        }
+
+        /* Main chat area */
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-width: 0;
+        }
+
+        .chat-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-height: 52px;
+        }
+
+        .mobile-menu-btn {
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 1.4rem;
+            cursor: pointer;
+            padding: 4px;
+        }
+
+        .chat-header-title {
+            font-size: 0.95rem;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex: 1;
+        }
+
+        .stop-btn {
+            background: var(--danger);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            display: none;
+            flex-shrink: 0;
+        }
+
+        .stop-btn.visible { display: block; }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .empty-state {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        .message {
+            max-width: 85%;
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: var(--user-bubble);
+            border-bottom-right-radius: 4px;
+        }
+
+        .message-wrapper {
+            display: flex;
+            flex-direction: column;
+            max-width: 85%;
+        }
+
+        .message-wrapper.user {
+            align-self: flex-end;
+            align-items: flex-end;
+        }
+
+        .message-wrapper .message.user {
+            align-self: auto;
+            max-width: 100%;
+        }
+
+        .message-reactions {
+            display: flex;
+            gap: 4px;
+            margin-top: 4px;
+            padding-right: 4px;
+        }
+
+        .reaction-badge {
+            display: inline-flex;
+            align-items: center;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 2px 8px;
+            font-size: 0.75rem;
+            line-height: 1;
+            opacity: 0;
+            transform: scale(0.5);
+            animation: reaction-pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
+        @keyframes reaction-pop-in {
+            0% { opacity: 0; transform: scale(0.5); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        .reaction-badge .reaction-emoji {
+            font-size: 0.85rem;
+        }
+
+        .message.assistant {
+            align-self: flex-start;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-bottom-left-radius: 4px;
+        }
+
+        .message.assistant p { margin: 6px 0; }
+        .message.assistant p:first-child { margin-top: 0; }
+        .message.assistant p:last-child { margin-bottom: 0; }
+
+        .message.assistant pre {
+            background: var(--bg-primary);
+            padding: 10px 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 8px 0;
+            font-size: 0.82rem;
+            line-height: 1.45;
+        }
+
+        .message.assistant pre code {
+            background: none;
+            padding: 0;
+            border-radius: 0;
+            font-size: inherit;
+            color: inherit;
+        }
+
+        .message.assistant code {
+            font-family: 'SF Mono', 'Fira Code', 'Menlo', 'Consolas', monospace;
+            font-size: 0.85em;
+            background: var(--bg-primary);
+            padding: 2px 5px;
+            border-radius: 4px;
+        }
+
+        .message.assistant h1,
+        .message.assistant h2,
+        .message.assistant h3,
+        .message.assistant h4 {
+            margin: 12px 0 6px;
+            font-weight: 600;
+            line-height: 1.3;
+        }
+        .message.assistant h1 { font-size: 1.2em; }
+        .message.assistant h2 { font-size: 1.1em; }
+        .message.assistant h3 { font-size: 1.0em; }
+        .message.assistant h4 { font-size: 0.95em; }
+        .message.assistant *:first-child { margin-top: 0; }
+
+        .message.assistant ul,
+        .message.assistant ol {
+            margin: 6px 0;
+            padding-left: 1.5em;
+        }
+
+        .message.assistant li { margin: 3px 0; }
+        .message.assistant li > ul,
+        .message.assistant li > ol { margin: 2px 0; }
+
+        .message.assistant blockquote {
+            border-left: 3px solid var(--accent);
+            margin: 8px 0;
+            padding: 4px 12px;
+            color: var(--text-secondary);
+        }
+
+        .message.assistant table {
+            border-collapse: collapse;
+            margin: 8px 0;
+            width: 100%;
+            font-size: 0.85em;
+        }
+
+        .message.assistant th,
+        .message.assistant td {
+            border: 1px solid var(--border);
+            padding: 6px 10px;
+            text-align: left;
+        }
+
+        .message.assistant th {
+            background: var(--bg-primary);
+            font-weight: 600;
+        }
+
+        .message.assistant tr:nth-child(even) {
+            background: rgba(255,255,255,0.02);
+        }
+
+        .message.assistant a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .message.assistant a:hover { text-decoration: underline; }
+
+        .message.assistant hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 10px 0;
+        }
+
+        .message.assistant img {
+            max-width: 100%;
+            border-radius: 6px;
+            margin: 6px 0;
+        }
+
+        .message.progress {
+            align-self: flex-start;
+            background: none;
+            color: var(--text-muted);
+            font-style: italic;
+            font-size: 0.82rem;
+            padding: 4px 8px;
+        }
+
+        /* Input area */
+        .input-area {
+            padding: 12px 16px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+        }
+
+        .input-area textarea {
+            flex: 1;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text-primary);
+            padding: 10px 14px;
+            font-size: 0.9rem;
+            font-family: inherit;
+            resize: none;
+            outline: none;
+            max-height: 120px;
+            min-height: 42px;
+            line-height: 1.4;
+        }
+
+        .input-area textarea:focus { border-color: var(--accent); }
+
+        .send-btn {
+            width: 42px;
+            height: 42px;
+            border-radius: 10px;
+            border: none;
+            background: var(--accent);
+            color: var(--bg-primary);
+            font-size: 1.2rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.15s;
+            flex-shrink: 0;
+        }
+
+        .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* Mobile overlay */
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 9;
+        }
+
+        /* Mobile responsive */
+        @media (max-width: 700px) {
+            .sidebar {
+                position: fixed;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                z-index: 10;
+                transform: translateX(-100%);
+                transition: transform 0.25s ease;
+            }
+
+            .sidebar.open { transform: translateX(0); }
+            .sidebar.open ~ .sidebar-overlay { display: block; }
+        }
+    </style>
+</head>
+<body>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h1>Synthia</h1>
+            <button class="new-thread-btn" id="new-thread-btn" aria-label="New thread">+</button>
+        </div>
+        <div class="thread-list" id="thread-list"></div>
+    </aside>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <main class="chat-area">
+        <div class="chat-header">
+            <button class="mobile-menu-btn" id="menu-btn">&#9776;</button>
+            <span class="chat-header-title" id="chat-title">Select a thread</span>
+            <button class="stop-btn" id="stop-btn">Stop</button>
+        </div>
+        <div class="messages" id="messages">
+            <div class="empty-state" id="empty-state">Start a new conversation</div>
+        </div>
+        <div class="input-area">
+            <textarea id="input" rows="1" placeholder="Message Synthia..." autocomplete="off"></textarea>
+            <button class="send-btn" id="send-btn" aria-label="Send">&#8593;</button>
+        </div>
+    </main>
+
+    <script>
+    (function() {
+        'use strict';
+
+        const threadListEl = document.getElementById('thread-list');
+        const messagesEl = document.getElementById('messages');
+        const emptyState = document.getElementById('empty-state');
+        const inputEl = document.getElementById('input');
+        const sendBtn = document.getElementById('send-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const chatTitle = document.getElementById('chat-title');
+        const sidebar = document.getElementById('sidebar');
+        const sidebarOverlay = document.getElementById('sidebar-overlay');
+        const menuBtn = document.getElementById('menu-btn');
+        const newThreadBtn = document.getElementById('new-thread-btn');
+
+        let currentThreadId = null;
+        let eventSource = null;
+        let isProcessing = false;
+        let threads = [];
+
+        // Sidebar toggle
+        menuBtn.addEventListener('click', () => {
+            if (window.innerWidth <= 700) {
+                sidebar.classList.toggle('open');
+            } else {
+                sidebar.classList.toggle('collapsed');
+            }
+        });
+        sidebarOverlay.addEventListener('click', () => sidebar.classList.remove('open'));
+
+        // Auto-resize textarea
+        inputEl.addEventListener('input', () => {
+            inputEl.style.height = 'auto';
+            inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+        });
+
+        // Send on Enter (Shift+Enter for newline)
+        inputEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        sendBtn.addEventListener('click', sendMessage);
+        stopBtn.addEventListener('click', stopTask);
+        newThreadBtn.addEventListener('click', startNewThread);
+
+        // Format relative time
+        function timeAgo(dateStr) {
+            if (!dateStr) return '';
+            const diff = Date.now() - new Date(dateStr).getTime();
+            const mins = Math.floor(diff / 60000);
+            if (mins < 1) return 'now';
+            if (mins < 60) return mins + 'm ago';
+            const hrs = Math.floor(mins / 60);
+            if (hrs < 24) return hrs + 'h ago';
+            const days = Math.floor(hrs / 24);
+            if (days < 7) return days + 'd ago';
+            return new Date(dateStr).toLocaleDateString();
+        }
+
+        marked.setOptions({
+            gfm: true,
+            breaks: true,
+            highlight: function(code, lang) {
+                if (lang && hljs.getLanguage(lang)) {
+                    return hljs.highlight(code, { language: lang }).value;
+                }
+                return hljs.highlightAuto(code).value;
+            },
+        });
+
+        function renderMarkdown(text) {
+            const raw = marked.parse(text);
+            return DOMPurify.sanitize(raw);
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        // Thread list
+        async function loadThreads() {
+            const res = await fetch('/chat/threads');
+            threads = await res.json();
+            renderThreadList();
+        }
+
+        function renderThreadList() {
+            threadListEl.innerHTML = '';
+            for (const t of threads) {
+                const div = document.createElement('div');
+                div.className = 'thread-item' + (t.id === currentThreadId ? ' active' : '');
+                div.innerHTML = `
+                    <div class="thread-item-content">
+                        <div class="thread-title">${escapeHtml(t.title)}</div>
+                        <div class="thread-time">${timeAgo(t.updated_at)}</div>
+                    </div>
+                    <button class="thread-delete" aria-label="Delete thread">&times;</button>
+                `;
+                div.querySelector('.thread-item-content').addEventListener('click', () => openThread(t.id, t.title));
+                div.querySelector('.thread-delete').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteThread(t.id);
+                });
+                threadListEl.appendChild(div);
+            }
+        }
+
+        async function deleteThread(threadId) {
+            await fetch(`/chat/threads/${threadId}`, { method: 'DELETE' });
+            if (currentThreadId === threadId) {
+                currentThreadId = null;
+                chatTitle.textContent = 'Select a thread';
+                messagesEl.innerHTML = '<div class="empty-state">Start a new conversation</div>';
+                disconnectSSE();
+            }
+            await loadThreads();
+        }
+
+        function startNewThread() {
+            currentThreadId = String(Date.now());
+            chatTitle.textContent = 'New conversation';
+            messagesEl.innerHTML = '';
+            emptyState?.remove();
+            renderThreadList();
+            connectSSE(currentThreadId);
+            sidebar.classList.remove('open');
+            inputEl.focus();
+        }
+
+        async function openThread(threadId, title) {
+            currentThreadId = threadId;
+            chatTitle.textContent = title || 'Thread';
+            sidebar.classList.remove('open');
+            await loadMessages(threadId);
+            connectSSE(threadId);
+        }
+
+        async function loadMessages(threadId) {
+            const res = await fetch(`/chat/threads/${threadId}/messages`);
+            const messages = await res.json();
+            messagesEl.innerHTML = '';
+            for (const m of messages) {
+                appendMessage(m.role, m.message_type, m.content, m.metadata);
+            }
+            scrollToBottom();
+        }
+
+        function appendMessage(role, type, content, metadata) {
+            const es = messagesEl.querySelector('.empty-state');
+            if (es) es.remove();
+
+            const div = document.createElement('div');
+
+            if (role === 'user') {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'message-wrapper user';
+                div.className = 'message user';
+                div.textContent = content;
+                wrapper.appendChild(div);
+                messagesEl.appendChild(wrapper);
+                return wrapper;
+            } else if (type === 'result') {
+                div.className = 'message assistant';
+                div.innerHTML = renderMarkdown(content);
+            } else if (type === 'progress') {
+                div.className = 'message progress';
+                div.textContent = content;
+            }
+
+            messagesEl.appendChild(div);
+            return div;
+        }
+
+        const _ackEmojis = ['\u{1F440}', '\u{1F44D}', '\u{2705}', '\u{1F916}', '\u{1F680}', '\u{26A1}'];
+
+        function _randomAckEmoji() {
+            return _ackEmojis[Math.floor(Math.random() * _ackEmojis.length)];
+        }
+
+        function _addReaction(wrapperEl, emoji) {
+            let container = wrapperEl.querySelector('.message-reactions');
+            if (!container) {
+                container = document.createElement('div');
+                container.className = 'message-reactions';
+                wrapperEl.appendChild(container);
+            }
+            const badge = document.createElement('span');
+            badge.className = 'reaction-badge';
+            badge.innerHTML = '<span class="reaction-emoji">' + emoji + '</span>';
+            container.appendChild(badge);
+        }
+
+        // Remove transient progress messages
+        function removeProgressMessages() {
+            messagesEl.querySelectorAll('.message.progress').forEach(el => el.remove());
+        }
+
+        function scrollToBottom() {
+            requestAnimationFrame(() => {
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+            });
+        }
+
+        // SSE
+        function connectSSE(threadId) {
+            disconnectSSE();
+            eventSource = new EventSource(`/chat/threads/${threadId}/events`);
+
+            eventSource.addEventListener('connected', () => {});
+
+            eventSource.addEventListener('init', () => {
+                setProcessing(true);
+            });
+
+            eventSource.addEventListener('progress', (e) => {
+                const data = JSON.parse(e.data);
+                removeProgressMessages();
+                appendMessage('assistant', 'progress', data.summary);
+                scrollToBottom();
+            });
+
+            eventSource.addEventListener('result', (e) => {
+                const data = JSON.parse(e.data);
+                removeProgressMessages();
+                appendMessage('assistant', 'result', data.result);
+                scrollToBottom();
+                setProcessing(false);
+                loadThreads();
+            });
+
+            eventSource.onerror = () => {
+                setTimeout(() => {
+                    if (currentThreadId === threadId) connectSSE(threadId);
+                }, 3000);
+            };
+        }
+
+        function disconnectSSE() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+        }
+
+        function setProcessing(val) {
+            isProcessing = val;
+            stopBtn.classList.toggle('visible', val);
+        }
+
+        async function sendMessage() {
+            const content = inputEl.value.trim();
+            if (!content) return;
+
+            if (!currentThreadId) {
+                startNewThread();
+            }
+
+            const messageWrapper = appendMessage('user', 'user', content);
+            scrollToBottom();
+
+            inputEl.value = '';
+            inputEl.style.height = 'auto';
+            setProcessing(true);
+
+            try {
+                await fetch(`/chat/threads/${currentThreadId}/messages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content }),
+                });
+                _addReaction(messageWrapper, _randomAckEmoji());
+                scrollToBottom();
+                loadThreads();
+            } catch (err) {
+                appendMessage('assistant', 'result', 'Failed to send message: ' + err.message);
+                setProcessing(false);
+            }
+        }
+
+        async function stopTask() {
+            if (!currentThreadId) return;
+            await fetch(`/chat/threads/${currentThreadId}/stop`, { method: 'POST' });
+            setProcessing(false);
+        }
+
+        // Init
+        loadThreads();
+    })();
+    </script>
+</body>
+</html>
