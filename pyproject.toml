@@ -97,3 +97,4 @@ known-first-party = ["synthia"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+"synthia/main.py" = ["E402"]

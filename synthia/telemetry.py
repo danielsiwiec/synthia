@@ -87,7 +87,7 @@ def loguru_otel_sink(message: Any) -> None:
         "ERROR": logging.ERROR,
         "CRITICAL": logging.CRITICAL,
     }
-    otel_logger.log(level_map.get(record["level"].name, logging.INFO), record["message"])
+    otel_logger.log(level_map.get(record["level"].name, logging.INFO), record["message"], extra=record["extra"])
 
 
 def instrument_fastapi(app: Any) -> None:

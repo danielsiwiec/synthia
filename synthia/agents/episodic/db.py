@@ -1,17 +1,18 @@
-from typing import cast
+from typing import Any, cast
 
 from loguru import logger
-from sentence_transformers import SentenceTransformer
 
 _EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 
 class _EmbeddingModel:
-    _instance: "SentenceTransformer | None" = None
+    _instance: Any = None
 
     @classmethod
-    def get(cls) -> SentenceTransformer:
+    def get(cls) -> Any:
         if cls._instance is None:
+            from sentence_transformers import SentenceTransformer
+
             logger.info(f"Loading embedding model: {_EMBEDDING_MODEL}")
             cls._instance = SentenceTransformer(_EMBEDDING_MODEL)
         return cls._instance

@@ -2,8 +2,11 @@ import json
 import logging
 import os
 import sys
+import time as _time
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+_t_process_start = _time.perf_counter()
 
 import asyncpg
 from dotenv import load_dotenv
@@ -132,6 +135,9 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
         app.state.discord = Discord(config.discord_bot_token, config.discord_channels_list, config.admin_channel)
         await app.state.discord.start()
         await pubsub.start()
+
+        _startup_duration = round(_time.perf_counter() - _t_process_start, 1)
+        logger.bind(type="startup", duration_s=_startup_duration).info(f"Startup completed in {_startup_duration}s")
 
         yield
 

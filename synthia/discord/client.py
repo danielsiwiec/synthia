@@ -110,6 +110,7 @@ class Discord:
         self._client = discord.Client(intents=intents)
         self._tree = app_commands.CommandTree(self._client)
 
+        self._ready_event = asyncio.Event()
         self._setup_handlers()
         pubsub.subscribe(ProgressNotification, self._handle_progress_notification)
         pubsub.subscribe(AdminNotification, self._handle_admin_notification)
@@ -121,6 +122,7 @@ class Discord:
         async def on_ready():
             await self._tree.sync()
             await self._send_message_to_channel(text="*Synthia connected 👋*", channel_id=self.admin_channel_id)
+            self._ready_event.set()
 
         @self._tree.command(name="stop", description="Stop the current task")
         async def stop_command(interaction: discord.Interaction):
@@ -156,7 +158,7 @@ class Discord:
     async def start(self):
         try:
             self._task = asyncio.create_task(self._client.start(self.token))
-            await asyncio.sleep(2)
+            await asyncio.wait_for(self._ready_event.wait(), timeout=10)
         except Exception as _e:
             logger.error(f"discord bot failed to start: {_e}")
 
