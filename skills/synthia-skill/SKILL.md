@@ -16,7 +16,7 @@ These are core skills that come with the Synthia project. They are:
 - Version-controlled with the project repository
 - Shared across all users of the project
 - Typically created by developers maintaining Synthia
-- Examples: `synthia-skill`, `synthia-learn`, `pdfreport`, `architecture-analyzer`
+- Examples: `synthia-skill`, `synthia-learn`, `publish-report`, `architecture-analyzer`
 
 ### 2. User-defined Skills (User-level)
 **Location:** `/home/synthia/.claude/skills/`

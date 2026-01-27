@@ -1,5 +1,5 @@
 ---
-description: Publish a PDF report from a given content
+description: Publish a PDF report from a given content. Use when user mentions publishing reports, creating shareable documents, or generating formatted output.
 ---
 
 ## Overall guidance
@@ -21,8 +21,8 @@ description: Publish a PDF report from a given content
 - Test that images load by checking the published report in the browser before returning the link
 
 ### Image Syntax - IMPORTANT
-- **DO NOT use standard markdown image syntax** like `![alt](url)` - MarkdownPaste does not render this correctly (the `!` appears as text and the rest becomes a broken link)
-- **USE HTML img tags instead**:
+- DO NOT use standard markdown image syntax like `![alt](url)` because MarkdownPaste does not render it correctly. The exclamation mark appears as text and the rest becomes a broken link.
+- USE HTML img tags instead:
   ```html
   <img src="https://example.com/image.jpg" alt="Description" width="200">
   ```
