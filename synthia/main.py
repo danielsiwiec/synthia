@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import sys
@@ -5,7 +6,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import asyncpg
-from claude_agent_sdk.types import McpHttpServerConfig
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from loguru import logger
@@ -98,7 +98,6 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             "scheduler": scheduler_mcp_server,
             "admin": admin_mcp_server,
             "episodic": episodic_mcp_server,
-            "google": McpHttpServerConfig(type="http", url="http://google-mcp:8000/mcp"),
         }
 
         if os.getenv("GEMINI_API_KEY"):
@@ -106,6 +105,13 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
             logger.info("Enabling image MCP server...")
             mcp_servers["image"] = create_image_mcp_server()
+
+        mcp_config_path = Path("mcp_servers.json")
+        if mcp_config_path.exists():
+            custom = json.loads(mcp_config_path.read_text())
+            for name, server_config in custom.get("mcpServers", {}).items():
+                logger.info(f"Loading custom MCP server: {name}")
+                mcp_servers[name] = server_config
 
         agent_pool = await ClaudeAgentPool.create(
             mcp_servers=mcp_servers, cwd=config.claude_cwd, enabled=config.enable_claude_pool

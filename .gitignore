@@ -290,3 +290,6 @@ docker-compose.override.yml
 
 # extra .md file, as claude.md extension
 extra.md
+
+# Custom MCP server configuration (contains API keys)
+mcp_servers.json

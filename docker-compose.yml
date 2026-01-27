@@ -26,6 +26,7 @@ services:
       - ./skills:/home/synthia/workdir/.claude/skills
       - /var/run/docker.sock:/var/run/docker.sock
       - ~/.claude.json:/home/synthia/.claude.json
+      - ./mcp_servers.json:/home/synthia/workdir/mcp_servers.json
     group_add:
       - "0"
     restart: unless-stopped
