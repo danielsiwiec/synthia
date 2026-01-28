@@ -37,6 +37,3 @@ down:
 
 restart:
 	docker compose restart
-
-get-credentials:
-	ks -k login show "Claude Code-credentials" > ./claude_home/.credentials.json
