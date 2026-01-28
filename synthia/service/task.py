@@ -1,4 +1,5 @@
 import asyncio
+import os
 import random
 
 from loguru import logger
@@ -79,7 +80,7 @@ User's request: {request.task}"""
             await self._pool.release(agent)
             raise Exception("Timeout: No ResultMessage received within expected time")
 
-        if request.response_schema:
+        if request.response_schema and os.getenv("OPENAI_API_KEY"):
             result = await parse_from_schema(result_message.result, request.response_schema)
         else:
             result = result_message.result

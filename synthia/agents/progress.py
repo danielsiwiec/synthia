@@ -1,3 +1,4 @@
+import os
 from collections import defaultdict
 from typing import cast
 
@@ -17,6 +18,8 @@ _messages_by_session: dict[str, list[str]] = defaultdict(list)
 
 
 async def _summarize_messages(session_id: str, thread_id: int | None):
+    if not os.getenv("OPENAI_API_KEY"):
+        return
     messages = _messages_by_session[session_id]
     if not messages:
         return

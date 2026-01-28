@@ -69,17 +69,12 @@ def _register_handlers(episodic_memory_service: EpisodicMemoryService, chat_serv
 class Config(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    memory_user: str
-    discord_bot_token: str
-    discord_channels: str
-    admin_channel: str
+    memory_user: str = "default"
+    discord_bot_token: str | None = None
+    discord_channel: str | None = None
     postgres_connection_string: str
     claude_cwd: Path | None = None
     enable_claude_pool: bool = True
-
-    @property
-    def discord_channels_list(self) -> list[str]:
-        return [channel.strip() for channel in self.discord_channels.split(",")]
 
 
 def create_app(config_overrides: Config | None = None) -> FastAPI:
@@ -140,9 +135,17 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
         app.state.task_service = task_service
         app.state.agent_pool = agent_pool
         app.state.scheduler_service = scheduler_service
-        app.state.openai_client = AsyncOpenAI()
-        app.state.discord = Discord(config.discord_bot_token, config.discord_channels_list, config.admin_channel)
-        await app.state.discord.start()
+        if os.getenv("OPENAI_API_KEY"):
+            app.state.openai_client = AsyncOpenAI()
+        else:
+            app.state.openai_client = None
+            logger.warning("OPENAI_API_KEY not set — audio, progress summarization and schema parsing disabled")
+        if config.discord_bot_token and config.discord_channel:
+            app.state.discord = Discord(config.discord_bot_token, config.discord_channel)
+            await app.state.discord.start()
+        else:
+            app.state.discord = None
+            logger.warning("DISCORD_BOT_TOKEN/DISCORD_CHANNEL not set — Discord integration disabled")
         await pubsub.start()
 
         _startup_duration = round(_time.perf_counter() - _t_process_start, 1)
@@ -151,7 +154,8 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
         yield
 
         scheduler_service.shutdown()
-        await app.state.discord.stop()
+        if app.state.discord:
+            await app.state.discord.stop()
         await pubsub.stop()
         await agent_pool.shutdown()
         await db_pool.close()

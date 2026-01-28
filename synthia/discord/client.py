@@ -100,10 +100,10 @@ def _split_message(text: str, max_length: int = 2000) -> list[str]:
 
 
 class Discord:
-    def __init__(self, token: str, authorized_channels: list[str], admin_channel_id: str):
+    def __init__(self, token: str, channel_id: str):
         self.token = token
-        self._authorized_channels = set(authorized_channels)
-        self.admin_channel_id = admin_channel_id
+        self._authorized_channels = {channel_id}
+        self._channel_id = channel_id
 
         intents = discord.Intents.default()
         intents.message_content = True
@@ -121,7 +121,7 @@ class Discord:
         @self._client.event
         async def on_ready():
             await self._tree.sync()
-            await self._send_message_to_channel(text="*Synthia connected 👋*", channel_id=self.admin_channel_id)
+            await self._send_message_to_channel(text="*Synthia connected 👋*", channel_id=self._channel_id)
             self._ready_event.set()
 
         @self._tree.command(name="stop", description="Stop the current task")
@@ -228,7 +228,7 @@ class Discord:
 
     async def _handle_admin_notification(self, notification: AdminNotification):
         await self._send_message_to_channel(
-            text=notification.content, channel_id=self.admin_channel_id, silent=notification.silent
+            text=notification.content, channel_id=self._channel_id, silent=notification.silent
         )
 
     async def _handle_task_response(self, response: TaskResponse):

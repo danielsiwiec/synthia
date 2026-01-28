@@ -7,6 +7,8 @@ router = APIRouter()
 
 @router.get("/tts")
 async def text_to_speech(request: Request, text: str, voice: str = "shimmer"):
+    if not request.app.state.openai_client:
+        raise HTTPException(status_code=503, detail="OpenAI API key not configured")
     response = await request.app.state.openai_client.audio.speech.create(
         model="tts-1",
         voice=voice,
@@ -22,6 +24,8 @@ async def text_to_speech(request: Request, text: str, voice: str = "shimmer"):
 
 @router.post("/transcribe")
 async def transcribe_audio(request: Request, audio: UploadFile):
+    if not request.app.state.openai_client:
+        raise HTTPException(status_code=503, detail="OpenAI API key not configured")
     audio_data = await audio.read()
 
     if len(audio_data) < 100:

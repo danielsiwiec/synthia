@@ -47,8 +47,7 @@ async def received_messages(discord_token: str) -> AsyncGenerator[tuple[list[dis
 
     client: Discord = Discord(
         token=discord_token,
-        authorized_channels=[TEST_CHANNEL_ID],
-        admin_channel_id=TEST_CHANNEL_ID,
+        channel_id=TEST_CHANNEL_ID,
     )
     await client.start()
 
