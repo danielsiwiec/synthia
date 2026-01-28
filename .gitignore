@@ -288,8 +288,8 @@ claude_home/skills/
 # Local docker compose overrides (user-specific mounts)
 docker-compose.override.yml
 
-# extra .md file, as claude.md extension
-extra.md
+# Local extras (claude.md extensions, launchd plists, etc.)
+extras/
 
 # Custom MCP server configuration (contains API keys)
 mcp_servers.json

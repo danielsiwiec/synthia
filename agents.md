@@ -25,4 +25,4 @@ uv run pytest ... -n auto --testmon
 - Push commits directly to main branch, do not create PRs
 
 ## Additional resources
-IMPORTANT: review extra.md for additional instructions
+IMPORTANT: review extras/extra.md for additional instructions
