@@ -1,6 +1,3 @@
-## Architecture
-Detailed system architecture documentation is available in `claude_home/data/synthia_architecture.md`
-
 ## Running tests
 uv run pytest ... -n auto --testmon
 
@@ -11,7 +8,7 @@ uv run pytest ... -n auto --testmon
 ## Verifying changes
 - run `make check` after all changes
 - after every change run the tests with the smoke marker. Do not use testmon or xdist for smoke test
-- run all tests only after larger code changes. When running all tests, add
+- run all tests only after larger code changes
 - when running multiple tests for verification, use xdist with `-n auto`
 
 ## Code style
@@ -21,8 +18,5 @@ uv run pytest ... -n auto --testmon
 ## Tests
 - when writing tests, do not use any mocks or patches, unless instructed to
 
-## Git workflow
-- Push commits directly to main branch, do not create PRs
-
 ## Additional resources
-IMPORTANT: review extras/extra.md for additional instructions
+IMPORTANT: review extras/extra.md for additional instructions if it exists
