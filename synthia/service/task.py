@@ -1,13 +1,10 @@
 import asyncio
-import os
 import random
 
 from loguru import logger
 
 from synthia.agents.pool import ClaudeAgentPool
 from synthia.helpers.pubsub import pubsub
-from synthia.helpers.schema import validate_schema
-from synthia.output import parse_from_schema
 from synthia.service.models import (
     AdminNotification,
     StopTaskRequest,
@@ -43,8 +40,6 @@ class TaskService:
 
     @traced("process_task")
     async def process_task(self, request: TaskRequest) -> TaskResponse:
-        validate_schema(request.response_schema)
-
         resume_from_session = self._session_repository.get(request.thread_id)
 
         objective = request.task
@@ -80,16 +75,13 @@ User's request: {request.task}"""
             await self._pool.release(agent)
             raise Exception("Timeout: No ResultMessage received within expected time")
 
-        if request.response_schema and os.getenv("OPENAI_API_KEY"):
-            result = await parse_from_schema(result_message.result, request.response_schema)
-        else:
-            result = result_message.result
-
         self._tasks.pop(request.thread_id, None)
         await self._pool.release(agent)
         asyncio.create_task(self._session_repository.save(request.thread_id, result_message.session_id))
 
-        return TaskResponse(thread_id=request.thread_id, result=result, session_id=result_message.session_id)
+        return TaskResponse(
+            thread_id=request.thread_id, result=result_message.result, session_id=result_message.session_id
+        )
 
     async def _handle_stop_task(self, request: StopTaskRequest) -> None:
         await self.stop_task(request.thread_id)

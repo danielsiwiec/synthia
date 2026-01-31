@@ -52,7 +52,6 @@ dependencies = [
   "alembic>=1.18.1",
   "sqlalchemy>=2.0.46",
   "langchain-core>=1.2.7",
-  "jsonschema>=4.26.0",
   "langchain-openai>=1.1.7",
   "pydantic>=2.12.5",
   "langsmith[claude-agent-sdk]>=0.6.4"

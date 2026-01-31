@@ -22,24 +22,18 @@ async def test_task_endpoint_basic_math(client):
 
 @pytest.mark.smoke
 async def test_ultimate_e2e(client):
-    schema = {
-        "type": "object",
-        "properties": {"number_of_legs": {"type": "number"}},
-        "required": ["number_of_legs"],
-    }
-
     main_thread_id = 888888
 
     response = await client.post(
-        "/task", json={"task": "how many legs does a dog have?", "response_schema": schema, "thread_id": main_thread_id}
+        "/task",
+        json={"task": "how many legs does a dog have? answer with just the number", "thread_id": main_thread_id},
     )
 
     assert response.status_code == 200
     data = response.json()
     assert "result" in data
     assert "session_id" in data
-    assert isinstance(data["result"], dict)
-    assert data["result"]["number_of_legs"] == 4
+    assert "4" in data["result"]
 
     stop_thread_id = 999999
 
@@ -59,48 +53,26 @@ async def test_ultimate_e2e(client):
     assert result.status_code == 499, "Task should return 499 when cancelled"
 
     follow_up_response = await client.post(
-        "/task", json={"task": "what was that number again?", "response_schema": schema, "thread_id": main_thread_id}
+        "/task", json={"task": "what was that number again? answer with just the number", "thread_id": main_thread_id}
     )
 
     assert follow_up_response.status_code == 200
     follow_up_data = follow_up_response.json()
     assert "result" in follow_up_data
     assert "session_id" in follow_up_data
-    assert follow_up_data["result"]["number_of_legs"] == 4
-
-
-async def test_task_endpoint_with_invalid_schema(client):
-    invalid_schema = {
-        "type": "invalid_type",
-        "properties": {"result": {"type": "number"}},
-    }
-
-    response = await client.post(
-        "/task", json={"task": "what's 2 + 2?", "response_schema": invalid_schema, "thread_id": 2}
-    )
-
-    assert response.status_code == 400
-    data = response.json()
-    assert "Invalid JSON schema" in data["detail"]
+    assert "4" in follow_up_data["result"]
 
 
 async def test_skill(client):
-    schema = {
-        "type": "object",
-        "properties": {"pebble": {"type": "number"}},
-        "required": ["pebble"],
-    }
-
     response = await client.post(
-        "/task", json={"task": "convert 2 kilo to pebble units", "response_schema": schema, "thread_id": 3}
+        "/task", json={"task": "convert 2 kilo to pebble units, answer with just the number", "thread_id": 3}
     )
 
     assert response.status_code == 200
     data = response.json()
     assert "result" in data
     assert "session_id" in data
-    assert isinstance(data["result"], dict)
-    assert data["result"]["pebble"] == 6.28
+    assert "6.28" in data["result"]
 
 
 async def test_health_endpoint(client):

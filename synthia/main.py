@@ -139,7 +139,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             app.state.openai_client = AsyncOpenAI()
         else:
             app.state.openai_client = None
-            logger.warning("OPENAI_API_KEY not set — audio, progress summarization and schema parsing disabled")
+            logger.warning("OPENAI_API_KEY not set — audio and progress summarization disabled")
         if config.discord_bot_token and config.discord_channel:
             app.state.discord = Discord(config.discord_bot_token, config.discord_channel)
             await app.state.discord.start()
