@@ -1,7 +1,9 @@
 import asyncio
 import random
 import secrets
+from pathlib import Path
 
+import httpx
 import pytest
 
 
@@ -61,6 +63,45 @@ async def test_ultimate_e2e(client):
     assert "result" in follow_up_data
     assert "session_id" in follow_up_data
     assert "4" in follow_up_data["result"]
+
+
+async def test_session_survives_restart(pgvector_container):
+    from prometheus_client import REGISTRY
+
+    from synthia.main import Config, create_app
+
+    config = Config(
+        memory_user="test_user",
+        postgres_connection_string=pgvector_container,
+        claude_cwd=Path(__file__).parent,
+        mcp_config_path=None,
+    )
+    thread_id = 555555
+
+    app1 = create_app(config)
+    async with app1.router.lifespan_context(app1):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app1), base_url="http://test") as c1:
+            r1 = await c1.post(
+                "/task", json={"task": "remember: the color is blue. just confirm.", "thread_id": thread_id}
+            )
+            assert r1.status_code == 200
+
+    for key in list(REGISTRY._names_to_collectors):
+        if key.startswith("http_"):
+            try:
+                REGISTRY.unregister(REGISTRY._names_to_collectors[key])
+            except Exception:
+                pass
+
+    app2 = create_app(config)
+    async with app2.router.lifespan_context(app2):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app2), base_url="http://test") as c2:
+            r2 = await c2.post(
+                "/task",
+                json={"task": "what color was it? answer with just the color", "thread_id": thread_id},
+            )
+            assert r2.status_code == 200
+            assert "blue" in r2.json()["result"].lower()
 
 
 async def test_skill(client):

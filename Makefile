@@ -7,7 +7,7 @@ dev:
 	uv run uvicorn synthia.main:app --host 0.0.0.0 --port 8003 --reload
 
 test:
-	uv run pytest tests/ -n auto --testmon -m "not voice"
+	uv run pytest tests/ -n auto --testmon -m "not voice and not performance"
 
 smoke:
 	uv run pytest tests/ -m smoke

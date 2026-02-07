@@ -28,7 +28,7 @@ dependencies = [
   "loguru>=0.7.3",
   "markdown>=3.10.1",
   "bleach>=6.3.0",
-  "claude-agent-sdk==0.1.26",
+  "claude-agent-sdk==0.1.31",
   "mem0ai>=1.0.2",
   "psycopg[binary]>=3.3.2",
   "psycopg-pool>=3.3.0",
@@ -54,7 +54,8 @@ dependencies = [
   "langchain-core>=1.2.7",
   "langchain-openai>=1.1.7",
   "pydantic>=2.12.5",
-  "langsmith[claude-agent-sdk]>=0.6.4"
+  "langsmith[claude-agent-sdk]>=0.6.4",
+  "pytest-repeat>=0.9.4"
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -64,7 +65,8 @@ packages = ["synthia"]
 asyncio_mode = "auto"
 markers = [
   "smoke: marks tests as smoke tests (quick tests for basic functionality)",
-  "voice: marks tests for voice/PWA functionality (requires running server)"
+  "voice: marks tests for voice/PWA functionality (requires running server)",
+  "performance: marks performance benchmarks (excluded from make test)"
 ]
 filterwarnings = [
   "ignore::DeprecationWarning:testcontainers.*"

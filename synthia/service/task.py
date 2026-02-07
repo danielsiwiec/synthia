@@ -1,9 +1,11 @@
 import asyncio
 import random
+from pathlib import Path
 
+from claude_agent_sdk import McpServerConfig
 from loguru import logger
 
-from synthia.agents.pool import ClaudeAgentPool
+from synthia.agents.agent import ClaudeAgent
 from synthia.helpers.pubsub import pubsub
 from synthia.service.models import (
     AdminNotification,
@@ -17,8 +19,14 @@ from synthia.telemetry import traced
 
 
 class TaskService:
-    def __init__(self, pool: ClaudeAgentPool, session_repository: SessionRepository):
-        self._pool = pool
+    def __init__(
+        self,
+        mcp_servers: dict[str, McpServerConfig],
+        session_repository: SessionRepository,
+        cwd: str | Path | None = None,
+    ):
+        self._mcp_servers = mcp_servers
+        self._cwd = cwd
         self._tasks: dict[int, asyncio.Task] = {}
         self._session_repository = session_repository
         pubsub.subscribe(TaskTrigger, self._handle_scheduled_task)
@@ -40,8 +48,6 @@ class TaskService:
 
     @traced("process_task")
     async def process_task(self, request: TaskRequest) -> TaskResponse:
-        resume_from_session = self._session_repository.get(request.thread_id)
-
         objective = request.task
         if request.audio_mode:
             objective = f"""[AUDIO RESPONSE MODE]
@@ -54,7 +60,10 @@ Your response will be read aloud via text-to-speech. Be BRIEF - aim for 1-3 sent
 
 User's request: {request.task}"""
 
-        agent = await self._pool.acquire(resume=resume_from_session)
+        agent, session_id = self._session_repository.get(request.thread_id)
+        if not agent:
+            agent = await ClaudeAgent.create(self._mcp_servers, self._cwd, resume=session_id)
+
         task = asyncio.create_task(
             agent.run_for_result(
                 objective=objective,
@@ -67,17 +76,16 @@ User's request: {request.task}"""
             result_message = await task
         except asyncio.CancelledError:
             self._tasks.pop(request.thread_id, None)
-            await self._pool.release(agent)
+            await agent.disconnect()
             raise
 
+        self._tasks.pop(request.thread_id, None)
+
         if not result_message:
-            self._tasks.pop(request.thread_id, None)
-            await self._pool.release(agent)
+            await agent.disconnect()
             raise Exception("Timeout: No ResultMessage received within expected time")
 
-        self._tasks.pop(request.thread_id, None)
-        await self._pool.release(agent)
-        asyncio.create_task(self._session_repository.save(request.thread_id, result_message.session_id))
+        self._session_repository.save(request.thread_id, result_message.session_id, agent)
 
         return TaskResponse(
             thread_id=request.thread_id, result=result_message.result, session_id=result_message.session_id

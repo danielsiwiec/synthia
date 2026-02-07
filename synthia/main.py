@@ -19,7 +19,6 @@ from synthia.agents.admin.client import create_admin_mcp_server
 from synthia.agents.episodic.client import create_episodic_mcp_server
 from synthia.agents.episodic.sync import EpisodicMemoryService
 from synthia.agents.memory.client import create_memory_mcp_server
-from synthia.agents.pool import ClaudeAgentPool
 from synthia.agents.scheduler.client import create_scheduler_mcp_server
 from synthia.discord.client import Discord
 from synthia.helpers.pubsub import pubsub
@@ -74,7 +73,7 @@ class Config(BaseSettings):
     discord_channel: str | None = None
     postgres_connection_string: str
     claude_cwd: Path | None = None
-    enable_claude_pool: bool = True
+    mcp_config_path: Path | None = Path("mcp_servers.json")
 
 
 def create_app(config_overrides: Config | None = None) -> FastAPI:
@@ -109,16 +108,12 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             logger.info("Enabling image MCP server...")
             mcp_servers["image"] = create_image_mcp_server()
 
-        mcp_config_path = Path("mcp_servers.json")
-        if mcp_config_path.exists():
+        mcp_config_path = config.mcp_config_path
+        if mcp_config_path and mcp_config_path.exists():
             custom = json.loads(mcp_config_path.read_text())
             for name, server_config in custom.get("mcpServers", {}).items():
                 logger.info(f"Loading custom MCP server: {name}")
                 mcp_servers[name] = server_config
-
-        agent_pool = await ClaudeAgentPool.create(
-            mcp_servers=mcp_servers, cwd=config.claude_cwd, enabled=config.enable_claude_pool
-        )
 
         episodic_memory_service = EpisodicMemoryService(pool=db_pool, cwd=config.claude_cwd)
 
@@ -128,12 +123,13 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
         _register_handlers(episodic_memory_service, chat_service)
 
-        task_service = TaskService(agent_pool, session_repository)
+        task_service = TaskService(
+            mcp_servers=mcp_servers, session_repository=session_repository, cwd=config.claude_cwd
+        )
 
         scheduler_service.start()
 
         app.state.task_service = task_service
-        app.state.agent_pool = agent_pool
         app.state.scheduler_service = scheduler_service
         if os.getenv("OPENAI_API_KEY"):
             app.state.openai_client = AsyncOpenAI()
@@ -157,7 +153,6 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
         if app.state.discord:
             await app.state.discord.stop()
         await pubsub.stop()
-        await agent_pool.shutdown()
         await db_pool.close()
 
     app = FastAPI(

@@ -37,7 +37,7 @@ def app(pgvector_container):
         discord_channel="123456789",
         postgres_connection_string=pgvector_container,
         claude_cwd=Path(__file__).parent,
-        enable_claude_pool=False,
+        mcp_config_path=None,
     )
     app_instance = create_app(config)
     yield app_instance

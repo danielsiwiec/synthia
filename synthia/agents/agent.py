@@ -10,6 +10,7 @@ from claude_agent_sdk import (
     ResultMessage,
     SystemMessage,
     UserMessage,
+    query,
 )
 from loguru import logger
 from pydantic import BaseModel
@@ -83,8 +84,9 @@ Message = ToolCall | Result | InitMessage | Thought
 
 
 class ClaudeAgent:
-    def __init__(self, client: ClaudeSDKClient):
+    def __init__(self, client: ClaudeSDKClient | None, options: ClaudeAgentOptions):
         self._client = client
+        self._options = options
         self._session_id: str | None = None
 
     @classmethod
@@ -92,9 +94,17 @@ class ClaudeAgent:
         cls,
         mcp_servers: dict[str, McpServerConfig] | None = None,
         cwd: str | Path | None = None,
-        resume: str | None = None,
         system_prompt: str | None = None,
+        resume: str | None = None,
     ) -> "ClaudeAgent":
+        if resume:
+            options = ClaudeAgentOptions(
+                cwd=cwd,
+                setting_sources=["user", "project"],
+                permission_mode="bypassPermissions",
+                resume=resume,
+            )
+            return cls(None, options)
         options = ClaudeAgentOptions(
             cwd=cwd,
             setting_sources=["user", "project"],
@@ -102,15 +112,16 @@ class ClaudeAgent:
             permission_mode="bypassPermissions",
             system_prompt=system_prompt if system_prompt is not None else SYSTEM_PROMPT,
             mcp_servers=mcp_servers or {},
-            resume=resume,
         )
         client = ClaudeSDKClient(options)
         logger.debug("🔌 Claude SDK connecting...")
         await client.connect()
         logger.debug("🔌 Claude SDK connected")
-        return cls(client)
+        return cls(client, options)
 
     async def disconnect(self) -> None:
+        if not self._client:
+            return
         try:
             await self._client.disconnect()
         except Exception:
@@ -191,12 +202,16 @@ class ClaudeAgent:
         tool_calls: dict[str, ToolCall] = {}
 
         logger.debug(f"📤 Claude SDK query: {prompt[:50]}...")
-        await self._client.query(prompt=prompt)
+        if self._client:
+            await self._client.query(prompt=prompt)
+            message_stream = self._client.receive_response()
+        else:
+            message_stream = query(prompt=prompt, options=self._options)
         logger.debug("📤 Claude SDK query sent, receiving messages...")
 
         message_count = 0
         result: Result | None = None
-        async for message in self._client.receive_response():
+        async for message in message_stream:
             if thread_id:
                 await pubsub.publish(message)
             if isinstance(message, SystemMessage):

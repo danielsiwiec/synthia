@@ -83,10 +83,10 @@ async def test_message_parsing():
         pubsub.sync_subscribers[Result].remove(collect)
 
 
-async def test_session_resume():
-    agent1 = await ClaudeAgent.create(cwd=Path(__file__).parent)
+async def test_multi_turn():
+    agent = await ClaudeAgent.create(cwd=Path(__file__).parent)
     try:
-        result1 = await agent1.run_for_result(
+        result1 = await agent.run_for_result(
             objective="Remember: my favorite number is 42. Just confirm.",
             thread_id=456,
         )
@@ -94,22 +94,18 @@ async def test_session_resume():
         assert result1 is not None
         assert result1.success
         session_id = result1.session_id
-    finally:
-        await agent1.disconnect()
 
-    agent2 = await ClaudeAgent.create(cwd=Path(__file__).parent, resume=session_id)
-    try:
-        result2 = await agent2.run_for_result(
+        result2 = await agent.run_for_result(
             objective="What is my favorite number? Answer with just the number.",
             thread_id=456,
         )
 
         assert result2 is not None
         assert result2.success
-        assert "42" in result2.result, f"Expected '42' in resumed session: {result2.result}"
-        assert result2.session_id == session_id, "Resumed session should have same session_id"
+        assert "42" in result2.result, f"Expected '42' in multi-turn session: {result2.result}"
+        assert result2.session_id == session_id, "Multi-turn should keep same session_id"
     finally:
-        await agent2.disconnect()
+        await agent.disconnect()
 
 
 async def test_skill_invocation():
