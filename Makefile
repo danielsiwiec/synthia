@@ -29,6 +29,9 @@ type:
 toml-sort:
 	uv run toml-sort --in-place pyproject.toml
 
+run:
+	docker compose up --build --remove-orphans
+
 up:
 	docker compose up --build -d --remove-orphans
 
