@@ -21,13 +21,15 @@ async def create_memory_mcp_server(postgres_url: str, ollama_url: str | None = N
         },
     }
     if ollama_url:
-        config["embedder"] = {
+        ollama_config = {
             "provider": "ollama",
             "config": {
                 "model": OLLAMA_EMBEDDING_MODEL,
                 "ollama_base_url": ollama_url,
             },
         }
+        config["embedder"] = ollama_config
+        config["llm"] = ollama_config
         config["vector_store"]["config"]["embedding_model_dims"] = OLLAMA_EMBEDDING_DIMS
     memory_client = await AsyncMemory.from_config(config)
 
