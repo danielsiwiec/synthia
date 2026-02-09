@@ -1,4 +1,3 @@
-import asyncio
 import os
 import secrets
 from collections.abc import AsyncGenerator
@@ -26,36 +25,28 @@ def discord_token() -> str:
 
 @pytest.fixture
 async def received_messages(discord_token: str) -> AsyncGenerator[tuple[list[discord.Message], Discord]]:
-    intents: discord.Intents = discord.Intents.default()
-    intents.message_content = True
-    bot: discord.Client = discord.Client(intents=intents)
-
     messages: list[discord.Message] = []
-    ready_event: asyncio.Event = asyncio.Event()
-
-    @bot.event
-    async def on_ready() -> None:
-        ready_event.set()
-
-    @bot.event
-    async def on_message(message: discord.Message) -> None:
-        if str(message.channel.id) == TEST_CHANNEL_ID:
-            messages.append(message)
-
-    bot_task: asyncio.Task[None] = asyncio.create_task(bot.start(discord_token))
-    await asyncio.wait_for(ready_event.wait(), timeout=10)
 
     client: Discord = Discord(
         token=discord_token,
         channel_id=TEST_CHANNEL_ID,
     )
+
+    @client._client.event
+    async def on_ready() -> None:
+        await client._send_message_to_channel(text="*Synthia connected*", channel_id=client._channel_id)
+        client._ready_event.set()
+
+    @client._client.event
+    async def on_message(message: discord.Message) -> None:
+        if str(message.channel.id) == TEST_CHANNEL_ID:
+            messages.append(message)
+
     await client.start()
 
     yield messages, client
 
     await client.stop()
-    await bot.close()
-    bot_task.cancel()
 
 
 async def test_discord_messaging(

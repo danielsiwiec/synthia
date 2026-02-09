@@ -70,6 +70,14 @@ async def test_session_survives_restart(pgvector_container):
 
     from synthia.main import Config, create_app
 
+    def _cleanup_prometheus():
+        for key in list(REGISTRY._names_to_collectors):
+            if key.startswith("http_"):
+                try:
+                    REGISTRY.unregister(REGISTRY._names_to_collectors[key])
+                except Exception:
+                    pass
+
     config = Config(
         memory_user="test_user",
         postgres_connection_string=pgvector_container,
@@ -78,6 +86,7 @@ async def test_session_survives_restart(pgvector_container):
     )
     thread_id = 555555
 
+    _cleanup_prometheus()
     app1 = create_app(config)
     async with app1.router.lifespan_context(app1):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app1), base_url="http://test") as c1:
@@ -86,13 +95,7 @@ async def test_session_survives_restart(pgvector_container):
             )
             assert r1.status_code == 200
 
-    for key in list(REGISTRY._names_to_collectors):
-        if key.startswith("http_"):
-            try:
-                REGISTRY.unregister(REGISTRY._names_to_collectors[key])
-            except Exception:
-                pass
-
+    _cleanup_prometheus()
     app2 = create_app(config)
     async with app2.router.lifespan_context(app2):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app2), base_url="http://test") as c2:
@@ -102,6 +105,8 @@ async def test_session_survives_restart(pgvector_container):
             )
             assert r2.status_code == 200
             assert "blue" in r2.json()["result"].lower()
+
+    _cleanup_prometheus()
 
 
 async def test_skill(client):

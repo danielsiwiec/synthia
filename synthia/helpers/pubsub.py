@@ -97,9 +97,11 @@ class PubSub:
             self.tasks.append(asyncio.create_task(self._dispatch(topic)))
 
     async def stop(self):
+        loop = asyncio.get_running_loop()
         for task in self.tasks:
             task.cancel()
-        await asyncio.gather(*self.tasks, return_exceptions=True)
+        own_tasks = [t for t in self.tasks if t.get_loop() is loop]
+        await asyncio.gather(*own_tasks, return_exceptions=True)
         self.tasks = []
 
 

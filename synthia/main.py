@@ -156,8 +156,8 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             await pubsub.stop()
             await db_pool.close()
         except BaseException:
-          logger.opt(exception=True).critical("Fatal error during lifespan")
-          raise
+            logger.opt(exception=True).critical("Fatal error during lifespan")
+            raise
 
     app = FastAPI(
         title="Synthia", description="FastAPI application with Claude Agent SDK integration", lifespan=lifespan
