@@ -28,7 +28,7 @@ dependencies = [
   "loguru>=0.7.3",
   "markdown>=3.10.1",
   "bleach>=6.3.0",
-  "claude-agent-sdk==0.1.31",
+  "claude-agent-sdk==0.1.33",
   "mem0ai>=1.0.2",
   "psycopg[binary]>=3.3.2",
   "psycopg-pool>=3.3.0",
