@@ -72,6 +72,7 @@ class Config(BaseSettings):
 
     memory_user: str = "default"
     postgres_connection_string: str
+    ollama_url: str | None = None
     claude_cwd: Path | None = None
     mcp_config_path: Path | None = Path("mcp_servers.json")
     vapid_private_key: str | None = None
@@ -89,7 +90,9 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             db_pool = await asyncpg.create_pool(config.postgres_connection_string, min_size=2, max_size=10)
 
             memory_mcp_server = await create_memory_mcp_server(
-                user=config.memory_user, postgres_url=config.postgres_connection_string
+                user=config.memory_user,
+                postgres_url=config.postgres_connection_string,
+                ollama_url=config.ollama_url,
             )
             scheduler_mcp_server, scheduler_service = create_scheduler_mcp_server(config.postgres_connection_string)
             admin_mcp_server = create_admin_mcp_server()

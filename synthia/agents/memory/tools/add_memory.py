@@ -10,13 +10,18 @@ def create_add_memory_tool(user: str, memory_client: AsyncMemory):
     @tool(
         "add-memory",
         (
-            "Add a new memory about the user. Call this whenever the user shares preferences, "
-            "facts about themselves, or explicitly asks you to remember something."
+            "Store a fact about the user. Call this whenever the user shares preferences, "
+            "facts about themselves, or explicitly asks you to remember something. "
+            "Content is stored verbatim, so extract a concise factual statement "
+            "(e.g. 'Favorite color is blue') rather than passing raw conversation text."
         ),
         {
             "type": "object",
             "properties": {
-                "content": {"type": "string", "description": "The content to store in memory"},
+                "content": {
+                    "type": "string",
+                    "description": "A concise factual statement to store, e.g. 'Favorite color is blue'",
+                },
                 "userId": {
                     "type": "string",
                     "description": "User ID for memory storage. If omitted, uses config.defaultUserId.",
@@ -31,7 +36,7 @@ def create_add_memory_tool(user: str, memory_client: AsyncMemory):
 
         try:
             messages = [{"role": "user", "content": content}]
-            await memory_client.add(messages, user_id=user_id)
+            await memory_client.add(messages, user_id=user_id, infer=False)
             return success_response("Memory added successfully")
         except Exception as error:
             return error_response(f"Error adding memory: {error}")

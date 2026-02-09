@@ -18,8 +18,11 @@ services:
       - OTEL_LOGS_EXPORTER=otlp
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
       - OTEL_LOG_USER_PROMPTS=1
+      - OLLAMA_URL=http://ollama:11434
     depends_on:
       pgvector:
+        condition: service_healthy
+      ollama:
         condition: service_healthy
     volumes:
       - ./claude_home:/home/synthia/.claude
@@ -48,6 +51,19 @@ services:
       retries: 5
     restart: unless-stopped
 
+  ollama:
+    container_name: ollama
+    build:
+      context: ./images/ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep nomic-embed-text"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
   google-mcp:
     container_name: google-mcp
     image: workspace-mcp
@@ -58,6 +74,7 @@ services:
 
 volumes:
   pgvector_data:
+  ollama_data:
 
 secrets:
   claude_credentials:

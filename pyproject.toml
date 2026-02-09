@@ -55,7 +55,8 @@ dependencies = [
   "pydantic>=2.12.5",
   "langsmith[claude-agent-sdk]>=0.6.4",
   "pytest-repeat>=0.9.4",
-  "pywebpush>=2.2.0"
+  "pywebpush>=2.2.0",
+  "ollama>=0.6.1"
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -66,7 +67,8 @@ asyncio_mode = "auto"
 markers = [
   "smoke: marks tests as smoke tests (quick tests for basic functionality)",
   "voice: marks tests for voice/PWA functionality (requires running server)",
-  "performance: marks performance benchmarks (excluded from make test)"
+  "performance: marks performance benchmarks (excluded from make test)",
+  "eval: marks evaluation tests for LLM capabilities"
 ]
 filterwarnings = [
   "ignore::DeprecationWarning:testcontainers.*"

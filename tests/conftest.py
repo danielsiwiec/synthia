@@ -6,8 +6,10 @@ os.environ["LANGSMITH_PROJECT"] = "tests"
 import httpx
 import pytest
 from testcontainers.core.image import DockerImage
+from testcontainers.ollama import OllamaContainer
 from testcontainers.postgres import PostgresContainer
 
+from synthia.agents.memory.client import OLLAMA_EMBEDDING_MODEL
 from synthia.helpers.pubsub import pubsub
 from synthia.main import Config, create_app
 
@@ -26,6 +28,13 @@ def pgvector_container():
         with PostgresContainer(str(image)) as postgres:
             connection_url = postgres.get_connection_url(host="127.0.0.1", driver=None)
             yield connection_url
+
+
+@pytest.fixture(scope="session")
+def ollama_container():
+    with OllamaContainer("ollama/ollama") as ollama:
+        ollama.pull_model(OLLAMA_EMBEDDING_MODEL)
+        yield ollama.get_endpoint()
 
 
 @pytest.fixture(scope="session")
