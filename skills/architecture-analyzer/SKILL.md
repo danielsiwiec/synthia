@@ -77,7 +77,7 @@ Document the AI agent capabilities briefly:
 ### 5. Map System Architecture
 
 Create a high-level architecture diagram showing:
-- Client entry points (API, Discord)
+- Client entry points (API)
 - Core services and their relationships
 - Data stores
 - External integrations
@@ -206,17 +206,17 @@ graph TB
 ```mermaid
 sequenceDiagram
     participant User
-    participant Discord
+    participant API
     participant PubSub
     participant TaskService
     participant Agent
 
-    User->>Discord: Send message
-    Discord->>PubSub: Publish TaskRequest
+    User->>API: Send message
+    API->>PubSub: Publish TaskRequest
     PubSub->>TaskService: Route request
     TaskService->>Agent: Execute task
     Agent-->>PubSub: Publish events
-    PubSub-->>Discord: Send updates
+    PubSub-->>API: Send updates
 ```
 ````
 

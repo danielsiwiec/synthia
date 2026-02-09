@@ -33,8 +33,6 @@ def app(pgvector_container):
     os.environ["POSTGRES_CONNECTION_STRING"] = pgvector_container
     config = Config(
         memory_user="test_user",
-        discord_bot_token="test_token",
-        discord_channel="123456789",
         postgres_connection_string=pgvector_container,
         claude_cwd=Path(__file__).parent,
         mcp_config_path=None,

@@ -20,7 +20,6 @@ from synthia.agents.episodic.client import create_episodic_mcp_server
 from synthia.agents.episodic.sync import EpisodicMemoryService
 from synthia.agents.memory.client import create_memory_mcp_server
 from synthia.agents.scheduler.client import create_scheduler_mcp_server
-from synthia.discord.client import Discord
 from synthia.helpers.pubsub import pubsub
 from synthia.metrics import create_instrumentator
 from synthia.migrations.runner import run_migrations
@@ -72,8 +71,6 @@ class Config(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     memory_user: str = "default"
-    discord_bot_token: str | None = None
-    discord_channel: str | None = None
     postgres_connection_string: str
     claude_cwd: Path | None = None
     mcp_config_path: Path | None = Path("mcp_servers.json")
@@ -142,12 +139,6 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             else:
                 app.state.openai_client = None
                 logger.warning("OPENAI_API_KEY not set — audio and progress summarization disabled")
-            if config.discord_bot_token and config.discord_channel:
-                app.state.discord = Discord(config.discord_bot_token, config.discord_channel)
-                await app.state.discord.start()
-            else:
-                app.state.discord = None
-                logger.warning("DISCORD_BOT_TOKEN/DISCORD_CHANNEL not set — Discord integration disabled")
             if config.vapid_private_key and config.vapid_public_key:
                 push_service = PushService(db_pool, config.vapid_private_key, config.vapid_public_key)
                 app.state.push_service = push_service
@@ -165,8 +156,6 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             yield
 
             scheduler_service.shutdown()
-            if app.state.discord:
-                await app.state.discord.stop()
             await pubsub.stop()
             await db_pool.close()
         except BaseException:

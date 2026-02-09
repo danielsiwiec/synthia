@@ -95,7 +95,7 @@ Parameters:
 For multiple facts, call `add-memory` once per fact:
 - "User prefers concise responses without emojis"
 - "Project uses Python with uv for package management"
-- "Discord is used for notifications"
+- "Web Push is used for notifications"
 
 ### What Makes a Good Fact
 
