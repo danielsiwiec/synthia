@@ -7,7 +7,7 @@ OLLAMA_EMBEDDING_MODEL = "nomic-embed-text"
 OLLAMA_EMBEDDING_DIMS = 768
 
 
-async def create_memory_mcp_server(user: str, postgres_url: str, ollama_url: str | None = None) -> Any:
+async def create_memory_mcp_server(postgres_url: str, ollama_url: str | None = None) -> Any:
     from synthia.agents.memory.tools.add_memory import create_add_memory_tool
     from synthia.agents.memory.tools.delete_memory import create_delete_memory_tool
     from synthia.agents.memory.tools.search_memories import create_search_memories_tool
@@ -32,8 +32,8 @@ async def create_memory_mcp_server(user: str, postgres_url: str, ollama_url: str
     memory_client = await AsyncMemory.from_config(config)
 
     tools = [
-        create_add_memory_tool(user, memory_client),
-        create_delete_memory_tool(user, memory_client),
-        create_search_memories_tool(user, memory_client),
+        create_add_memory_tool(memory_client),
+        create_delete_memory_tool(memory_client),
+        create_search_memories_tool(memory_client),
     ]
     return create_sdk_mcp_server(name="memory", version="0.0.1", tools=tools)

@@ -10,7 +10,7 @@ def _format_memory(result: dict) -> str:
     return f"ID: {result.get('id', '')}\nMemory: {result.get('memory', '')}\nRelevance: {result.get('score', '')}\n---"
 
 
-def create_search_memories_tool(user: str, memory_client: AsyncMemory):
+def create_search_memories_tool(memory_client: AsyncMemory):
     @tool(
         "search-memories",
         (
@@ -24,20 +24,15 @@ def create_search_memories_tool(user: str, memory_client: AsyncMemory):
                     "type": "string",
                     "description": "The search query, typically derived from the user's current question.",
                 },
-                "userId": {
-                    "type": "string",
-                    "description": "User ID for memory storage. If omitted, uses config.defaultUserId.",
-                },
             },
             "required": ["query"],
         },
     )
     async def search_memories(args: dict[str, Any]) -> dict[str, Any]:
         query = args["query"]
-        user_id = args.get("userId") or user
 
         try:
-            results = await memory_client.search(query, user_id=user_id)
+            results = await memory_client.search(query, user_id="default")
             items = results.get("results") if isinstance(results, dict) else results
             if items:
                 formatted_results = "\n".join(_format_memory(r) for r in items)

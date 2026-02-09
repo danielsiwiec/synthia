@@ -70,7 +70,6 @@ def _register_handlers(episodic_memory_service: EpisodicMemoryService, chat_serv
 class Config(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    memory_user: str = "default"
     postgres_connection_string: str
     ollama_url: str | None = None
     claude_cwd: Path | None = None
@@ -90,7 +89,6 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             db_pool = await asyncpg.create_pool(config.postgres_connection_string, min_size=2, max_size=10)
 
             memory_mcp_server = await create_memory_mcp_server(
-                user=config.memory_user,
                 postgres_url=config.postgres_connection_string,
                 ollama_url=config.ollama_url,
             )

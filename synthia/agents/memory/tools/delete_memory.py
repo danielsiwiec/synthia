@@ -6,7 +6,7 @@ from mem0 import AsyncMemory
 from synthia.agents.tools import error_response, success_response
 
 
-def create_delete_memory_tool(user: str, memory_client: AsyncMemory):
+def create_delete_memory_tool(memory_client: AsyncMemory):
     @tool(
         "delete-memory",
         ("Delete a memory by its ID. Call this when the user explicitly asks to forget or remove a specific memory."),
@@ -16,10 +16,6 @@ def create_delete_memory_tool(user: str, memory_client: AsyncMemory):
                 "memoryId": {
                     "type": "string",
                     "description": "The unique ID of the memory to delete.",
-                },
-                "userId": {
-                    "type": "string",
-                    "description": "User ID for memory storage. If omitted, uses config.defaultUserId.",
                 },
             },
             "required": ["memoryId"],

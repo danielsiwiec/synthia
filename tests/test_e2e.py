@@ -79,7 +79,6 @@ async def test_session_survives_restart(pgvector_container):
                     pass
 
     config = Config(
-        memory_user="test_user",
         postgres_connection_string=pgvector_container,
         claude_cwd=Path(__file__).parent,
         mcp_config_path=None,
