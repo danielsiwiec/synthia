@@ -81,79 +81,83 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        run_migrations(config.postgres_connection_string)
+        try:
+            run_migrations(config.postgres_connection_string)
 
-        db_pool = await asyncpg.create_pool(config.postgres_connection_string, min_size=2, max_size=10)
+            db_pool = await asyncpg.create_pool(config.postgres_connection_string, min_size=2, max_size=10)
 
-        memory_mcp_server = await create_memory_mcp_server(
-            user=config.memory_user, postgres_url=config.postgres_connection_string
-        )
-        scheduler_mcp_server, scheduler_service = create_scheduler_mcp_server(config.postgres_connection_string)
-        admin_mcp_server = create_admin_mcp_server()
-        session_repository = await SessionRepository.create(config.postgres_connection_string)
+            memory_mcp_server = await create_memory_mcp_server(
+                user=config.memory_user, postgres_url=config.postgres_connection_string
+            )
+            scheduler_mcp_server, scheduler_service = create_scheduler_mcp_server(config.postgres_connection_string)
+            admin_mcp_server = create_admin_mcp_server()
+            session_repository = await SessionRepository.create(config.postgres_connection_string)
 
-        logger.info("Enabling episodic memory MCP server...")
-        episodic_mcp_server = create_episodic_mcp_server(db_pool)
+            logger.info("Enabling episodic memory MCP server...")
+            episodic_mcp_server = create_episodic_mcp_server(db_pool)
 
-        mcp_servers = {
-            "memory": memory_mcp_server,
-            "scheduler": scheduler_mcp_server,
-            "admin": admin_mcp_server,
-            "episodic": episodic_mcp_server,
-        }
+            mcp_servers = {
+                "memory": memory_mcp_server,
+                "scheduler": scheduler_mcp_server,
+                "admin": admin_mcp_server,
+                "episodic": episodic_mcp_server,
+            }
 
-        if os.getenv("GEMINI_API_KEY"):
-            from synthia.agents.image.client import create_image_mcp_server
+            if os.getenv("GEMINI_API_KEY"):
+                from synthia.agents.image.client import create_image_mcp_server
 
-            logger.info("Enabling image MCP server...")
-            mcp_servers["image"] = create_image_mcp_server()
+                logger.info("Enabling image MCP server...")
+                mcp_servers["image"] = create_image_mcp_server()
 
-        mcp_config_path = config.mcp_config_path
-        if mcp_config_path and mcp_config_path.exists():
-            custom = json.loads(mcp_config_path.read_text())
-            for name, server_config in custom.get("mcpServers", {}).items():
-                logger.info(f"Loading custom MCP server: {name}")
-                mcp_servers[name] = server_config
+            mcp_config_path = config.mcp_config_path
+            if mcp_config_path and mcp_config_path.exists():
+                custom = json.loads(mcp_config_path.read_text())
+                for name, server_config in custom.get("mcpServers", {}).items():
+                    logger.info(f"Loading custom MCP server: {name}")
+                    mcp_servers[name] = server_config
 
-        episodic_memory_service = EpisodicMemoryService(pool=db_pool, cwd=config.claude_cwd)
+            episodic_memory_service = EpisodicMemoryService(pool=db_pool, cwd=config.claude_cwd)
 
-        chat_service = ChatService(db_pool)
-        await chat_service.initialize()
-        app.state.chat_service = chat_service
+            chat_service = ChatService(db_pool)
+            await chat_service.initialize()
+            app.state.chat_service = chat_service
 
-        _register_handlers(episodic_memory_service, chat_service)
+            _register_handlers(episodic_memory_service, chat_service)
 
-        task_service = TaskService(
-            mcp_servers=mcp_servers, session_repository=session_repository, cwd=config.claude_cwd
-        )
+            task_service = TaskService(
+                mcp_servers=mcp_servers, session_repository=session_repository, cwd=config.claude_cwd
+            )
 
-        scheduler_service.start()
+            scheduler_service.start()
 
-        app.state.task_service = task_service
-        app.state.scheduler_service = scheduler_service
-        if os.getenv("OPENAI_API_KEY"):
-            app.state.openai_client = AsyncOpenAI()
-        else:
-            app.state.openai_client = None
-            logger.warning("OPENAI_API_KEY not set — audio and progress summarization disabled")
-        if config.discord_bot_token and config.discord_channel:
-            app.state.discord = Discord(config.discord_bot_token, config.discord_channel)
-            await app.state.discord.start()
-        else:
-            app.state.discord = None
-            logger.warning("DISCORD_BOT_TOKEN/DISCORD_CHANNEL not set — Discord integration disabled")
-        await pubsub.start()
+            app.state.task_service = task_service
+            app.state.scheduler_service = scheduler_service
+            if os.getenv("OPENAI_API_KEY"):
+                app.state.openai_client = AsyncOpenAI()
+            else:
+                app.state.openai_client = None
+                logger.warning("OPENAI_API_KEY not set — audio and progress summarization disabled")
+            if config.discord_bot_token and config.discord_channel:
+                app.state.discord = Discord(config.discord_bot_token, config.discord_channel)
+                await app.state.discord.start()
+            else:
+                app.state.discord = None
+                logger.warning("DISCORD_BOT_TOKEN/DISCORD_CHANNEL not set — Discord integration disabled")
+            await pubsub.start()
 
-        _startup_duration = round(_time.perf_counter() - _t_process_start, 1)
-        logger.bind(type="startup", duration_s=_startup_duration).info(f"Startup completed in {_startup_duration}s")
+            _startup_duration = round(_time.perf_counter() - _t_process_start, 1)
+            logger.bind(type="startup", duration_s=_startup_duration).info(f"Startup completed in {_startup_duration}s")
 
-        yield
+            yield
 
-        scheduler_service.shutdown()
-        if app.state.discord:
-            await app.state.discord.stop()
-        await pubsub.stop()
-        await db_pool.close()
+            scheduler_service.shutdown()
+            if app.state.discord:
+                await app.state.discord.stop()
+            await pubsub.stop()
+            await db_pool.close()
+        except BaseException:
+          logger.opt(exception=True).critical("Fatal error during lifespan")
+          raise
 
     app = FastAPI(
         title="Synthia", description="FastAPI application with Claude Agent SDK integration", lifespan=lifespan
