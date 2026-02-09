@@ -515,6 +515,8 @@
         let eventSource = null;
         let isProcessing = false;
         let threads = [];
+        let _pollTimer = null;
+        const _POLL_INTERVAL = 5000;
 
         // Sidebar toggle
         menuBtn.addEventListener('click', () => {
@@ -578,11 +580,47 @@
             return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
 
+        function _startPolling() {
+            _stopPolling();
+            _pollTimer = setInterval(loadThreads, _POLL_INTERVAL);
+        }
+
+        function _stopPolling() {
+            if (_pollTimer) {
+                clearInterval(_pollTimer);
+                _pollTimer = null;
+            }
+        }
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                _stopPolling();
+            } else {
+                loadThreads();
+                _startPolling();
+            }
+        });
+
+        function _currentThreadUpdatedAt() {
+            if (!currentThreadId) return null;
+            const t = threads.find(t => t.id === String(currentThreadId));
+            return t ? t.updated_at : null;
+        }
+
         // Thread list
         async function loadThreads() {
+            const prevUpdatedAt = _currentThreadUpdatedAt();
             const res = await fetch('/chat/threads');
             threads = await res.json();
             renderThreadList();
+
+            if (currentThreadId && !isProcessing) {
+                const newUpdatedAt = _currentThreadUpdatedAt();
+                if (newUpdatedAt && prevUpdatedAt && newUpdatedAt !== prevUpdatedAt) {
+                    await loadMessages(currentThreadId);
+                    scrollToBottom();
+                }
+            }
         }
 
         function renderThreadList() {
@@ -786,6 +824,7 @@
 
         // Init
         loadThreads();
+        _startPolling();
     })();
     </script>
 </body>
