@@ -3,6 +3,7 @@ from collections import defaultdict
 from typing import cast
 
 from langchain_openai import ChatOpenAI
+from loguru import logger
 from pydantic import BaseModel
 
 from synthia.agents.agent import InitMessage, Message, Result
@@ -19,6 +20,7 @@ _messages_by_session: dict[str, list[str]] = defaultdict(list)
 
 async def _summarize_messages(session_id: str, thread_id: int | None):
     if not os.getenv("OPENAI_API_KEY"):
+        logger.debug("OpenAI key absent - skipping summarization")
         return
     messages = _messages_by_session[session_id]
     if not messages:
