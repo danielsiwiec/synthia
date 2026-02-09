@@ -200,6 +200,16 @@
 
         .stop-btn.visible { display: block; }
 
+        .notify-btn {
+            background: none;
+            border: none;
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 4px 8px;
+            flex-shrink: 0;
+            opacity: 0.7;
+        }
+
         .messages {
             flex: 1;
             overflow-y: auto;
@@ -474,6 +484,7 @@
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <h1>Synthia</h1>
+            <button class="notify-btn" id="notify-btn" aria-label="Enable notifications" style="display:none">&#128276;</button>
             <button class="new-thread-btn" id="new-thread-btn" aria-label="New thread">+</button>
         </div>
         <div class="thread-list" id="thread-list"></div>
@@ -506,6 +517,7 @@
         const sendBtn = document.getElementById('send-btn');
         const stopBtn = document.getElementById('stop-btn');
         const chatTitle = document.getElementById('chat-title');
+        const notifyBtn = document.getElementById('notify-btn');
         const sidebar = document.getElementById('sidebar');
         const sidebarOverlay = document.getElementById('sidebar-overlay');
         const menuBtn = document.getElementById('menu-btn');
@@ -822,9 +834,79 @@
             setProcessing(false);
         }
 
+        function _toBase64Url(buffer) {
+            return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+                .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        }
+
+        async function _subscribePush() {
+            try {
+                await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+                const reg = await navigator.serviceWorker.ready;
+                const res = await fetch('/push/vapid-key');
+                const { public_key } = await res.json();
+                const applicationServerKey = Uint8Array.from(
+                    atob(public_key.replace(/-/g, '+').replace(/_/g, '/')),
+                    c => c.charCodeAt(0)
+                );
+                let sub = await reg.pushManager.getSubscription();
+                if (sub) {
+                    const existingKey = new Uint8Array(sub.options.applicationServerKey);
+                    if (existingKey.length !== applicationServerKey.length ||
+                        existingKey.some((b, i) => b !== applicationServerKey[i])) {
+                        await sub.unsubscribe();
+                        sub = null;
+                    }
+                }
+                if (!sub) {
+                    sub = await reg.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey,
+                    });
+                }
+                await fetch('/push/subscribe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        endpoint: sub.endpoint,
+                        keys: {
+                            p256dh: _toBase64Url(sub.getKey('p256dh')),
+                            auth: _toBase64Url(sub.getKey('auth')),
+                        },
+                    }),
+                });
+                notifyBtn.style.display = 'none';
+            } catch (_e) {
+                console.error('Push subscription failed:', _e);
+            }
+        }
+
+        function _pushSupported() {
+            return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+        }
+
+        async function _initPush() {
+            if (!_pushSupported()) return;
+            if (Notification.permission === 'granted') {
+                await _subscribePush();
+            } else if (Notification.permission === 'default') {
+                notifyBtn.style.display = 'block';
+            }
+        }
+
+        notifyBtn.addEventListener('click', async () => {
+            const permission = await Notification.requestPermission();
+            if (permission !== 'granted') {
+                notifyBtn.style.display = 'none';
+                return;
+            }
+            await _subscribePush();
+        });
+
         // Init
         loadThreads();
         _startPolling();
+        _initPush();
     })();
     </script>
 </body>

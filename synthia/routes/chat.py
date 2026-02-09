@@ -30,7 +30,7 @@ def _serialize(obj):
 
 @router.get("/chat")
 async def chat_ui():
-    return FileResponse(_static_dir / "chat.html")
+    return FileResponse(_static_dir / "chat.html", headers={"Cache-Control": "no-cache"})
 
 
 @router.get("/chat/threads")

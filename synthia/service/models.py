@@ -39,3 +39,7 @@ class StopTaskRequest(BaseModel):
 class ImageCreated(BaseModel):
     thread_id: int
     filename: str
+
+
+class AppStartup(BaseModel):
+    pass

@@ -27,10 +27,13 @@ from synthia.migrations.runner import run_migrations
 from synthia.routes.audio import router as audio_router
 from synthia.routes.chat import router as chat_router
 from synthia.routes.health import router as health_router
+from synthia.routes.push import router as push_router
 from synthia.routes.task import router as task_router
 from synthia.routes.voice import mount_static
 from synthia.routes.voice import router as voice_router
 from synthia.service.chat import ChatService
+from synthia.service.models import AppStartup
+from synthia.service.push import PushService
 from synthia.service.session_repository import SessionRepository
 from synthia.service.task import TaskService
 from synthia.telemetry import instrument_fastapi, loguru_otel_sink, setup_telemetry
@@ -74,6 +77,8 @@ class Config(BaseSettings):
     postgres_connection_string: str
     claude_cwd: Path | None = None
     mcp_config_path: Path | None = Path("mcp_servers.json")
+    vapid_private_key: str | None = None
+    vapid_public_key: str | None = None
 
 
 def create_app(config_overrides: Config | None = None) -> FastAPI:
@@ -143,10 +148,19 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             else:
                 app.state.discord = None
                 logger.warning("DISCORD_BOT_TOKEN/DISCORD_CHANNEL not set — Discord integration disabled")
+            if config.vapid_private_key and config.vapid_public_key:
+                push_service = PushService(db_pool, config.vapid_private_key, config.vapid_public_key)
+                app.state.push_service = push_service
+            else:
+                app.state.push_service = None
+                logger.warning("VAPID keys not set — Web Push notifications disabled")
+
             await pubsub.start()
 
             _startup_duration = round(_time.perf_counter() - _t_process_start, 1)
             logger.bind(type="startup", duration_s=_startup_duration).info(f"Startup completed in {_startup_duration}s")
+
+            await pubsub.publish(AppStartup())
 
             yield
 
@@ -168,6 +182,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(voice_router)
     app.include_router(chat_router)
+    app.include_router(push_router)
     mount_static(app)
 
     instrumentator = create_instrumentator()

@@ -55,7 +55,8 @@ dependencies = [
   "langchain-openai>=1.1.7",
   "pydantic>=2.12.5",
   "langsmith[claude-agent-sdk]>=0.6.4",
-  "pytest-repeat>=0.9.4"
+  "pytest-repeat>=0.9.4",
+  "pywebpush>=2.2.0"
 ]
 
 [tool.hatch.build.targets.wheel]
