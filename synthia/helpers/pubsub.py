@@ -1,9 +1,10 @@
 import asyncio
 import inspect
 import types
+from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Callable, Coroutine
-from typing import Any, cast, get_args
+from typing import Any, cast, get_args, overload
 
 from loguru import logger
 from opentelemetry import context as otel_context
@@ -30,6 +31,20 @@ def _matches_topic(message: Any, topic: TopicType) -> bool:
     return False
 
 
+class Consumer[T](ABC):
+    @abstractmethod
+    async def consume(self, message: T) -> None: ...
+
+
+def _extract_topic(consumer: Consumer[Any]) -> TopicType:
+    for base in type(consumer).__orig_bases__:  # type: ignore[attr-defined]
+        if getattr(base, "__origin__", None) is Consumer:
+            args = get_args(base)
+            if args:
+                return args[0]
+    raise ValueError(f"Cannot extract topic type from {type(consumer)}")
+
+
 class _MessageWithContext:
     def __init__(self, message: Any, ctx: otel_context.Context | None):
         self.message = message
@@ -43,9 +58,21 @@ class PubSub:
         self.queues: dict[TopicType, asyncio.Queue[Any]] = defaultdict(asyncio.Queue)
         self.tasks: list[asyncio.Task[None]] = []
 
+    @overload
     def subscribe[T](
         self, topic: type[T] | types.UnionType, handler: Callable[[T], Coroutine[Any, Any, Any]] | Callable[[T], None]
-    ):
+    ) -> None: ...
+
+    @overload
+    def subscribe[T](self, consumer: Consumer[T]) -> None: ...
+
+    def subscribe(self, topic_or_consumer: Any, handler: Any = None) -> None:
+        if isinstance(topic_or_consumer, Consumer):
+            topic = _extract_topic(topic_or_consumer)
+            handler = topic_or_consumer.consume
+        else:
+            topic = topic_or_consumer
+
         if inspect.iscoroutinefunction(handler):
             self.async_subscribers[topic].append(cast(Callable[[Any], Coroutine[Any, Any, Any]], handler))
         else:

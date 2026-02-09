@@ -57,11 +57,11 @@ logger.add(loguru_otel_sink, level="DEBUG")
 
 def _register_handlers(episodic_memory_service: EpisodicMemoryService, chat_service: ChatService):
     from synthia.agents.agent import Message
-    from synthia.agents.progress import analyze_progress
+    from synthia.agents.progress import ProgressAnalyzer
     from synthia.service.models import ProgressNotification
 
     pubsub.subscribe(Message, lambda message: logger.info(f"{message.render()}"))
-    pubsub.subscribe(Message, analyze_progress)
+    pubsub.subscribe(ProgressAnalyzer())
     pubsub.subscribe(Message, episodic_memory_service.track_message)
     pubsub.subscribe(Message, chat_service.handle_message)
     pubsub.subscribe(ProgressNotification, chat_service.handle_progress)

@@ -4,7 +4,7 @@ from unittest.mock import Mock
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 
-from synthia.helpers.pubsub import PubSub
+from synthia.helpers.pubsub import Consumer, PubSub
 
 
 class TaskAgentMessage:
@@ -225,6 +225,45 @@ async def test_pubsub_retains_otel_context_for_async_handlers():
     assert len(captured_span_ids) == 1
     assert captured_span_ids[0] == expected_span_id
 
+    await pubsub.stop()
+
+
+class TaskAgentMessageConsumer(Consumer[TaskAgentMessage]):
+    def __init__(self):
+        self.received: list[TaskAgentMessage] = []
+
+    async def consume(self, message: TaskAgentMessage) -> None:
+        self.received.append(message)
+
+
+async def test_pubsub_consumer():
+    pubsub = PubSub()
+
+    consumer = TaskAgentMessageConsumer()
+    pubsub.subscribe(consumer)
+
+    await pubsub.start()
+    await pubsub.publish(TaskAgentMessage("hello from consumer"))
+
+    await asyncio.sleep(0.1)
+
+    assert len(consumer.received) == 1
+    assert consumer.received[0].content == "hello from consumer"
+    await pubsub.stop()
+
+
+async def test_pubsub_consumer_not_called_for_different_event():
+    pubsub = PubSub()
+
+    consumer = TaskAgentMessageConsumer()
+    pubsub.subscribe(consumer)
+
+    await pubsub.start()
+    await pubsub.publish(DummyMessage("should not match"))
+
+    await asyncio.sleep(0.1)
+
+    assert len(consumer.received) == 0
     await pubsub.stop()
 
 

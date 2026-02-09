@@ -1,7 +1,10 @@
+import os
+
+import pytest
 from dotenv import load_dotenv
 
-from synthia.agents.agent import InitMessage, Message, ToolCall
-from synthia.agents.progress import analyze_progress
+from synthia.agents.agent import InitMessage, ToolCall
+from synthia.agents.progress import ProgressAnalyzer
 from synthia.helpers.pubsub import pubsub
 from synthia.service.models import ProgressNotification
 from tests.helpers import await_until
@@ -9,13 +12,14 @@ from tests.helpers import await_until
 load_dotenv()
 
 
+@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set")
 async def test_progress(clean_pubsub):
     progress_notifications = []
 
     def capture_notification(notification: ProgressNotification):
         progress_notifications.append(notification)
 
-    pubsub.subscribe(Message, analyze_progress)
+    pubsub.subscribe(ProgressAnalyzer())
     pubsub.subscribe(ProgressNotification, capture_notification)
 
     await pubsub.start()
