@@ -55,13 +55,15 @@ logger.add(
 logger.add(loguru_otel_sink, level="DEBUG")
 
 
-def _register_handlers(episodic_memory_service: EpisodicMemoryService, chat_service: ChatService):
+def _register_handlers(
+    episodic_memory_service: EpisodicMemoryService, chat_service: ChatService, openai_client: AsyncOpenAI | None
+):
     from synthia.agents.agent import Message
     from synthia.agents.progress import ProgressAnalyzer
     from synthia.service.models import ProgressNotification
 
     pubsub.subscribe(Message, lambda message: logger.info(f"{message.render()}"))
-    pubsub.subscribe(ProgressAnalyzer())
+    pubsub.subscribe(ProgressAnalyzer(openai_client))
     pubsub.subscribe(Message, episodic_memory_service.track_message)
     pubsub.subscribe(Message, chat_service.handle_message)
     pubsub.subscribe(ProgressNotification, chat_service.handle_progress)
@@ -124,8 +126,9 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             chat_service = ChatService(db_pool)
             await chat_service.initialize()
             app.state.chat_service = chat_service
+            app.state.openai_client = AsyncOpenAI() if os.getenv("OPENAI_API_KEY") else None
 
-            _register_handlers(episodic_memory_service, chat_service)
+            _register_handlers(episodic_memory_service, chat_service, app.state.openai_client)
 
             task_service = TaskService(
                 mcp_servers=mcp_servers, session_repository=session_repository, cwd=config.claude_cwd
@@ -135,11 +138,6 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
             app.state.task_service = task_service
             app.state.scheduler_service = scheduler_service
-            if os.getenv("OPENAI_API_KEY"):
-                app.state.openai_client = AsyncOpenAI()
-            else:
-                app.state.openai_client = None
-                logger.warning("OPENAI_API_KEY not set — audio and progress summarization disabled")
             if config.vapid_private_key and config.vapid_public_key:
                 push_service = PushService(db_pool, config.vapid_private_key, config.vapid_public_key)
                 app.state.push_service = push_service

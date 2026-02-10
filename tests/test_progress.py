@@ -2,6 +2,7 @@ import os
 
 import pytest
 from dotenv import load_dotenv
+from openai import AsyncOpenAI
 
 from synthia.agents.agent import InitMessage, ToolCall
 from synthia.agents.progress import ProgressAnalyzer
@@ -19,7 +20,7 @@ async def test_progress(clean_pubsub):
     def capture_notification(notification: ProgressNotification):
         progress_notifications.append(notification)
 
-    pubsub.subscribe(ProgressAnalyzer())
+    pubsub.subscribe(ProgressAnalyzer(AsyncOpenAI()))
     pubsub.subscribe(ProgressNotification, capture_notification)
 
     await pubsub.start()

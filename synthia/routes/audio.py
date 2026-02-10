@@ -8,6 +8,7 @@ router = APIRouter()
 @router.get("/tts")
 async def text_to_speech(request: Request, text: str, voice: str = "shimmer"):
     if not request.app.state.openai_client:
+        logger.error("OPENAI_API_KEY not set - text to speach disabled")
         raise HTTPException(status_code=503, detail="OpenAI API key not configured")
     response = await request.app.state.openai_client.audio.speech.create(
         model="tts-1",

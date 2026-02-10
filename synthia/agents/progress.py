@@ -1,47 +1,44 @@
-import os
 from collections import defaultdict
-from typing import cast
 
-from langchain_openai import ChatOpenAI
 from loguru import logger
-from pydantic import BaseModel
+from openai import AsyncOpenAI
 
 from synthia.agents.agent import InitMessage, Message, Result
 from synthia.helpers.pubsub import Consumer, pubsub
 from synthia.service.models import ProgressNotification
 
 
-class Summary(BaseModel):
-    summary: str
-
-
 class ProgressAnalyzer(Consumer[Message]):
-    def __init__(self):
-        self._openai_key_present = bool(os.getenv("OPENAI_API_KEY"))
-        if not self._openai_key_present:
-            logger.warning("OpenAI key absent - progress analysis disabled")
+    def __init__(self, openai_client: AsyncOpenAI | None):
+        self._client = openai_client
         self._messages_by_session: dict[str, list[str]] = defaultdict(list)
+        if not self._client:
+            logger.warning("OPENAI_API_KEY not set - progress summarization disabled")
 
     async def _summarize_messages(self, session_id: str, thread_id: int | None):
         messages = self._messages_by_session[session_id]
-        if not messages:
+        if not messages or not self._client:
             return
 
         combined_messages = "\n".join(messages)
 
-        model = ChatOpenAI(model="gpt-4o-mini", temperature=0)  # type: ignore[arg-type]
         prompt = (
             "Summarize the following activity messages into a very short, concise phrase "
             "in present continuous tense (just the core action, no extra details, use -ing form). "
             "Always respond with only one statement. If there are multiple actions, use only the most relevant one: "
             f"{combined_messages}"
         )
-        result = cast(Summary, await model.with_structured_output(Summary).ainvoke(prompt))
+        response = await self._client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        summary = response.choices[0].message.content
 
-        await pubsub.publish(ProgressNotification(session_id=session_id, summary=result.summary, thread_id=thread_id))
+        await pubsub.publish(ProgressNotification(session_id=session_id, summary=summary, thread_id=thread_id))
 
     async def consume(self, message: Message):
-        if not self._openai_key_present:
+        if not self._client:
             return
 
         if isinstance(message, InitMessage):
