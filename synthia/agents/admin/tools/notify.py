@@ -9,8 +9,8 @@ from synthia.service.models import AdminNotification
 
 def create_notify_tool():
     @tool(
-        "notify-admin",
-        "Send a notification to the admin channel. Use this to alert the admin about important events.",
+        "notify",
+        "Send a push notification to the user. Use this to alert about important events.",
         {
             "type": "object",
             "properties": {
@@ -22,11 +22,11 @@ def create_notify_tool():
             "required": ["message"],
         },
     )
-    async def notify_admin(args: dict[str, Any]) -> dict[str, Any]:
+    async def notify(args: dict[str, Any]) -> dict[str, Any]:
         try:
             await pubsub.publish(AdminNotification(content=args["message"]))
-            return success_response("Notification sent to admin")
+            return success_response("Notification sent")
         except Exception as error:
             return error_response(f"Error sending notification: {error}")
 
-    return notify_admin
+    return notify

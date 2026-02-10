@@ -9,7 +9,7 @@ Set up background monitoring for any condition, state, or value. When the condit
 ## Overview
 
 This skill creates a silent scheduled job that periodically checks a user-defined condition. Once the condition is satisfied, it:
-1. Notifies the admin about the event
+1. Sends a push notification about the event
 2. Deletes the monitoring job (self-cleanup)
 
 ## How It Works
@@ -41,7 +41,7 @@ The task description should follow this pattern:
 
 ```
 Check <what to check>.
-If <success condition>, notify admin "<notification message>" and delete the monitor-<name> job.
+If <success condition>, use the notify tool with "<notification message>" and delete the monitor-<name> job.
 If <failure/abort condition>, delete the job without notifying.
 ```
 
@@ -56,7 +56,7 @@ name: monitor-sauna-temp
 seconds: 60
 start_date: 2024-01-15T10:01:00Z
 silent: true
-task: Check sauna temperature using the sauna-controls skill. If current_temp >= 80, notify admin "🔥 Sauna has reached 80°C and is ready!" and delete the monitor-sauna-temp job. If heater is off, delete the job without notifying.
+task: Check sauna temperature using the sauna-controls skill. If current_temp >= 80, use the notify tool with "🔥 Sauna has reached 80°C and is ready!" and delete the monitor-sauna-temp job. If heater is off, delete the job without notifying.
 ```
 
 ### Example 2: Monitor Download Completion
@@ -68,7 +68,7 @@ name: monitor-torrent-abc123
 seconds: 60
 start_date: 2024-01-15T10:01:00Z
 silent: true
-task: Check torrent status for hash abc123 via qBittorrent API. If state is "completed" or "seeding", notify admin "✅ Torrent 'Movie Name' has finished downloading!" and delete the monitor-torrent-abc123 job. If torrent is removed/not found, delete the job without notifying.
+task: Check torrent status for hash abc123 via qBittorrent API. If state is "completed" or "seeding", use the notify tool with "✅ Torrent 'Movie Name' has finished downloading!" and delete the monitor-torrent-abc123 job. If torrent is removed/not found, delete the job without notifying.
 ```
 
 ### Example 3: Monitor Website Availability
@@ -80,7 +80,7 @@ name: monitor-example-site
 seconds: 60
 start_date: 2024-01-15T10:01:00Z
 silent: true
-task: Check if https://example.com is accessible (HTTP 200 response). If site is reachable, notify admin "🌐 example.com is back online!" and delete the monitor-example-site job.
+task: Check if https://example.com is accessible (HTTP 200 response). If site is reachable, use the notify tool with "🌐 example.com is back online!" and delete the monitor-example-site job.
 ```
 
 ### Example 4: Monitor Price Drop
@@ -92,7 +92,7 @@ name: monitor-product-price
 seconds: 60
 start_date: 2024-01-15T10:01:00Z
 silent: true
-task: Check the price of [product URL]. If price < $100, notify admin "💰 Price alert! [Product name] is now $XX (below $100)!" and delete the monitor-product-price job.
+task: Check the price of [product URL]. If price < $100, use the notify tool with "💰 Price alert! [Product name] is now $XX (below $100)!" and delete the monitor-product-price job.
 ```
 
 ### Example 5: Monitor Email Arrival
@@ -104,7 +104,7 @@ name: monitor-email-from-john
 seconds: 60
 start_date: 2024-01-15T10:01:00Z
 silent: true
-task: Search Gmail for new unread emails from john@example.com received in the last 2 minutes. If found, notify admin "📧 New email from john@example.com: [subject]" and delete the monitor-email-from-john job.
+task: Search Gmail for new unread emails from john@example.com received in the last 2 minutes. If found, use the notify tool with "📧 New email from john@example.com: [subject]" and delete the monitor-email-from-john job.
 ```
 
 ## Managing Monitors
