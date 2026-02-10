@@ -65,7 +65,7 @@ async def test_ultimate_e2e(client):
     assert "4" in follow_up_data["result"]
 
 
-async def test_session_survives_restart(pgvector_container):
+async def test_session_survives_restart(pgvector_container, ollama_container):
     from prometheus_client import REGISTRY
 
     from synthia.main import Config, create_app
@@ -80,6 +80,7 @@ async def test_session_survives_restart(pgvector_container):
 
     config = Config(
         postgres_connection_string=pgvector_container,
+        ollama_url=ollama_container,
         claude_cwd=Path(__file__).parent,
         mcp_config_path=None,
     )

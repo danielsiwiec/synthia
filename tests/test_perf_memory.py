@@ -4,34 +4,14 @@ import time
 import pytest
 from mem0 import AsyncMemory
 
-from synthia.agents.memory.client import OLLAMA_EMBEDDING_DIMS, OLLAMA_EMBEDDING_MODEL
+from synthia.agents.memory.client import _mem0_config
 
 _ITERATIONS = 3
 
 
-def _mem0_config(postgres_url: str, ollama_url: str) -> dict:
-    return {
-        "vector_store": {
-            "provider": "pgvector",
-            "config": {
-                "connection_string": postgres_url,
-                "embedding_model_dims": OLLAMA_EMBEDDING_DIMS,
-            },
-        },
-        "embedder": {
-            "provider": "ollama",
-            "config": {
-                "model": OLLAMA_EMBEDDING_MODEL,
-                "ollama_base_url": ollama_url,
-            },
-        },
-    }
-
-
 @pytest.fixture(scope="module")
 async def memory_client(pgvector_container, ollama_container):
-    config = _mem0_config(pgvector_container, ollama_container)
-    return await AsyncMemory.from_config(config)
+    return await AsyncMemory.from_config(_mem0_config(pgvector_container, ollama_container))
 
 
 @pytest.mark.performance

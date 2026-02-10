@@ -38,10 +38,11 @@ def ollama_container():
 
 
 @pytest.fixture(scope="session")
-def app(pgvector_container):
+def app(pgvector_container, ollama_container):
     os.environ["POSTGRES_CONNECTION_STRING"] = pgvector_container
     config = Config(
         postgres_connection_string=pgvector_container,
+        ollama_url=ollama_container,
         claude_cwd=Path(__file__).parent,
         mcp_config_path=None,
     )
