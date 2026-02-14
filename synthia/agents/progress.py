@@ -34,6 +34,8 @@ class ProgressAnalyzer(Consumer[Message]):
             messages=[{"role": "user", "content": prompt}],
         )
         summary = response.choices[0].message.content
+        if not summary:
+            return
 
         await pubsub.publish(ProgressNotification(session_id=session_id, summary=summary, thread_id=thread_id))
 

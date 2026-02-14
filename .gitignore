@@ -294,3 +294,6 @@ extras/
 
 # Custom MCP server configuration (contains API keys)
 mcp_servers.json
+
+# Ollama model cache for tests
+.ollama-models/

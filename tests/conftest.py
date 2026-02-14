@@ -2,8 +2,10 @@ import os
 from pathlib import Path
 
 os.environ["LANGSMITH_PROJECT"] = "tests"
+os.environ.pop("CLAUDECODE", None)
 
 import httpx
+import ollama as ollama_client
 import pytest
 from testcontainers.core.image import DockerImage
 from testcontainers.ollama import OllamaContainer
@@ -32,8 +34,13 @@ def pgvector_container():
 
 @pytest.fixture(scope="session")
 def ollama_container():
-    with OllamaContainer("ollama/ollama") as ollama:
-        ollama.pull_model(OLLAMA_EMBEDDING_MODEL)
+    models_cache = Path(__file__).parent.parent / ".ollama-models"
+    models_cache.mkdir(exist_ok=True)
+    container = OllamaContainer("ollama/ollama")
+    container.with_volume_mapping(str(models_cache), "/root/.ollama/models", mode="rw")
+    with container as ollama:
+        client = ollama_client.Client(host=ollama.get_endpoint())
+        client.pull(OLLAMA_EMBEDDING_MODEL)
         yield ollama.get_endpoint()
 
 
