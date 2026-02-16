@@ -72,7 +72,7 @@ def _register_handlers(
 class Config(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    postgres_connection_string: str
+    postgres_connection_string: str = "postgresql://postgres:postgres@pgvector:5432/vector_store"
     ollama_url: str | None = None
     claude_cwd: Path | None = None
     mcp_config_path: Path | None = Path("mcp_servers.json")
@@ -107,12 +107,6 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
                 "admin": admin_mcp_server,
                 "episodic": episodic_mcp_server,
             }
-
-            if os.getenv("GEMINI_API_KEY"):
-                from synthia.agents.image.client import create_image_mcp_server
-
-                logger.info("Enabling image MCP server...")
-                mcp_servers["image"] = create_image_mcp_server()
 
             mcp_config_path = config.mcp_config_path
             if mcp_config_path and mcp_config_path.exists():
