@@ -23,13 +23,10 @@ from synthia.agents.scheduler.client import create_scheduler_mcp_server
 from synthia.helpers.pubsub import pubsub
 from synthia.metrics import create_instrumentator
 from synthia.migrations.runner import run_migrations
-from synthia.routes.audio import router as audio_router
 from synthia.routes.chat import router as chat_router
 from synthia.routes.health import router as health_router
 from synthia.routes.push import router as push_router
 from synthia.routes.task import router as task_router
-from synthia.routes.voice import mount_static
-from synthia.routes.voice import router as voice_router
 from synthia.service.chat import ChatService
 from synthia.service.models import AppStartup
 from synthia.service.push import PushService
@@ -81,7 +78,7 @@ class Config(BaseSettings):
 
 
 def create_app(config_overrides: Config | None = None) -> FastAPI:
-    config = config_overrides or Config()  # type: ignore[call-arg]
+    config = config_overrides or Config()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -160,12 +157,9 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
     )
 
     app.include_router(task_router)
-    app.include_router(audio_router)
     app.include_router(health_router)
-    app.include_router(voice_router)
     app.include_router(chat_router)
     app.include_router(push_router)
-    mount_static(app)
 
     instrumentator = create_instrumentator()
     instrumentator.instrument(app).expose(app)

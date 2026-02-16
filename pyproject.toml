@@ -13,7 +13,6 @@ dev = [
   "ruff>=0.15.1",
   "ty>=0.0.17",
   "testcontainers>=4.14.1",
-  "pytest-playwright>=0.7.2",
   "toml-sort>=0.24.3"
 ]
 
@@ -31,7 +30,6 @@ dependencies = [
   "psycopg-pool>=3.3.0",
   "pydantic-settings>=2.12.0",
   "apscheduler>=3.11.2",
-  "google-genai>=1.63.0",
   "prometheus-fastapi-instrumentator>=7.1.0",
   "psutil>=7.2.2",
   "opentelemetry-api>=1.39.1",
@@ -57,7 +55,6 @@ packages = ["synthia"]
 asyncio_mode = "auto"
 markers = [
   "smoke: marks tests as smoke tests (quick tests for basic functionality)",
-  "voice: marks tests for voice/PWA functionality (requires running server)",
   "performance: marks performance benchmarks (excluded from make test)",
   "eval: marks evaluation tests for LLM capabilities"
 ]

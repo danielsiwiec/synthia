@@ -6,7 +6,6 @@ from pydantic import BaseModel
 class TaskRequest(BaseModel):
     task: str
     thread_id: int
-    audio_mode: bool = False
 
 
 class TaskResponse(BaseModel):

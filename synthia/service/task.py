@@ -49,16 +49,6 @@ class TaskService:
     @traced("process_task")
     async def process_task(self, request: TaskRequest) -> TaskResponse:
         objective = request.task
-        if request.audio_mode:
-            objective = f"""[AUDIO RESPONSE MODE]
-Your response will be read aloud via text-to-speech. Be BRIEF - aim for 1-3 sentences maximum.
-- Write numbers as words (e.g., "forty-two" not "42")
-- No markdown, symbols, or formatting
-- Conversational language only
-- Spell out abbreviations
-- Ignore misspellings of your name (Cyntia, Cynthia, etc.) - they mean you, Synthia
-
-User's request: {request.task}"""
 
         agent, session_id = self._session_repository.get(request.thread_id)
         if not agent:

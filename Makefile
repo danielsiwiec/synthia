@@ -1,4 +1,4 @@
-.PHONY: start smoke dev test test-voice lint check format toml-sort vapid-keys
+.PHONY: start smoke dev test lint check format toml-sort vapid-keys
 
 start:
 	uv run uvicorn synthia.main:app --host 0.0.0.0 --port 8003
@@ -7,7 +7,7 @@ dev:
 	uv run uvicorn synthia.main:app --host 0.0.0.0 --port 8003 --reload
 
 test:
-	uv run pytest tests/ -n auto --testmon -m "not voice and not performance and not eval"
+	uv run pytest tests/ -n auto --testmon -m "not performance and not eval"
 
 smoke:
 	uv run pytest tests/ -m smoke
