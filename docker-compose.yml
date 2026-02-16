@@ -3,8 +3,6 @@ services:
     container_name: synthia
     build:
       context: .
-      secrets:
-        - claude_credentials
       args:
         USER_UID: ${USER_UID:-501}
         USER_GID: ${USER_GID:-20}
@@ -13,11 +11,6 @@ services:
     env_file:
       - .env
     environment:
-      - CLAUDE_CODE_ENABLE_TELEMETRY=1
-      - OTEL_METRICS_EXPORTER=otlp
-      - OTEL_LOGS_EXPORTER=otlp
-      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
-      - OTEL_LOG_USER_PROMPTS=1
       - OLLAMA_URL=http://ollama:11434
     depends_on:
       pgvector:
@@ -27,11 +20,6 @@ services:
     volumes:
       - ./claude_home:/home/synthia/.claude
       - ./skills:/home/synthia/workdir/.claude/skills
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ~/.claude.json:/home/synthia/.claude.json
-      - ./mcp_servers.json:/home/synthia/workdir/mcp_servers.json
-    group_add:
-      - "0"
     restart: unless-stopped
 
   pgvector:
@@ -64,19 +52,6 @@ services:
       retries: 12
     restart: unless-stopped
 
-  google-mcp:
-    container_name: google-mcp
-    image: workspace-mcp
-    env_file:
-      - .env_google_mcp
-    ports:
-      - "8001:8000"
-
 volumes:
   pgvector_data:
   ollama_data:
-
-secrets:
-  claude_credentials:
-    file: ~/.claude.json
-

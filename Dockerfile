@@ -43,4 +43,6 @@ COPY --chown=synthia:synthia alembic.ini alembic.ini
 
 RUN mkdir -p ~/.claude ~/.cache /home/synthia/workdir/.claude
 
+ENV PATH="/home/synthia/workdir/.venv/lib/python3.13/site-packages/claude_agent_sdk/_bundled:${PATH}"
+
 CMD ["uv", "run", "uvicorn", "synthia.main:app", "--host", "0.0.0.0", "--port", "8003"]

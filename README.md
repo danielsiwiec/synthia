@@ -1,33 +1,62 @@
-# Synthia
+# Synthia - Your AI Assistant That Actually Works
 
-A FastAPI application with Claude Agent SDK integration for processing tasks.
+**Perfect memory. Smarter every day. Runs 24/7.**
+
+## Capabilities
+
+- Factual memory
+- Conversation memory
+- Built-in skills
+- Scheduled tasks
+- Create skills on the go
 
 ## Quick Start
 
-1. **Install dependencies:**
-   ```bash
-   uv sync
-   ```
+### Prerequisites
 
-2. **Run the application:**
-   ```bash
-   make start
-   # or for development with auto-reload:
-   make dev
-   ```
+- Docker & Docker Compose
 
-3. **Test the API:**
-   ```bash
-   curl -X POST "http://localhost:8003/task" \
-        -H "Content-Type: application/json" \
-        -d '{"task": "list files in current folder, then for each file smaller than 1MB count the number of words 'task' in it", "response_schema": {"type": "object", "properties": {"total_count": {"type": "integer"}}, "required": ["total_count"]}}'
-   ```
+### Option 1. Use Anthropic API key
 
-## API Documentation
+Copy `.env.template` to `.env` and set `ANTHROPIC_API_KEY`
 
-Once running, visit `http://localhost:8003/docs` for interactive API documentation.
+### Option 2. Use your existing Claude Code plan
 
-## Documentation
+1. Start Synthia (see below)
+2. Run `docker exec -it synthia claude`
+3. Run `/login` and follow instructions
 
-See [agents.md](agents.md) for detailed documentation about the application architecture and usage.
+### Start
 
+`docker compose up -d`
+
+Open http://localhost:8003/chat
+
+## Integrations
+
+### MCP
+
+Custom MCP servers can be added via `mcp_servers.json` in the project root. The file follows the standard Claude Code MCP server format:
+
+```json
+{
+  "mcpServers": {
+    "my-server": {
+      "type": "http",
+      "url": "http://localhost:8000/mcp"
+    },
+    "my-stdio-server": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["@example/mcp-server"],
+      "env": {
+        "API_KEY": "..."
+      }
+    }
+  }
+}
+```
+
+Then, add a volume in `docker-compose.yaml`:
+
+`- ./mcp_servers.json:/home/synthia/workdir/mcp_servers.json`
