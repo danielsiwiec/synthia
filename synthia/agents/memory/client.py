@@ -26,7 +26,7 @@ def _mem0_config(postgres_url: str, ollama_url: str | None = None) -> dict:
         }
         config["embedder"] = ollama_config
         config["llm"] = ollama_config
-        config["vector_store"]["config"]["embedding_model_dims"] = OLLAMA_EMBEDDING_DIMS
+        config["vector_store"]["config"]["embedding_model_dims"] = str(OLLAMA_EMBEDDING_DIMS)
     return config
 
 
