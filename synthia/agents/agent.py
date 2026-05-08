@@ -214,13 +214,16 @@ class ClaudeAgent:
         async for message in message_stream:
             if thread_id:
                 await pubsub.publish(message)
+            if self._session_id is None:
+                session_id = getattr(message, "session_id", None)
+                if session_id:
+                    self._session_id = session_id
+                    if thread_id:
+                        init_msg = InitMessage(session_id=self._session_id, thread_id=thread_id, prompt=objective)
+                        with start_span("InitMessage"):
+                            await pubsub.publish(init_msg)
             if isinstance(message, SystemMessage):
-                self._session_id = message.data["session_id"]
                 message_count += 1
-                if thread_id:
-                    init_msg = InitMessage(session_id=self._session_id, thread_id=thread_id, prompt=objective)
-                    with start_span("InitMessage"):
-                        await pubsub.publish(init_msg)
                 continue
             if isinstance(message, ResultMessage):
                 logger.debug(f"📥 Claude SDK ResultMessage received: {(message.result or '')[:50]}...")

@@ -11,7 +11,7 @@ _ITERATIONS = 3
 
 @pytest.fixture(scope="module")
 async def memory_client(pgvector_container, ollama_container):
-    return await AsyncMemory.from_config(_mem0_config(pgvector_container, ollama_container))
+    return AsyncMemory.from_config(_mem0_config(pgvector_container, ollama_container))
 
 
 @pytest.mark.performance
@@ -45,7 +45,7 @@ async def test_memory_search_performance(memory_client):
 
     for query in queries:
         start = time.perf_counter()
-        await memory_client.search(query, user_id=user_id)
+        await memory_client.search(query, filters={"user_id": user_id})
         elapsed = time.perf_counter() - start
         timings.append(elapsed)
 

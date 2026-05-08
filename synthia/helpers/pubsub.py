@@ -37,7 +37,7 @@ class Consumer[T](ABC):
 
 
 def _extract_topic(consumer: Consumer[Any]) -> TopicType:
-    for base in type(consumer).__orig_bases__:  # type: ignore[attr-defined]
+    for base in type(consumer).__orig_bases__:  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         if getattr(base, "__origin__", None) is Consumer:
             args = get_args(base)
             if args:

@@ -32,7 +32,7 @@ def create_search_memories_tool(memory_client: AsyncMemory):
         query = args["query"]
 
         try:
-            results = await memory_client.search(query, user_id="default")
+            results = await memory_client.search(query, filters={"user_id": "default"})
             items = results.get("results") if isinstance(results, dict) else results
             if items:
                 formatted_results = "\n".join(_format_memory(r) for r in items)

@@ -35,7 +35,7 @@ async def create_memory_mcp_server(postgres_url: str, ollama_url: str | None = N
     from synthia.agents.memory.tools.delete_memory import create_delete_memory_tool
     from synthia.agents.memory.tools.search_memories import create_search_memories_tool
 
-    memory_client = await AsyncMemory.from_config(_mem0_config(postgres_url, ollama_url))
+    memory_client = AsyncMemory.from_config(_mem0_config(postgres_url, ollama_url))
 
     tools = [
         create_add_memory_tool(memory_client),

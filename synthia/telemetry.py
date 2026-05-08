@@ -123,6 +123,6 @@ def traced(name: str | None = None) -> Callable[[F], F]:
                     span.record_exception(e)
                     raise
 
-        return wrapper  # type: ignore[return-value]
+        return wrapper  # type: ignore[return-value]  # ty: ignore[invalid-return-type]
 
     return decorator
