@@ -20,6 +20,7 @@ services:
     volumes:
       - ./claude_home:/home/synthia/.claude
       - ./skills:/home/synthia/workdir/.claude/skills
+      - ./uploads:/home/synthia/workdir/uploads
     restart: unless-stopped
 
   pgvector:

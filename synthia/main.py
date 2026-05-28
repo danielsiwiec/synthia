@@ -115,7 +115,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
             episodic_memory_service = EpisodicMemoryService(pool=db_pool, cwd=config.claude_cwd)
 
-            chat_service = ChatService(db_pool)
+            chat_service = ChatService(db_pool, cwd=config.claude_cwd)
             await chat_service.initialize()
             app.state.chat_service = chat_service
             app.state.openai_client = AsyncOpenAI() if os.getenv("OPENAI_API_KEY") else None

@@ -3,6 +3,7 @@ import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
   type AppendMessage,
+  type CompleteAttachment,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -12,17 +13,75 @@ import {
   listThreads,
   sendMessage,
   stopTask,
+  type DisplayAttachment,
+  type OutgoingAttachment,
   type SynthiaMessage,
   type ThreadSummary,
 } from "@/lib/api";
+import { attachmentAdapter } from "@/runtime/attachmentAdapter";
 import { connectThreadEvents, type SseConnection } from "@/lib/sse";
 import { initPush } from "@/lib/push";
 
 const POLL_INTERVAL = 5000;
 
+function _dataUrlOf(att: CompleteAttachment): string | undefined {
+  const part = att.content?.[0];
+  if (part?.type === "image") return part.image;
+  if (part?.type === "file") return part.data;
+  return undefined;
+}
+
+function _splitAttachments(attachments: readonly CompleteAttachment[]): {
+  display: DisplayAttachment[];
+  outgoing: OutgoingAttachment[];
+} {
+  const display: DisplayAttachment[] = [];
+  const outgoing: OutgoingAttachment[] = [];
+  for (const att of attachments) {
+    const dataUrl = _dataUrlOf(att);
+    if (!dataUrl) continue;
+    const contentType = att.contentType ?? "";
+    const type = att.type === "image" ? "image" : att.type === "document" ? "document" : "file";
+    display.push({ id: att.id, type, name: att.name, content_type: contentType, url: dataUrl });
+    const comma = dataUrl.indexOf(",");
+    outgoing.push({
+      name: att.name,
+      content_type: contentType,
+      data: comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl,
+    });
+  }
+  return { display, outgoing };
+}
+
+function _attachmentParts(attachments: DisplayAttachment[]) {
+  return attachments.map((a) => ({
+    id: a.id,
+    type: a.type,
+    name: a.name,
+    contentType: a.content_type,
+    status: { type: "complete" as const },
+    content: [
+      a.type === "image"
+        ? { type: "image" as const, image: a.url, filename: a.name }
+        : {
+            type: "file" as const,
+            data: a.url,
+            mimeType: a.content_type || "application/octet-stream",
+            filename: a.name,
+          },
+    ],
+  }));
+}
+
 function _convertMessage(m: SynthiaMessage): ThreadMessageLike {
   if (m.role === "user") {
-    return { role: "user", id: m.id, content: [{ type: "text", text: m.content }] };
+    const content = m.content ? [{ type: "text" as const, text: m.content }] : [];
+    return {
+      role: "user",
+      id: m.id,
+      content,
+      ...(m.attachments?.length ? { attachments: _attachmentParts(m.attachments) } : {}),
+    };
   }
   if (m.message_type === "thought") {
     return { role: "assistant", id: m.id, content: [{ type: "reasoning", text: m.content }] };
@@ -138,7 +197,8 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
     async (message: AppendMessage) => {
       const part = message.content.find((p) => p.type === "text");
       const text = part && part.type === "text" ? part.text.trim() : "";
-      if (!text) return;
+      const { display, outgoing } = _splitAttachments(message.attachments ?? []);
+      if (!text && outgoing.length === 0) return;
 
       let tid = threadIdRef.current;
       if (!tid) {
@@ -158,11 +218,12 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
           content: text,
           metadata: null,
           created_at: null,
+          attachments: display.length ? display : undefined,
         },
       ]);
       setIsRunning(true);
       await connRef.current?.opened;
-      await sendMessage(tid, text, null);
+      await sendMessage(tid, text, null, outgoing.length ? outgoing : undefined);
       void refreshThreads();
     },
     [_connect, refreshThreads],
@@ -181,6 +242,7 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
     onNew,
     onCancel,
     adapters: {
+      attachments: attachmentAdapter,
       threadList: {
         threadId: currentThreadId ?? undefined,
         threads: threads.map((t) => ({ status: "regular", id: t.id, title: t.title })),

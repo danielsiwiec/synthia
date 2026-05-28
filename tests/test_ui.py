@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import socket
 import subprocess
@@ -30,6 +31,11 @@ def _free_port() -> int:
 _PORT = _free_port()
 _BASE_URL = f"http://localhost:{_PORT}"
 
+_PNG_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+_PNG_PAYLOAD = {"name": "pixel.png", "mimeType": "image/png", "buffer": _PNG_BYTES}
+
 _threads_store: dict[str, dict] = {}
 _messages_store: dict[str, list[dict]] = {}
 _sse_queues: dict[str, asyncio.Queue] = {}
@@ -44,9 +50,15 @@ def _reset_stores():
 def _stub_app() -> FastAPI:
     app = FastAPI()
 
+    class _Attachment(BaseModel):
+        name: str
+        content_type: str = ""
+        data: str
+
     class _SendMessageRequest(BaseModel):
         content: str
         reaction: str | None = None
+        attachments: list[_Attachment] | None = None
 
     @app.get("/chat")
     async def chat_ui():
@@ -77,6 +89,18 @@ def _stub_app() -> FastAPI:
                 "updated_at": "2026-01-01T00:00:00",
             }
         metadata = {"reaction": body.reaction} if body.reaction else None
+        attachments = None
+        if body.attachments:
+            attachments = [
+                {
+                    "id": f"{thread_id}-{i}",
+                    "type": "image" if a.content_type.startswith("image/") else "file",
+                    "name": a.name,
+                    "content_type": a.content_type,
+                    "url": f"data:{a.content_type};base64,{a.data}",
+                }
+                for i, a in enumerate(body.attachments)
+            ]
         msgs = _messages_store.setdefault(thread_id, [])
         msgs.append(
             {
@@ -87,6 +111,7 @@ def _stub_app() -> FastAPI:
                 "content": body.content,
                 "metadata": metadata,
                 "created_at": "2026-01-01T00:00:00",
+                "attachments": attachments,
             }
         )
         queue = _sse_queues.get(thread_id)
@@ -180,6 +205,17 @@ class ChatPage:
     def send(self, text: str):
         self.composer.fill(text)
         self.composer.press("Enter")
+
+    def attach(self, payload):
+        with self._page.expect_file_chooser() as fc:
+            self._page.get_by_role("button", name="Add Attachment").click()
+        fc.value.set_files(payload)
+
+    def composer_attachment_tiles(self):
+        return self._page.locator(".aui-composer-attachments .aui-attachment-tile")
+
+    def message_attachment_tiles(self):
+        return self._page.locator(".aui-user-message-attachments-end .aui-attachment-tile")
 
     def user_messages(self):
         return self._page.locator(".aui-user-message-content")
@@ -401,3 +437,39 @@ def test_xss_in_user_message_not_executed(chat: ChatPage):
     chat.send("<script>alert('xss')</script>")
     expect(chat.user_messages().first).to_contain_text("<script>alert('xss')</script>")
     expect(chat._page.locator("script:has-text(\"alert('xss')\")")).to_have_count(0)
+
+
+def test_attachment_tile_appears_in_composer(chat: ChatPage):
+    chat.attach(_PNG_PAYLOAD)
+    expect(chat.composer_attachment_tiles().first).to_be_visible(timeout=5000)
+
+
+def test_attachment_can_be_removed(chat: ChatPage):
+    chat.attach(_PNG_PAYLOAD)
+    expect(chat.composer_attachment_tiles().first).to_be_visible(timeout=5000)
+    chat.composer_attachment_tiles().first.hover()
+    chat._page.get_by_role("button", name="Remove file").first.click()
+    expect(chat.composer_attachment_tiles()).to_have_count(0)
+
+
+def test_send_with_attachment_shows_on_message(chat: ChatPage):
+    chat.attach(_PNG_PAYLOAD)
+    expect(chat.composer_attachment_tiles().first).to_be_visible(timeout=5000)
+    chat.send("look at this")
+    expect(chat.text("Echo: look at this")).to_be_visible(timeout=5000)
+    expect(chat.message_attachment_tiles().first).to_be_visible()
+
+
+def test_attachment_persists_after_thread_switch(chat: ChatPage):
+    chat.attach(_PNG_PAYLOAD)
+    expect(chat.composer_attachment_tiles().first).to_be_visible(timeout=5000)
+    chat.send("with photo")
+    expect(chat.text("Echo: with photo")).to_be_visible(timeout=5000)
+    expect(chat.message_attachment_tiles().first).to_be_visible()
+
+    chat.new_thread_button.click()
+    expect(chat.user_messages()).to_have_count(0)
+
+    chat.open_thread("with photo")
+    expect(chat.text("Echo: with photo")).to_be_visible(timeout=5000)
+    expect(chat.message_attachment_tiles().first).to_be_visible()

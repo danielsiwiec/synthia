@@ -2,7 +2,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from loguru import logger
 from pydantic import BaseModel
@@ -17,9 +17,16 @@ _static_dir = Path(__file__).parent.parent / "static"
 _app_index = _static_dir / "app" / "index.html"
 
 
+class _Attachment(BaseModel):
+    name: str
+    content_type: str = ""
+    data: str
+
+
 class _SendMessageRequest(BaseModel):
     content: str
     reaction: str | None = None
+    attachments: list[_Attachment] | None = None
 
 
 def _serialize(obj):
@@ -28,6 +35,30 @@ def _serialize(obj):
     if hasattr(obj, "hex"):
         return str(obj)
     return obj
+
+
+def _attachment_type(content_type: str) -> str:
+    if content_type.startswith("image/"):
+        return "image"
+    if content_type == "application/pdf" or content_type.startswith("text/"):
+        return "document"
+    return "file"
+
+
+def _attachments_from_metadata(thread_id: int, message_id, metadata: dict | None) -> list[dict] | None:
+    if not metadata or not metadata.get("attachments"):
+        return None
+    return [
+        {
+            "id": f"{message_id}-{i}",
+            "type": _attachment_type(a.get("content_type", "")),
+            "name": a["name"],
+            "content_type": a.get("content_type", ""),
+            "url": f"/chat/threads/{thread_id}/attachments/{a['file']}",
+        }
+        for i, a in enumerate(metadata["attachments"])
+        if a.get("file")
+    ]
 
 
 @router.get("/chat")
@@ -61,18 +92,31 @@ async def delete_thread(request: Request, thread_id: int):
 async def get_messages(request: Request, thread_id: int):
     chat_service: ChatService = request.app.state.chat_service
     messages = await chat_service.repository.get_messages(thread_id)
-    return [
-        {
-            "id": str(m["id"]),
-            "thread_id": str(m["thread_id"]),
-            "role": m["role"],
-            "message_type": m["message_type"],
-            "content": m["content"],
-            "metadata": json.loads(m["metadata"]) if m["metadata"] else None,
-            "created_at": m["created_at"].isoformat() if m["created_at"] else None,
-        }
-        for m in messages
-    ]
+    result = []
+    for m in messages:
+        metadata = json.loads(m["metadata"]) if m["metadata"] else None
+        result.append(
+            {
+                "id": str(m["id"]),
+                "thread_id": str(m["thread_id"]),
+                "role": m["role"],
+                "message_type": m["message_type"],
+                "content": m["content"],
+                "metadata": metadata,
+                "created_at": m["created_at"].isoformat() if m["created_at"] else None,
+                "attachments": _attachments_from_metadata(thread_id, m["id"], metadata),
+            }
+        )
+    return result
+
+
+@router.get("/chat/threads/{thread_id}/attachments/{filename}")
+async def get_attachment(request: Request, thread_id: int, filename: str):
+    chat_service: ChatService = request.app.state.chat_service
+    path = chat_service.attachment_path(thread_id, filename)
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    return FileResponse(path)
 
 
 @router.post("/chat/threads/{thread_id}/messages")
@@ -80,13 +124,28 @@ async def send_message(request: Request, thread_id: int, body: _SendMessageReque
     chat_service: ChatService = request.app.state.chat_service
 
     if not chat_service.repository.is_chat_thread(thread_id):
-        title = body.content[:100] if len(body.content) <= 100 else body.content[:97] + "..."
+        title_source = body.content or (body.attachments[0].name if body.attachments else "New chat")
+        title = title_source[:100] if len(title_source) <= 100 else title_source[:97] + "..."
         await chat_service.repository.save_thread(thread_id, title)
 
-    metadata = {"reaction": body.reaction} if body.reaction else None
-    await chat_service.repository.save_message(thread_id, "user", "user", body.content, metadata)
+    saved = await chat_service.save_attachments(thread_id, [a.model_dump() for a in body.attachments or []])
 
-    await pubsub.publish(TaskRequest(task=body.content, thread_id=thread_id))
+    metadata: dict = {}
+    if body.reaction:
+        metadata["reaction"] = body.reaction
+    if saved:
+        metadata["attachments"] = [
+            {"name": s["name"], "content_type": s["content_type"], "file": Path(s["path"]).name} for s in saved
+        ]
+    await chat_service.repository.save_message(thread_id, "user", "user", body.content, metadata or None)
+
+    task = body.content
+    if saved:
+        files = "\n".join(f"- {s['path']}" for s in saved)
+        prefix = f"{body.content}\n\n" if body.content else ""
+        task = f"{prefix}The user attached the following file(s). Use the Read tool to view them:\n{files}"
+
+    await pubsub.publish(TaskRequest(task=task, thread_id=thread_id))
 
     return {"ok": True}
 

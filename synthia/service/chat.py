@@ -1,7 +1,9 @@
 import asyncio
+import base64
 import json
 import re
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 import asyncpg
@@ -11,6 +13,48 @@ from synthia.agents.agent import InitMessage, Message, Result, Thought, ToolCall
 from synthia.service.models import ProgressNotification
 
 _SENTENCE_END = re.compile(r"[.!?](?:\s|$)")
+
+
+def _safe_filename(name: str) -> str:
+    cleaned = name.replace("\\", "/").replace("\x00", "")
+    return Path(cleaned).name or "attachment"
+
+
+def _unique_path(path: Path) -> Path:
+    if not path.exists():
+        return path
+    counter = 1
+    while True:
+        candidate = path.with_name(f"{path.stem}_{counter}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+
+def _attachment_path(uploads_dir: Path, thread_id: int, filename: str) -> Path | None:
+    thread_dir = (uploads_dir / str(thread_id)).resolve()
+    candidate = (thread_dir / _safe_filename(filename)).resolve()
+    if candidate.parent != thread_dir:
+        return None
+    return candidate
+
+
+async def _save_attachments(
+    uploads_dir: Path, thread_id: int, attachments: list[dict[str, Any]]
+) -> list[dict[str, str]]:
+    if not attachments:
+        return []
+    thread_dir = uploads_dir / str(thread_id)
+    thread_dir.mkdir(parents=True, exist_ok=True)
+    saved: list[dict[str, str]] = []
+    for attachment in attachments:
+        raw = base64.b64decode(attachment["data"])
+        dest = _unique_path(thread_dir / _safe_filename(attachment["name"]))
+        await asyncio.to_thread(dest.write_bytes, raw)
+        saved.append(
+            {"name": attachment["name"], "content_type": attachment.get("content_type", ""), "path": str(dest)}
+        )
+    return saved
 
 
 def _first_sentence(text: str) -> str:
@@ -103,9 +147,10 @@ class MessageRepository:
 
 
 class ChatService:
-    def __init__(self, pool: asyncpg.Pool):
+    def __init__(self, pool: asyncpg.Pool, cwd: str | Path | None = None):
         self._event_bus = ChatEventBus()
         self._repository = MessageRepository(pool)
+        self._uploads_dir = ((Path(cwd) if cwd else Path.cwd()) / "uploads").resolve()
 
     async def initialize(self):
         await self._repository.initialize()
@@ -117,6 +162,12 @@ class ChatService:
     @property
     def repository(self) -> MessageRepository:
         return self._repository
+
+    async def save_attachments(self, thread_id: int, attachments: list[dict[str, Any]]) -> list[dict[str, str]]:
+        return await _save_attachments(self._uploads_dir, thread_id, attachments)
+
+    def attachment_path(self, thread_id: int, filename: str) -> Path | None:
+        return _attachment_path(self._uploads_dir, thread_id, filename)
 
     async def handle_message(self, message: Message):
         thread_id = message.thread_id

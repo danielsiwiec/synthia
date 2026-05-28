@@ -8,6 +8,20 @@ export interface ThreadSummary {
   updated_at: string | null;
 }
 
+export interface OutgoingAttachment {
+  name: string;
+  content_type: string;
+  data: string;
+}
+
+export interface DisplayAttachment {
+  id: string;
+  type: "image" | "document" | "file";
+  name: string;
+  content_type: string;
+  url: string;
+}
+
 export interface SynthiaMessage {
   id: string;
   thread_id: string;
@@ -16,6 +30,7 @@ export interface SynthiaMessage {
   content: string;
   metadata: { reaction?: string; [key: string]: unknown } | null;
   created_at: string | null;
+  attachments?: DisplayAttachment[];
 }
 
 async function _json<T>(res: Response): Promise<T> {
@@ -37,11 +52,12 @@ export async function sendMessage(
   threadId: string,
   content: string,
   reaction: string | null,
+  attachments?: OutgoingAttachment[],
 ): Promise<void> {
   await fetch(`/chat/threads/${threadId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content, reaction }),
+    body: JSON.stringify({ content, reaction, attachments }),
   });
 }
 

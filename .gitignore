@@ -298,6 +298,9 @@ mcp_servers.json
 # Ollama model cache for tests
 .ollama-models/
 
+# User-uploaded chat attachments
+uploads/
+
 # Frontend
 frontend/node_modules/
 synthia/static/app/
