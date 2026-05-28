@@ -103,6 +103,8 @@ class ClaudeAgent:
                 setting_sources=["user", "project"],
                 permission_mode="bypassPermissions",
                 resume=resume,
+                mcp_servers=mcp_servers or {},
+                thinking={"type": "adaptive", "display": "summarized"},
             )
             return cls(None, options)
         options = ClaudeAgentOptions(
@@ -112,6 +114,7 @@ class ClaudeAgent:
             permission_mode="bypassPermissions",
             system_prompt=system_prompt if system_prompt is not None else SYSTEM_PROMPT,
             mcp_servers=mcp_servers or {},
+            thinking={"type": "adaptive", "display": "summarized"},
         )
         client = ClaudeSDKClient(options)
         logger.debug("🔌 Claude SDK connecting...")

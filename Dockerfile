@@ -1,4 +1,11 @@
 # syntax=docker/dockerfile:1.4
+FROM node:22-slim AS frontend
+WORKDIR /build/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend ./
+RUN npm run build
+
 FROM python:3.13-slim
 
 ARG USER_UID=501
@@ -40,6 +47,7 @@ RUN --mount=type=cache,target=/home/synthia/.cache/uv,uid=${USER_UID},gid=${USER
 
 COPY --chown=synthia:synthia synthia synthia
 COPY --chown=synthia:synthia alembic.ini alembic.ini
+COPY --from=frontend --chown=synthia:synthia /build/synthia/static/app ./synthia/static/app
 
 RUN mkdir -p ~/.claude ~/.cache /home/synthia/workdir/.claude
 

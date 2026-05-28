@@ -297,3 +297,9 @@ mcp_servers.json
 
 # Ollama model cache for tests
 .ollama-models/
+
+# Frontend
+frontend/node_modules/
+synthia/static/app/
+# Re-include frontend source dir wrongly caught by the Python `lib/` rule above
+!frontend/src/lib/

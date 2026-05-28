@@ -11,6 +11,7 @@ _t_process_start = _time.perf_counter()
 import asyncpg
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from openai import AsyncOpenAI
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -160,6 +161,9 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(chat_router)
     app.include_router(push_router)
+
+    _static_dir = Path(__file__).parent / "static"
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
     instrumentator = create_instrumentator()
     instrumentator.instrument(app).expose(app)

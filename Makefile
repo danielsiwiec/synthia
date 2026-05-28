@@ -1,13 +1,23 @@
-.PHONY: start smoke dev test lint check format toml-sort vapid-keys
+.PHONY: start smoke dev test lint check format toml-sort vapid-keys frontend-install frontend-build frontend-dev
 
-start:
+start: frontend-build
 	uv run uvicorn synthia.main:app --host 0.0.0.0 --port 8003
 
 dev:
 	uv run uvicorn synthia.main:app --host 0.0.0.0 --port 8003 --reload
 
+frontend-install:
+	cd frontend && npm ci
+
+frontend-build:
+	cd frontend && npm run build
+
+frontend-dev:
+	cd frontend && npm run dev
+
 test:
-	uv run pytest tests/ -n auto --testmon -m "not performance and not eval"
+	uv run pytest tests/ --ignore=tests/test_ui.py -n auto --testmon -m "not performance and not eval"
+	uv run pytest tests/test_ui.py -p no:testmon -m "not performance and not eval"
 
 smoke:
 	uv run pytest tests/ -m smoke

@@ -14,10 +14,12 @@ from synthia.service.models import StopTaskRequest, TaskRequest
 router = APIRouter()
 
 _static_dir = Path(__file__).parent.parent / "static"
+_app_index = _static_dir / "app" / "index.html"
 
 
 class _SendMessageRequest(BaseModel):
     content: str
+    reaction: str | None = None
 
 
 def _serialize(obj):
@@ -30,7 +32,7 @@ def _serialize(obj):
 
 @router.get("/chat")
 async def chat_ui():
-    return FileResponse(_static_dir / "chat.html", headers={"Cache-Control": "no-cache"})
+    return FileResponse(_app_index, headers={"Cache-Control": "no-cache"})
 
 
 @router.get("/chat/threads")
@@ -81,7 +83,8 @@ async def send_message(request: Request, thread_id: int, body: _SendMessageReque
         title = body.content[:100] if len(body.content) <= 100 else body.content[:97] + "..."
         await chat_service.repository.save_thread(thread_id, title)
 
-    await chat_service.repository.save_message(thread_id, "user", "user", body.content)
+    metadata = {"reaction": body.reaction} if body.reaction else None
+    await chat_service.repository.save_message(thread_id, "user", "user", body.content, metadata)
 
     await pubsub.publish(TaskRequest(task=body.content, thread_id=thread_id))
 

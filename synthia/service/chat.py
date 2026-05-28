@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from collections import defaultdict
 from typing import Any
 
@@ -8,6 +9,16 @@ from loguru import logger
 
 from synthia.agents.agent import InitMessage, Message, Result, Thought, ToolCall
 from synthia.service.models import ProgressNotification
+
+_SENTENCE_END = re.compile(r"[.!?](?:\s|$)")
+
+
+def _first_sentence(text: str) -> str:
+    text = text.strip()
+    match = _SENTENCE_END.search(text)
+    if match:
+        return text[: match.end()].strip()
+    return text
 
 
 class ChatEventBus:
@@ -112,11 +123,17 @@ class ChatService:
         if thread_id is None:
             return
 
-        if isinstance(message, (InitMessage, Thought)):
-            if isinstance(message, InitMessage):
-                await self._event_bus.push(
-                    thread_id, {"type": "init", "session_id": message.session_id, "prompt": message.prompt}
-                )
+        if isinstance(message, InitMessage):
+            await self._event_bus.push(
+                thread_id, {"type": "init", "session_id": message.session_id, "prompt": message.prompt}
+            )
+            return
+
+        if isinstance(message, Thought):
+            summary = _first_sentence(message.thinking)
+            await self._event_bus.push(thread_id, {"type": "thought", "thinking": summary})
+            if self._repository.is_chat_thread(thread_id):
+                await self._repository.save_message(thread_id, "assistant", "thought", summary)
             return
 
         if isinstance(message, ToolCall):
