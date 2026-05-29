@@ -360,6 +360,31 @@ def test_typing_indicator_hidden_after_response(chat: ChatPage):
     expect(chat._page.get_by_test_id("typing-indicator")).to_have_count(0)
 
 
+def test_in_progress_clears_after_reopen_when_task_finished_while_away(chat: ChatPage):
+    chat.send("no-result-thought")
+    expect(chat._page.get_by_test_id("typing-indicator")).to_be_visible(timeout=5000)
+    expect(chat.text("Pondering: no-result-thought")).to_be_visible(timeout=5000)
+
+    thread_id = next(iter(_threads_store))
+    msgs = _messages_store.setdefault(thread_id, [])
+    msgs.append(
+        {
+            "id": str(len(msgs) + 1),
+            "thread_id": thread_id,
+            "role": "assistant",
+            "message_type": "result",
+            "content": "Done while away",
+            "metadata": None,
+            "created_at": "2026-01-01T00:00:05",
+        }
+    )
+
+    chat._page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+
+    expect(chat._page.get_by_test_id("typing-indicator")).to_have_count(0, timeout=5000)
+    expect(chat.text("Done while away")).to_be_visible(timeout=5000)
+
+
 def test_no_assistant_action_bar(chat: ChatPage):
     chat.send("ping")
     expect(chat.text("Echo: ping")).to_be_visible(timeout=5000)

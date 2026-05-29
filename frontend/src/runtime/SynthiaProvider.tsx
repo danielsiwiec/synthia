@@ -146,7 +146,12 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
   const [isRunning, setIsRunning] = useState(false);
 
   const threadIdRef = useRef<string | null>(null);
+  const messagesRef = useRef<SynthiaMessage[]>([]);
   const connRef = useRef<SseConnection | null>(null);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   const refreshThreads = useCallback(async () => {
     setThreads(await listThreads());
@@ -241,16 +246,29 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
     _connect(id);
   }, [_connect]);
 
+  const _syncCurrentThread = useCallback(async () => {
+    const id = threadIdRef.current;
+    if (!id) return;
+    let msgs: SynthiaMessage[];
+    try {
+      msgs = await _resolveImageUrls(await getMessages(id));
+    } catch {
+      return;
+    }
+    if (threadIdRef.current !== id) return;
+    if (msgs.length === 0 && messagesRef.current.length > 0) return;
+    setMessages(msgs);
+    setIsRunning(_inferRunning(msgs));
+    _connect(id);
+  }, [_connect]);
+
   const switchThread = useCallback(
     async (id: string) => {
       threadIdRef.current = id;
       setCurrentThreadId(id);
-      const msgs = await _resolveImageUrls(await getMessages(id));
-      setMessages(msgs);
-      setIsRunning(_inferRunning(msgs));
-      _connect(id);
+      await _syncCurrentThread();
     },
-    [_connect],
+    [_syncCurrentThread],
   );
 
   const removeThread = useCallback(
@@ -329,10 +347,10 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    void refreshThreads();
+    void listThreads().then(setThreads);
     void initPush(() => {});
     return () => _disconnect();
-  }, [refreshThreads, _disconnect]);
+  }, [_disconnect]);
 
   useEffect(() => {
     let timer: number | undefined;
@@ -347,6 +365,7 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
       if (document.hidden) stop();
       else {
         void refreshThreads();
+        void _syncCurrentThread();
         start();
       }
     };
@@ -356,7 +375,7 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
       stop();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [refreshThreads]);
+  }, [refreshThreads, _syncCurrentThread]);
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
