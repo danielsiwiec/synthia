@@ -13,6 +13,12 @@ import {
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
   ActionBarPrimitive,
@@ -228,6 +234,30 @@ const MessageError: FC = () => {
   );
 };
 
+const AssistantImage: FC<{ src: string }> = ({ src }) => {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <img
+          src={src}
+          alt=""
+          className="border-border my-2 max-h-96 max-w-full cursor-pointer rounded-lg border transition-opacity hover:opacity-80"
+        />
+      </DialogTrigger>
+      <DialogContent className="[&>button]:bg-foreground/60 [&_svg]:text-background [&>button]:hover:[&_svg]:text-destructive p-2 sm:max-w-3xl [&>button]:rounded-full [&>button]:p-1 [&>button]:opacity-100 [&>button]:ring-0!">
+        <DialogTitle className="sr-only">Image Preview</DialogTitle>
+        <div className="bg-background relative mx-auto flex max-h-[80dvh] w-full items-center justify-center overflow-hidden">
+          <img
+            src={src}
+            alt=""
+            className="block h-auto max-h-[80vh] w-auto max-w-full object-contain"
+          />
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 const AssistantMessage: FC = () => {
   return (
     <MessagePrimitive.Root
@@ -286,13 +316,7 @@ const AssistantMessage: FC = () => {
               case "tool-call":
                 return part.toolUI ?? <ToolFallback {...part} />;
               case "image":
-                return (
-                  <img
-                    src={part.image}
-                    alt=""
-                    className="border-border my-2 max-h-96 max-w-full rounded-lg border"
-                  />
-                );
+                return <AssistantImage src={part.image} />;
               default:
                 return null;
             }
