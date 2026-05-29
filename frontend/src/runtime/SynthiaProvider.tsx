@@ -24,6 +24,37 @@ import { initPush } from "@/lib/push";
 
 const POLL_INTERVAL = 5000;
 
+// assistant-ui only renders image message parts whose src is a data:, blob:, or https:// URL
+// (see sanitizeImageContent). Our attachment URLs are same-origin relative paths, so fetch them
+// into a blob: URL before they reach the message store.
+const _blobUrlCache = new Map<string, string>();
+
+async function _toDisplayUrl(url: string): Promise<string> {
+  if (/^(data:|blob:|https:\/\/)/.test(url)) return url;
+  const cached = _blobUrlCache.get(url);
+  if (cached) return cached;
+  try {
+    const res = await fetch(url);
+    const blobUrl = URL.createObjectURL(await res.blob());
+    _blobUrlCache.set(url, blobUrl);
+    return blobUrl;
+  } catch {
+    return url;
+  }
+}
+
+async function _resolveImageUrls(messages: SynthiaMessage[]): Promise<SynthiaMessage[]> {
+  return Promise.all(
+    messages.map(async (m) => {
+      if (!m.attachments?.length) return m;
+      const attachments = await Promise.all(
+        m.attachments.map(async (a) => (a.type === "image" ? { ...a, url: await _toDisplayUrl(a.url) } : a)),
+      );
+      return { ...m, attachments };
+    }),
+  );
+}
+
 function _dataUrlOf(att: CompleteAttachment): string | undefined {
   const part = att.content?.[0];
   if (part?.type === "image") return part.image;
@@ -85,6 +116,11 @@ function _convertMessage(m: SynthiaMessage): ThreadMessageLike {
   }
   if (m.message_type === "thought") {
     return { role: "assistant", id: m.id, content: [{ type: "reasoning", text: m.content }] };
+  }
+  if (m.attachments?.length) {
+    const caption = m.content ? [{ type: "text" as const, text: m.content }] : [];
+    const images = m.attachments.map((a) => ({ type: "image" as const, image: a.url }));
+    return { role: "assistant", id: m.id, content: [...caption, ...images] };
   }
   return { role: "assistant", id: m.id, content: [{ type: "text", text: m.content }] };
 }
@@ -156,6 +192,32 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
           setIsRunning(false);
           void refreshThreads();
         },
+        onImage: (data) => {
+          void (async () => {
+            const url = await _toDisplayUrl(data.attachment.url);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `i-${Date.now()}-${prev.length}`,
+                thread_id: threadId,
+                role: "assistant",
+                message_type: "image",
+                content: data.caption ?? "",
+                metadata: null,
+                created_at: null,
+                attachments: [
+                  {
+                    id: `i-${Date.now()}-att`,
+                    type: "image",
+                    name: data.attachment.name,
+                    content_type: data.attachment.content_type,
+                    url,
+                  },
+                ],
+              },
+            ]);
+          })();
+        },
       });
       connRef.current = conn;
       return conn;
@@ -176,7 +238,7 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
     async (id: string) => {
       threadIdRef.current = id;
       setCurrentThreadId(id);
-      const msgs = await getMessages(id);
+      const msgs = await _resolveImageUrls(await getMessages(id));
       setMessages(msgs);
       setIsRunning(_inferRunning(msgs));
       _connect(id);

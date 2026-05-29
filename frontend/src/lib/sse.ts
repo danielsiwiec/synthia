@@ -1,8 +1,19 @@
+export interface ImageEvent {
+  caption: string;
+  attachment: {
+    type: "image";
+    name: string;
+    content_type: string;
+    url: string;
+  };
+}
+
 export interface SseHandlers {
   onInit?: () => void;
   onProgress?: (summary: string) => void;
   onThought?: (thinking: string) => void;
   onResult?: (result: string) => void;
+  onImage?: (data: ImageEvent) => void;
 }
 
 export interface SseConnection {
@@ -38,6 +49,11 @@ export function connectThreadEvents(
   source.addEventListener("result", (e) => {
     const data = JSON.parse((e as MessageEvent).data);
     handlers.onResult?.(data.result);
+  });
+
+  source.addEventListener("image", (e) => {
+    const data = JSON.parse((e as MessageEvent).data) as ImageEvent;
+    handlers.onImage?.(data);
   });
 
   return { close: () => source.close(), opened };

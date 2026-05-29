@@ -60,13 +60,14 @@ def _register_handlers(
 ):
     from synthia.agents.agent import Message
     from synthia.agents.progress import ProgressAnalyzer
-    from synthia.service.models import ProgressNotification
+    from synthia.service.models import OutgoingImage, ProgressNotification
 
     pubsub.subscribe(Message, lambda message: logger.info(f"{message.render()}"))
     pubsub.subscribe(ProgressAnalyzer(openai_client))
     pubsub.subscribe(Message, episodic_memory_service.track_message)
     pubsub.subscribe(Message, chat_service.handle_message)
     pubsub.subscribe(ProgressNotification, chat_service.handle_progress)
+    pubsub.subscribe(OutgoingImage, chat_service.handle_image)
 
 
 class Config(BaseSettings):

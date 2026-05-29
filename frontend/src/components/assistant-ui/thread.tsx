@@ -285,6 +285,14 @@ const AssistantMessage: FC = () => {
                 return <Reasoning {...part} />;
               case "tool-call":
                 return part.toolUI ?? <ToolFallback {...part} />;
+              case "image":
+                return (
+                  <img
+                    src={part.image}
+                    alt=""
+                    className="border-border my-2 max-h-96 max-w-full rounded-lg border"
+                  />
+                );
               default:
                 return null;
             }

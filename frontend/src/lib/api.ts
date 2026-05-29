@@ -1,5 +1,5 @@
 export type Role = "user" | "assistant";
-export type MessageType = "user" | "result" | "thought" | "progress";
+export type MessageType = "user" | "result" | "thought" | "progress" | "image";
 
 export interface ThreadSummary {
   id: string;

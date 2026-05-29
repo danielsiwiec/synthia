@@ -9,7 +9,7 @@ import asyncpg
 from loguru import logger
 
 from synthia.agents.agent import InitMessage, Message, Result, Thought, ToolCall
-from synthia.service.models import ProgressNotification
+from synthia.service.models import OutgoingImage, ProgressNotification
 
 
 def _safe_filename(name: str) -> str:
@@ -34,6 +34,15 @@ def _attachment_path(uploads_dir: Path, thread_id: int, filename: str) -> Path |
     if candidate.parent != thread_dir:
         return None
     return candidate
+
+
+async def _save_image_file(uploads_dir: Path, thread_id: int, src: Path, name: str) -> Path:
+    thread_dir = uploads_dir / str(thread_id)
+    thread_dir.mkdir(parents=True, exist_ok=True)
+    dest = _unique_path(thread_dir / _safe_filename(name))
+    data = await asyncio.to_thread(src.read_bytes)
+    await asyncio.to_thread(dest.write_bytes, data)
+    return dest
 
 
 async def _save_attachments(
@@ -219,3 +228,27 @@ class ChatService:
         if notification.thread_id is None:
             return
         await self._event_bus.push(notification.thread_id, {"type": "progress", "summary": notification.summary})
+
+    async def handle_image(self, image: OutgoingImage):
+        thread_id = image.thread_id
+        if not self._repository.is_chat_thread(thread_id):
+            return
+        src = Path(image.source_path)
+        if not src.is_file():
+            logger.warning(f"send_image: source file missing: {src}")
+            return
+        dest = await _save_image_file(self._uploads_dir, thread_id, src, image.name)
+        file = dest.name
+        attachment = {"name": image.name, "content_type": image.content_type, "file": file}
+        await self._repository.save_message(
+            thread_id, "assistant", "image", image.caption, {"attachments": [attachment]}
+        )
+        url = f"/chat/threads/{thread_id}/attachments/{file}"
+        await self._event_bus.push(
+            thread_id,
+            {
+                "type": "image",
+                "caption": image.caption,
+                "attachment": {"type": "image", "name": image.name, "content_type": image.content_type, "url": url},
+            },
+        )

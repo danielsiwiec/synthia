@@ -1,7 +1,14 @@
 import base64
 from pathlib import Path
 
-from synthia.service.chat import _attachment_path, _safe_filename, _save_attachments, _unique_path
+from synthia.agents.agent import create_image_tool
+from synthia.service.chat import (
+    _attachment_path,
+    _safe_filename,
+    _save_attachments,
+    _save_image_file,
+    _unique_path,
+)
 
 
 def test_safe_filename_strips_paths():
@@ -51,3 +58,28 @@ def test_attachment_path_blocks_traversal(tmp_path):
     assert path is not None
     assert path == (tmp_path / "5" / "secret.txt").resolve()
     assert path.parent == (tmp_path / "5").resolve()
+
+
+async def test_save_image_file_copies_source(tmp_path):
+    src = tmp_path / "shot.png"
+    src.write_bytes(b"\x89PNG\r\n")
+    dest = await _save_image_file(tmp_path, 9, src, "shot.png")
+    assert dest.read_bytes() == b"\x89PNG\r\n"
+    assert dest.parent == tmp_path / "9"
+
+
+async def test_send_image_tool_rejects_missing_file(tmp_path):
+    tool = create_image_tool(1, tmp_path)
+    assert "no file found" in await tool("nope.png")
+
+
+async def test_send_image_tool_rejects_non_image(tmp_path):
+    (tmp_path / "a.txt").write_text("x")
+    tool = create_image_tool(1, tmp_path)
+    assert "not an image" in await tool("a.txt")
+
+
+async def test_send_image_tool_accepts_image(tmp_path):
+    (tmp_path / "a.png").write_bytes(b"\x89PNG")
+    tool = create_image_tool(1, tmp_path)
+    assert "Sent image 'a.png'" in await tool("a.png")

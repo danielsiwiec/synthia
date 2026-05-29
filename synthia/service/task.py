@@ -6,7 +6,7 @@ from typing import Any
 from google.adk.sessions import BaseSessionService
 from loguru import logger
 
-from synthia.agents.agent import Agent
+from synthia.agents.agent import Agent, create_image_tool
 from synthia.helpers.pubsub import pubsub
 from synthia.service.models import (
     AdminNotification,
@@ -55,7 +55,10 @@ class TaskService:
 
         agent, _ = self._session_repository.get(request.thread_id)
         if not agent:
-            agent = await Agent.create(tools=self._tools, cwd=self._cwd, session_service=self._session_service)
+            image_tool = create_image_tool(request.thread_id, self._cwd)
+            agent = await Agent.create(
+                tools=[*self._tools, image_tool], cwd=self._cwd, session_service=self._session_service
+            )
 
         task = asyncio.create_task(
             agent.run_for_result(

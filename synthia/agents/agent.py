@@ -1,4 +1,5 @@
 import json
+import mimetypes
 import os
 import uuid
 from collections.abc import Callable
@@ -17,6 +18,7 @@ from pydantic import BaseModel
 from synthia.agents.builtins import create_builtin_tools
 from synthia.helpers.pubsub import pubsub
 from synthia.metrics import record_call_cost, record_session_cost
+from synthia.service.models import OutgoingImage
 from synthia.telemetry import current_span, start_span, traced
 
 APP_NAME = "synthia"
@@ -75,6 +77,13 @@ All browser downloads, by default, are saved in the `/mounts/downloads` folder.
 ## Web access
 Use the fetch_url tool to retrieve web pages. If a page is not accessible (JavaScript-rendered,
 login-gated, or blocked), use the playwright browser tools, which drive a real Chrome.
+
+## Sending images
+To show the user an image (a screenshot, chart, photo, generated picture, etc.), you MUST call the
+send_image tool with the path to the image file. NEVER reply with a filesystem path or tell the user
+to open a file — the user has no access to Synthia's file system and cannot see anything on disk. The
+send_image tool persists the image and displays it inline in the chat; it is the only way an image
+reaches the user.
 """
 
 
@@ -127,6 +136,43 @@ class Thought(BaseModel):
 
 
 Message = ToolCall | Result | InitMessage | Thought
+
+
+def create_image_tool(thread_id: int, cwd: str | Path | None = None) -> Callable:
+    base = Path(cwd) if cwd else Path.cwd()
+
+    async def send_image(path: str, caption: str = "") -> str:
+        """Display an image to the user in the current chat thread. This is the ONLY way to show an
+        image to the user — they cannot access the file system, so never reply with a file path.
+
+        Accepts any image the browser renders inline: PNG, JPEG, GIF, WebP, and SVG. For freeform
+        vector drawings (a figure, icon, simple scene) write an .svg file and send it directly —
+        do NOT rasterize it to PNG via a browser screenshot.
+
+        Args:
+            path: Path to the image file, absolute or relative to the working directory.
+            caption: Optional caption shown beneath the image.
+        """
+        resolved = Path(path)
+        if not resolved.is_absolute():
+            resolved = base / resolved
+        if not resolved.is_file():
+            return f"Error: no file found at {resolved}"
+        content_type = mimetypes.guess_type(str(resolved))[0] or ""
+        if not content_type.startswith("image/"):
+            return f"Error: {resolved} is not an image (detected type: {content_type or 'unknown'})"
+        await pubsub.publish(
+            OutgoingImage(
+                thread_id=thread_id,
+                source_path=str(resolved),
+                name=resolved.name,
+                content_type=content_type,
+                caption=caption,
+            )
+        )
+        return f"Sent image '{resolved.name}' to the user."
+
+    return send_image
 
 
 def _stringify(response: Any) -> str:

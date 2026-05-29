@@ -25,6 +25,14 @@ class ProgressNotification(BaseModel):
     thread_id: int | None = None
 
 
+class OutgoingImage(BaseModel):
+    thread_id: int
+    source_path: str
+    name: str
+    content_type: str
+    caption: str = ""
+
+
 class TaskTrigger(BaseModel):
     task: str
     name: str
