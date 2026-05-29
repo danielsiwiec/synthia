@@ -126,10 +126,17 @@ function _convertMessage(m: SynthiaMessage): ThreadMessageLike {
 }
 
 function _inferRunning(messages: SynthiaMessage[]): boolean {
-  const last = messages[messages.length - 1];
-  if (!last) return false;
-  if (last.role === "assistant" && last.message_type === "result") return false;
-  return last.role === "user" || (last.role === "assistant" && last.message_type === "thought");
+  // A turn is in flight only when the latest user message has no result after it. We can't just
+  // look at the last message: with interleaved thinking the model emits a final thought that is
+  // persisted slightly after the result, so a completed turn often ends on a thought.
+  let lastUser = -1;
+  let lastResult = -1;
+  messages.forEach((m, i) => {
+    if (m.role === "user") lastUser = i;
+    else if (m.role === "assistant" && m.message_type === "result") lastResult = i;
+  });
+  if (lastUser === -1) return false;
+  return lastResult < lastUser;
 }
 
 export function SynthiaProvider({ children }: { children: ReactNode }) {
