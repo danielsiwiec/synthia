@@ -48,7 +48,8 @@ dependencies = [
   "google-adk>=2.1.0",
   "openai>=2.36.0",
   "litellm>=1.86.2",
-  "mcp>=1.27.1"
+  "mcp>=1.27.1",
+  "mermaid-py>=0.8.4"
 ]
 
 [tool.hatch.build.targets.wheel]

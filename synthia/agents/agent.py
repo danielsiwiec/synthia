@@ -1,3 +1,4 @@
+import asyncio
 import json
 import mimetypes
 import os
@@ -84,6 +85,12 @@ send_image tool with the path to the image file. NEVER reply with a filesystem p
 to open a file — the user has no access to Synthia's file system and cannot see anything on disk. The
 send_image tool persists the image and displays it inline in the chat; it is the only way an image
 reaches the user.
+
+## Diagrams
+To draw a diagram (flowchart, sequence, class, state, ER, gantt, mindmap, etc.), call the
+render_diagram tool with Mermaid source. It renders the diagram to an image and shows it to the user
+directly — do not hand-write SVG or screenshot a browser for diagrams, and do not also call
+send_image. Prefer Mermaid diagrams over ad-hoc drawings whenever the content is a diagram.
 """
 
 
@@ -173,6 +180,43 @@ def create_image_tool(thread_id: int, cwd: str | Path | None = None) -> Callable
         return f"Sent image '{resolved.name}' to the user."
 
     return send_image
+
+
+def create_diagram_tool(thread_id: int, cwd: str | Path | None = None) -> Callable:
+    base = Path(cwd) if cwd else Path.cwd()
+
+    async def render_diagram(diagram: str, caption: str = "") -> str:
+        """Render a Mermaid diagram and display it to the user as an image in the current chat
+        thread. Use this whenever the user wants a diagram — flowcharts, sequence, class, state,
+        ER, gantt, pie, mindmaps, etc. Pass Mermaid source (e.g. "graph TD; A-->B;"). This renders
+        the diagram and shows it to the user directly, so do NOT also call send_image. On failure
+        the error is returned so you can correct the Mermaid source and retry.
+
+        Args:
+            diagram: Mermaid diagram source.
+            caption: Optional caption shown beneath the diagram.
+        """
+        from mermaid import Mermaid
+
+        output = base / f".diagram_{uuid.uuid4().hex}.png"
+        try:
+            await asyncio.to_thread(lambda: Mermaid(diagram).to_png(str(output)))
+            if not output.is_file():
+                return "Error rendering diagram: no image was produced"
+        except Exception as error:
+            return f"Error rendering diagram: {error}"
+        await pubsub.publish(
+            OutgoingImage(
+                thread_id=thread_id,
+                source_path=str(output),
+                name=output.name,
+                content_type="image/png",
+                caption=caption,
+            )
+        )
+        return "Rendered and sent the diagram to the user."
+
+    return render_diagram
 
 
 def _stringify(response: Any) -> str:
