@@ -34,7 +34,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 RUN pip install uv
 
-RUN npm install -g agent-browser
+RUN npm install -g @playwright/mcp@latest
 
 WORKDIR /home/synthia/workdir
 RUN mkdir -p /home/synthia/.cache && chown -R synthia:synthia /home/synthia
