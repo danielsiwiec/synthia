@@ -44,6 +44,7 @@ setup_telemetry()
 logging.getLogger("uvicorn.access").disabled = True
 logging.getLogger("uvicorn.error").disabled = True
 logging.getLogger("uvicorn").disabled = True
+logging.getLogger("LiteLLM").setLevel(logging.ERROR)
 
 logger.remove()
 logger.add(

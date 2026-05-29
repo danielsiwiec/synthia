@@ -1,6 +1,7 @@
 import logging
 import os
 import uuid
+import warnings
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractContextManager
 from functools import wraps
@@ -62,7 +63,9 @@ def setup_telemetry() -> None:
         _logger_provider.add_log_record_processor(SimpleLogRecordProcessor(log_exporter))
     _logs.set_logger_provider(_logger_provider)
 
-    _log_handler = LoggingHandler(level=logging.DEBUG, logger_provider=_logger_provider)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        _log_handler = LoggingHandler(level=logging.DEBUG, logger_provider=_logger_provider)
     _otel_logger = logging.getLogger("synthia.otel")
     _otel_logger.setLevel(logging.DEBUG)
     _otel_logger.addHandler(_log_handler)
