@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import sys
@@ -12,15 +11,18 @@ import asyncpg
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from google.adk.sessions import DatabaseSessionService
 from loguru import logger
 from openai import AsyncOpenAI
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from synthia.agents.admin.client import create_admin_mcp_server
-from synthia.agents.episodic.client import create_episodic_mcp_server
+from synthia.agents.admin.client import create_admin_tools
+from synthia.agents.episodic.client import create_episodic_tools
 from synthia.agents.episodic.sync import EpisodicMemoryService
-from synthia.agents.memory.client import create_memory_mcp_server
-from synthia.agents.scheduler.client import create_scheduler_mcp_server
+from synthia.agents.mcp import build_mcp_toolsets
+from synthia.agents.memory.client import create_memory_tools
+from synthia.agents.scheduler.client import create_scheduler_tools
+from synthia.agents.skills import build_skill_toolset
 from synthia.helpers.pubsub import pubsub
 from synthia.metrics import create_instrumentator
 from synthia.migrations.runner import run_migrations
@@ -88,30 +90,26 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
             db_pool = await asyncpg.create_pool(config.postgres_connection_string, min_size=2, max_size=10)
 
-            memory_mcp_server = await create_memory_mcp_server(
+            memory_tools = await create_memory_tools(
                 postgres_url=config.postgres_connection_string,
                 ollama_url=config.ollama_url,
             )
-            scheduler_mcp_server, scheduler_service = create_scheduler_mcp_server(config.postgres_connection_string)
-            admin_mcp_server = create_admin_mcp_server()
+            scheduler_tools, scheduler_service = create_scheduler_tools(config.postgres_connection_string)
+            admin_tools = create_admin_tools()
             session_repository = await SessionRepository.create(config.postgres_connection_string)
 
-            logger.info("Enabling episodic memory MCP server...")
-            episodic_mcp_server = create_episodic_mcp_server(db_pool)
+            logger.info("Enabling episodic memory tools...")
+            episodic_tools = create_episodic_tools(db_pool)
 
-            mcp_servers = {
-                "memory": memory_mcp_server,
-                "scheduler": scheduler_mcp_server,
-                "admin": admin_mcp_server,
-                "episodic": episodic_mcp_server,
-            }
+            mcp_toolsets = build_mcp_toolsets(config.mcp_config_path)
+            skill_toolset = build_skill_toolset(config.claude_cwd)
 
-            mcp_config_path = config.mcp_config_path
-            if mcp_config_path and mcp_config_path.exists():
-                custom = json.loads(mcp_config_path.read_text())
-                for name, server_config in custom.get("mcpServers", {}).items():
-                    logger.info(f"Loading custom MCP server: {name}")
-                    mcp_servers[name] = server_config
+            tools: list = [*memory_tools, *scheduler_tools, *admin_tools, *episodic_tools, *mcp_toolsets]
+            if skill_toolset:
+                tools.append(skill_toolset)
+
+            session_db_url = config.postgres_connection_string.replace("postgresql://", "postgresql+psycopg://")
+            session_service = DatabaseSessionService(db_url=session_db_url)
 
             episodic_memory_service = EpisodicMemoryService(pool=db_pool, cwd=config.claude_cwd)
 
@@ -123,7 +121,10 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             _register_handlers(episodic_memory_service, chat_service, app.state.openai_client)
 
             task_service = TaskService(
-                mcp_servers=mcp_servers, session_repository=session_repository, cwd=config.claude_cwd
+                tools=tools,
+                session_repository=session_repository,
+                session_service=session_service,
+                cwd=config.claude_cwd,
             )
 
             scheduler_service.start()
@@ -147,15 +148,18 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             yield
 
             scheduler_service.shutdown()
+            for toolset in mcp_toolsets:
+                try:
+                    await toolset.close()
+                except Exception:
+                    pass
             await pubsub.stop()
             await db_pool.close()
         except BaseException:
             logger.opt(exception=True).critical("Fatal error during lifespan")
             raise
 
-    app = FastAPI(
-        title="Synthia", description="FastAPI application with Claude Agent SDK integration", lifespan=lifespan
-    )
+    app = FastAPI(title="Synthia", description="FastAPI application with Google ADK integration", lifespan=lifespan)
 
     app.include_router(task_router)
     app.include_router(health_router)

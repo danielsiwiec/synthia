@@ -8,7 +8,7 @@ from pathlib import Path
 import asyncpg
 from loguru import logger
 
-from synthia.agents.agent import ClaudeAgent, InitMessage, Message, Result, Thought, ToolCall
+from synthia.agents.agent import Agent, InitMessage, Message, Result, Thought, ToolCall
 from synthia.agents.episodic.db import generate_embedding
 from synthia.telemetry import traced
 
@@ -45,7 +45,7 @@ Transcript:
 """
 
             try:
-                async with await ClaudeAgent.create(cwd=self._cwd, system_prompt="") as agent:
+                async with await Agent.create(cwd=self._cwd, system_prompt="") as agent:
                     result = await agent.run_for_result(summarization_prompt)
                     summary = result.result if result and result.success else None
 

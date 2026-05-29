@@ -1,23 +1,13 @@
 import json
-from typing import Any
-
-from claude_agent_sdk import tool
+from collections.abc import Callable
 
 from synthia.agents.scheduler.service import SchedulerService
 from synthia.agents.tools import error_response, success_response
 
 
-def create_list_jobs_tool(scheduler_service: SchedulerService):
-    @tool(
-        "list-jobs",
-        "List all currently scheduled jobs with their names, interval settings, and next run times.",
-        {
-            "type": "object",
-            "properties": {},
-            "required": [],
-        },
-    )
-    async def list_jobs(args: dict[str, Any]) -> dict[str, Any]:
+def create_list_jobs_tool(scheduler_service: SchedulerService) -> Callable:
+    async def list_jobs() -> str:
+        """List all currently scheduled jobs with their names, interval settings, and next run times."""
         try:
             jobs = scheduler_service.list_jobs()
             if not jobs:

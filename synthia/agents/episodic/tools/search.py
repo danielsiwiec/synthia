@@ -1,39 +1,22 @@
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 import asyncpg
-from claude_agent_sdk import tool
 
 from synthia.agents.episodic.db import generate_embedding
 from synthia.agents.tools import error_response, success_response
 
 
-def create_search_tool(pool: asyncpg.Pool):
-    @tool(
-        "episodic-search",
-        "Search past Synthia conversations by semantic similarity and keyword matching. "
-        "Use this to find relevant context from previous sessions.",
-        {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "The search query (keywords or natural language description)",
-                },
-                "days": {
-                    "type": "integer",
-                    "description": "Number of days to search back (default: 30)",
-                    "default": 30,
-                },
-            },
-            "required": ["query"],
-        },
-    )
-    async def search(args: dict[str, Any]) -> dict[str, Any]:
-        query = args["query"]
-        days = args.get("days", 30)
+def create_search_tool(pool: asyncpg.Pool) -> Callable:
+    async def episodic_search(query: str, days: int = 30) -> str:
+        """Search past Synthia conversations by semantic similarity and keyword matching. Use this to
+        find relevant context from previous sessions.
 
+        Args:
+            query: The search query (keywords or natural language description).
+            days: Number of days to search back (default: 30).
+        """
         try:
             query_embedding = generate_embedding(query)
             date_threshold = datetime.now(tz=UTC) - timedelta(days=days)
@@ -79,4 +62,4 @@ def create_search_tool(pool: asyncpg.Pool):
         except Exception as e:
             return error_response(f"Error searching conversations: {e}")
 
-    return search
+    return episodic_search

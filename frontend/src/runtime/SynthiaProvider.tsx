@@ -120,18 +120,24 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
       const conn = connectThreadEvents(threadId, {
         onInit: () => setIsRunning(true),
         onThought: (thinking) => {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `t-${Date.now()}-${prev.length}`,
-              thread_id: threadId,
-              role: "assistant",
-              message_type: "thought",
-              content: thinking,
-              metadata: null,
-              created_at: null,
-            },
-          ]);
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.role === "assistant" && last.message_type === "thought") {
+              return [...prev.slice(0, -1), { ...last, content: thinking }];
+            }
+            return [
+              ...prev,
+              {
+                id: `t-${Date.now()}-${prev.length}`,
+                thread_id: threadId,
+                role: "assistant",
+                message_type: "thought",
+                content: thinking,
+                metadata: null,
+                created_at: null,
+              },
+            ];
+          });
           setIsRunning(true);
         },
         onResult: (result) => {

@@ -4,13 +4,7 @@ import {
   UserMessageAttachments,
 } from "@/components/assistant-ui/attachment";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
-import {
-  Reasoning,
-  ReasoningContent,
-  ReasoningRoot,
-  ReasoningText,
-  ReasoningTrigger,
-} from "@/components/assistant-ui/reasoning";
+import { Reasoning } from "@/components/assistant-ui/reasoning";
 import {
   ToolGroupContent,
   ToolGroupRoot,
@@ -35,6 +29,7 @@ import {
 import {
   ArrowDownIcon,
   ArrowUpIcon,
+  BrainIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   PencilIcon,
@@ -53,7 +48,6 @@ export const Thread: FC = () => {
       }}
     >
       <ThreadPrimitive.Viewport
-        turnAnchor="top"
         data-slot="aui_thread-viewport"
         className="relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth"
       >
@@ -260,12 +254,19 @@ const AssistantMessage: FC = () => {
               case "group-reasoning": {
                 const running = part.status.type === "running";
                 return (
-                  <ReasoningRoot defaultOpen={running}>
-                    <ReasoningTrigger active={running} />
-                    <ReasoningContent aria-busy={running}>
-                      <ReasoningText>{children}</ReasoningText>
-                    </ReasoningContent>
-                  </ReasoningRoot>
+                  <div
+                    data-slot="aui_reasoning"
+                    aria-busy={running}
+                    className="border-muted-foreground/20 text-muted-foreground my-2 flex flex-col gap-1 border-l-2 py-0.5 ps-3 text-sm"
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-medium">
+                      <BrainIcon className="size-3.5 shrink-0" />
+                      <span className={cn(running && "shimmer")}>Thinking</span>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto [&_p]:my-0">
+                      {children}
+                    </div>
+                  </div>
                 );
               }
               case "group-tool":

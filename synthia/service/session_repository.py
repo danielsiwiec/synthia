@@ -7,14 +7,14 @@ import psycopg
 from loguru import logger
 
 if TYPE_CHECKING:
-    from synthia.agents.agent import ClaudeAgent
+    from synthia.agents.agent import Agent
 
 
 class SessionRepository:
     def __init__(self, postgres_url: str):
         self._conn_string = postgres_url
         self._sessions: dict[int, str] = {}
-        self._agents: dict[int, ClaudeAgent] = {}
+        self._agents: dict[int, Agent] = {}
 
     @classmethod
     async def create(cls, postgres_url: str) -> SessionRepository:
@@ -32,12 +32,12 @@ class SessionRepository:
 
         logger.info(f"Loaded {len(self._sessions)} sessions from database")
 
-    def get(self, thread_id: int) -> tuple[ClaudeAgent | None, str | None]:
+    def get(self, thread_id: int) -> tuple[Agent | None, str | None]:
         return self._agents.pop(thread_id, None), self._sessions.get(thread_id)
 
-    def save(self, thread_id: int, session_id: str, agent: ClaudeAgent | None = None) -> None:
+    def save(self, thread_id: int, session_id: str, agent: Agent | None = None) -> None:
         self._sessions[thread_id] = session_id
-        if agent and agent._client:
+        if agent and agent._live:
             self._agents[thread_id] = agent
         else:
             self._agents.pop(thread_id, None)

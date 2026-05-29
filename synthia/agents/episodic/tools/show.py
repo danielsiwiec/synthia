@@ -1,29 +1,17 @@
-from typing import Any
+from collections.abc import Callable
 
 import asyncpg
-from claude_agent_sdk import tool
 
 from synthia.agents.tools import error_response, success_response
 
 
-def create_show_tool(pool: asyncpg.Pool):
-    @tool(
-        "episodic-show",
-        "Retrieve the full transcript of a specific Synthia conversation by ID.",
-        {
-            "type": "object",
-            "properties": {
-                "conversation_id": {
-                    "type": "string",
-                    "description": "The UUID of the conversation to retrieve",
-                },
-            },
-            "required": ["conversation_id"],
-        },
-    )
-    async def show(args: dict[str, Any]) -> dict[str, Any]:
-        conversation_id = args["conversation_id"]
+def create_show_tool(pool: asyncpg.Pool) -> Callable:
+    async def episodic_show(conversation_id: str) -> str:
+        """Retrieve the full transcript of a specific Synthia conversation by ID.
 
+        Args:
+            conversation_id: The UUID of the conversation to retrieve.
+        """
         try:
             async with pool.acquire() as conn:
                 result = await conn.fetchrow(
@@ -50,4 +38,4 @@ def create_show_tool(pool: asyncpg.Pool):
         except Exception as e:
             return error_response(f"Error retrieving conversation: {e}")
 
-    return show
+    return episodic_show

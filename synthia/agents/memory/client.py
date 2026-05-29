@@ -1,6 +1,5 @@
-from typing import Any
+from collections.abc import Callable
 
-from claude_agent_sdk import create_sdk_mcp_server
 from mem0 import AsyncMemory
 
 OLLAMA_EMBEDDING_MODEL = "nomic-embed-text"
@@ -30,16 +29,15 @@ def _mem0_config(postgres_url: str, ollama_url: str | None = None) -> dict:
     return config
 
 
-async def create_memory_mcp_server(postgres_url: str, ollama_url: str | None = None) -> Any:
+async def create_memory_tools(postgres_url: str, ollama_url: str | None = None) -> list[Callable]:
     from synthia.agents.memory.tools.add_memory import create_add_memory_tool
     from synthia.agents.memory.tools.delete_memory import create_delete_memory_tool
     from synthia.agents.memory.tools.search_memories import create_search_memories_tool
 
     memory_client = AsyncMemory.from_config(_mem0_config(postgres_url, ollama_url))
 
-    tools = [
+    return [
         create_add_memory_tool(memory_client),
         create_delete_memory_tool(memory_client),
         create_search_memories_tool(memory_client),
     ]
-    return create_sdk_mcp_server(name="memory", version="0.0.1", tools=tools)

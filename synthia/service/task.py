@@ -1,11 +1,12 @@
 import asyncio
 import random
 from pathlib import Path
+from typing import Any
 
-from claude_agent_sdk import McpServerConfig
+from google.adk.sessions import BaseSessionService
 from loguru import logger
 
-from synthia.agents.agent import ClaudeAgent
+from synthia.agents.agent import Agent
 from synthia.helpers.pubsub import pubsub
 from synthia.service.models import (
     AdminNotification,
@@ -21,11 +22,13 @@ from synthia.telemetry import traced
 class TaskService:
     def __init__(
         self,
-        mcp_servers: dict[str, McpServerConfig],
+        tools: list[Any],
         session_repository: SessionRepository,
+        session_service: BaseSessionService,
         cwd: str | Path | None = None,
     ):
-        self._mcp_servers = mcp_servers
+        self._tools = tools
+        self._session_service = session_service
         self._cwd = cwd
         self._tasks: dict[int, asyncio.Task] = {}
         self._session_repository = session_repository
@@ -50,9 +53,9 @@ class TaskService:
     async def process_task(self, request: TaskRequest) -> TaskResponse:
         objective = request.task
 
-        agent, session_id = self._session_repository.get(request.thread_id)
+        agent, _ = self._session_repository.get(request.thread_id)
         if not agent:
-            agent = await ClaudeAgent.create(self._mcp_servers, self._cwd, resume=session_id)
+            agent = await Agent.create(tools=self._tools, cwd=self._cwd, session_service=self._session_service)
 
         task = asyncio.create_task(
             agent.run_for_result(
@@ -73,7 +76,7 @@ class TaskService:
 
         if not result_message:
             await agent.disconnect()
-            raise Exception("Timeout: No ResultMessage received within expected time")
+            raise Exception("Timeout: No result received within expected time")
 
         self._session_repository.save(request.thread_id, result_message.session_id, agent)
 

@@ -20,7 +20,7 @@ dev = [
 [project]
 name = "synthia"
 version = "0.1.0"
-description = "FastAPI application with Claude Agent SDK integration"
+description = "FastAPI application with Google ADK integration"
 requires-python = ">=3.13"
 dependencies = [
   "python-dotenv>=1.2.2",
@@ -43,10 +43,12 @@ dependencies = [
   "alembic>=1.18.4",
   "sqlalchemy>=2.0.48",
   "pydantic>=2.12.5",
-  "langsmith[claude-agent-sdk]>=0.8.3",
   "pywebpush>=2.3.0",
   "ollama>=0.6.2",
-  "claude-agent-sdk>=0.1.48"
+  "google-adk>=2.1.0",
+  "openai>=2.36.0",
+  "litellm>=1.86.2",
+  "mcp>=1.27.1"
 ]
 
 [tool.hatch.build.targets.wheel]

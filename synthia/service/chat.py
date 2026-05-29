@@ -1,7 +1,6 @@
 import asyncio
 import base64
 import json
-import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -11,8 +10,6 @@ from loguru import logger
 
 from synthia.agents.agent import InitMessage, Message, Result, Thought, ToolCall
 from synthia.service.models import ProgressNotification
-
-_SENTENCE_END = re.compile(r"[.!?](?:\s|$)")
 
 
 def _safe_filename(name: str) -> str:
@@ -55,14 +52,6 @@ async def _save_attachments(
             {"name": attachment["name"], "content_type": attachment.get("content_type", ""), "path": str(dest)}
         )
     return saved
-
-
-def _first_sentence(text: str) -> str:
-    text = text.strip()
-    match = _SENTENCE_END.search(text)
-    if match:
-        return text[: match.end()].strip()
-    return text
 
 
 class ChatEventBus:
@@ -133,6 +122,23 @@ class MessageRepository:
         )
         await self._pool.execute("UPDATE threads SET updated_at = NOW() WHERE id = $1", thread_id)
 
+    async def save_thought(self, thread_id: int, content: str):
+        updated = await self._pool.fetchval(
+            """
+            UPDATE messages SET content = $2
+            WHERE id = (
+                SELECT id FROM messages WHERE thread_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1
+            ) AND message_type = 'thought'
+            RETURNING id
+            """,
+            thread_id,
+            content,
+        )
+        if updated is None:
+            await self.save_message(thread_id, "assistant", "thought", content)
+        else:
+            await self._pool.execute("UPDATE threads SET updated_at = NOW() WHERE id = $1", thread_id)
+
     async def get_messages(self, thread_id: int) -> list[dict[str, Any]]:
         rows = await self._pool.fetch(
             """
@@ -181,10 +187,10 @@ class ChatService:
             return
 
         if isinstance(message, Thought):
-            summary = _first_sentence(message.thinking)
-            await self._event_bus.push(thread_id, {"type": "thought", "thinking": summary})
+            thinking = message.thinking.strip()
+            await self._event_bus.push(thread_id, {"type": "thought", "thinking": thinking})
             if self._repository.is_chat_thread(thread_id):
-                await self._repository.save_message(thread_id, "assistant", "thought", summary)
+                await self._repository.save_thought(thread_id, thinking)
             return
 
         if isinstance(message, ToolCall):

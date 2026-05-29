@@ -2,16 +2,28 @@ import os
 
 import psutil
 from loguru import logger
-from prometheus_client import REGISTRY, Counter
+from prometheus_client import REGISTRY, Counter, Histogram
 from prometheus_client.metrics_core import GaugeMetricFamily
 from prometheus_fastapi_instrumentator import Instrumentator
 
-llm_cost_usd_total = Counter("llm_cost_usd_total", "Total LLM cost in USD")
+_COST_BUCKETS = (0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0)
+
+llm_cost_usd_total = Counter("llm_cost_usd_total", "Cumulative LLM cost in USD", ["model"])
+llm_call_cost_usd = Histogram("llm_call_cost_usd", "LLM cost per model call in USD", ["model"], buckets=_COST_BUCKETS)
+llm_session_cost_usd = Histogram(
+    "llm_session_cost_usd", "LLM cost per agent session in USD", ["model"], buckets=_COST_BUCKETS
+)
 
 
-def record_session_cost(cost: float) -> None:
+def record_call_cost(model: str, cost: float) -> None:
     if cost > 0:
-        llm_cost_usd_total.inc(cost)
+        llm_call_cost_usd.labels(model=model).observe(cost)
+        llm_cost_usd_total.labels(model=model).inc(cost)
+
+
+def record_session_cost(model: str, cost: float) -> None:
+    if cost > 0:
+        llm_session_cost_usd.labels(model=model).observe(cost)
 
 
 class _ClaudeProcessCollector:

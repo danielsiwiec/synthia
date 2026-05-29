@@ -1,34 +1,18 @@
 import asyncio
 from pathlib import Path
-from typing import Any
 
-from claude_agent_sdk import create_sdk_mcp_server, tool
-
-from synthia.agents.agent import ClaudeAgent, InitMessage, Message, Result, ToolCall
+from synthia.agents.agent import Agent, InitMessage, Message, Result, ToolCall
+from synthia.agents.skills import build_skill_toolset
 from synthia.helpers.pubsub import pubsub
 
 
-def _create_converter_mcp_server():
-    @tool(
-        "convert-stones-to-pebbles",
-        "Convert stones to pebbles. 1 stone = 2.5 pebbles.",
-        {
-            "type": "object",
-            "properties": {
-                "stones": {
-                    "type": "number",
-                    "description": "The number of stones to convert",
-                },
-            },
-            "required": ["stones"],
-        },
-    )
-    async def convert_stones_to_pebbles(args: dict[str, Any]) -> dict[str, Any]:
-        stones = args["stones"]
-        pebbles = stones * 2.5
-        return {"result": f"{stones} stones = {pebbles} pebbles"}
+async def _convert_stones_to_pebbles(stones: float) -> str:
+    """Convert stones to pebbles. 1 stone = 2.5 pebbles.
 
-    return create_sdk_mcp_server(name="converter", version="0.0.1", tools=[convert_stones_to_pebbles])
+    Args:
+        stones: The number of stones to convert.
+    """
+    return f"{stones} stones = {stones * 2.5} pebbles"
 
 
 async def test_message_parsing():
@@ -44,10 +28,10 @@ async def test_message_parsing():
     await pubsub.start()
 
     try:
-        agent = await ClaudeAgent.create(cwd=Path(__file__).parent)
+        agent = await Agent.create(cwd=Path(__file__).parent)
         try:
             result = await agent.run_for_result(
-                objective="Use bash to run: echo 'hello'",
+                objective="Use the run_bash tool to run: echo 'hello'",
                 thread_id=123,
             )
             await asyncio.sleep(0.1)
@@ -62,8 +46,8 @@ async def test_message_parsing():
 
             tool_calls = [m for m in messages if isinstance(m, ToolCall)]
             assert len(tool_calls) >= 1, "Expected at least one ToolCall"
-            bash_call = next((tc for tc in tool_calls if tc.name == "Bash"), None)
-            assert bash_call is not None, "Expected a Bash tool call"
+            bash_call = next((tc for tc in tool_calls if tc.name == "run_bash"), None)
+            assert bash_call is not None, "Expected a run_bash tool call"
             assert bash_call.output is not None
             assert "hello" in bash_call.output
 
@@ -84,7 +68,7 @@ async def test_message_parsing():
 
 
 async def test_multi_turn():
-    agent = await ClaudeAgent.create(cwd=Path(__file__).parent)
+    agent = await Agent.create(cwd=Path(__file__).parent)
     try:
         result1 = await agent.run_for_result(
             objective="Remember: my favorite number is 42. Just confirm.",
@@ -109,10 +93,13 @@ async def test_multi_turn():
 
 
 async def test_skill_invocation():
-    agent = await ClaudeAgent.create(cwd=Path(__file__).parent)
+    skill_toolset = build_skill_toolset(Path(__file__).parent)
+    assert skill_toolset is not None, "Expected the kilo-to-pebble-converter skill to load"
+
+    agent = await Agent.create(cwd=Path(__file__).parent, tools=[skill_toolset])
     try:
         result = await agent.run_for_result(
-            objective="Convert 5 kilo to pebble units.",
+            objective="Convert 5 kilo to pebble units. Answer with just the number.",
             thread_id=789,
         )
 
@@ -123,15 +110,14 @@ async def test_skill_invocation():
         await agent.disconnect()
 
 
-async def test_mcp_server():
-    mcp_server = _create_converter_mcp_server()
-    agent = await ClaudeAgent.create(
+async def test_function_tool():
+    agent = await Agent.create(
         cwd=Path(__file__).parent,
-        mcp_servers={"converter": mcp_server},
+        tools=[_convert_stones_to_pebbles],
     )
     try:
         result = await agent.run_for_result(
-            objective="Convert 4 stones to pebbles using the converter tool.",
+            objective="Convert 4 stones to pebbles using the convert tool.",
             thread_id=101,
         )
 

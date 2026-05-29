@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "lucide-react";
 import { SynthiaProvider } from "./runtime/SynthiaProvider";
 import { Thread } from "@/components/assistant-ui/thread";
@@ -7,6 +7,18 @@ import { Button } from "@/components/ui/button";
 
 export default function App() {
   const [collapsed, setCollapsed] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (collapsed) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!sidebarRef.current?.contains(event.target as Node)) {
+        setCollapsed(true);
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [collapsed]);
 
   return (
     <SynthiaProvider>
@@ -18,7 +30,10 @@ export default function App() {
         }`}
       >
         {!collapsed && (
-          <aside className="border-border flex min-h-0 flex-col border-r">
+          <aside
+            ref={sidebarRef}
+            className="border-border flex min-h-0 flex-col border-r"
+          >
             <div className="flex items-center justify-end p-2">
               <Button
                 variant="ghost"
