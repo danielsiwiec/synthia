@@ -45,6 +45,8 @@ COPY --chown=synthia:synthia pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/home/synthia/.cache/uv,uid=${USER_UID},gid=${USER_GID} \
     uv sync --frozen
 
+RUN uv run --frozen --no-sync python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+
 COPY --chown=synthia:synthia synthia synthia
 COPY --chown=synthia:synthia alembic.ini alembic.ini
 COPY --from=frontend --chown=synthia:synthia /build/synthia/static/app ./synthia/static/app
@@ -52,5 +54,6 @@ COPY --from=frontend --chown=synthia:synthia /build/synthia/static/app ./synthia
 RUN mkdir -p ~/.claude ~/.cache /home/synthia/workdir/.claude
 
 ENV PATH="/home/synthia/workdir/.venv/lib/python3.13/site-packages/claude_agent_sdk/_bundled:${PATH}"
+ENV HF_HUB_OFFLINE=1
 
-CMD ["uv", "run", "uvicorn", "synthia.main:app", "--host", "0.0.0.0", "--port", "8003"]
+CMD ["uv", "run", "--frozen", "--no-sync", "uvicorn", "synthia.main:app", "--host", "0.0.0.0", "--port", "8003"]
