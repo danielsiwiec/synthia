@@ -182,6 +182,10 @@ def create_image_tool(thread_id: int, cwd: str | Path | None = None) -> Callable
     return send_image
 
 
+_MERMAID_RENDER_SCRIPT = Path(__file__).parent / "render_mermaid.mjs"
+_MERMAID_TIMEOUT = 30
+
+
 def create_diagram_tool(thread_id: int, cwd: str | Path | None = None) -> Callable:
     base = Path(cwd) if cwd else Path.cwd()
 
@@ -196,13 +200,21 @@ def create_diagram_tool(thread_id: int, cwd: str | Path | None = None) -> Callab
             diagram: Mermaid diagram source.
             caption: Optional caption shown beneath the diagram.
         """
-        from mermaid import Mermaid
-
-        output = base / f".diagram_{uuid.uuid4().hex}.png"
+        output = base / f".diagram_{uuid.uuid4().hex}.svg"
         try:
-            await asyncio.to_thread(lambda: Mermaid(diagram).to_png(str(output)))
-            if not output.is_file():
-                return "Error rendering diagram: no image was produced"
+            proc = await asyncio.create_subprocess_exec(
+                "node",
+                str(_MERMAID_RENDER_SCRIPT),
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(diagram.encode()), timeout=_MERMAID_TIMEOUT)
+            if proc.returncode != 0 or not stdout.strip():
+                return f"Error rendering diagram: {stderr.decode(errors='replace')[:2000]}"
+            output.write_bytes(stdout)
+        except TimeoutError:
+            return f"Error: diagram rendering timed out after {_MERMAID_TIMEOUT}s"
         except Exception as error:
             return f"Error rendering diagram: {error}"
         await pubsub.publish(
@@ -210,7 +222,7 @@ def create_diagram_tool(thread_id: int, cwd: str | Path | None = None) -> Callab
                 thread_id=thread_id,
                 source_path=str(output),
                 name=output.name,
-                content_type="image/png",
+                content_type="image/svg+xml",
                 caption=caption,
             )
         )

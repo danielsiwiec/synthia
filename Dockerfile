@@ -47,6 +47,8 @@ RUN --mount=type=cache,target=/home/synthia/.cache/uv,uid=${USER_UID},gid=${USER
 
 RUN uv run --frozen --no-sync python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
+RUN npm install beautiful-mermaid
+
 COPY --chown=synthia:synthia synthia synthia
 COPY --chown=synthia:synthia alembic.ini alembic.ini
 COPY --from=frontend --chown=synthia:synthia /build/synthia/static/app ./synthia/static/app
