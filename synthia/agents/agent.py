@@ -20,7 +20,7 @@ from synthia.agents.builtins import create_builtin_tools
 from synthia.helpers.pubsub import pubsub
 from synthia.metrics import record_call_cost, record_session_cost
 from synthia.service.models import OutgoingImage
-from synthia.telemetry import current_span, start_span, traced
+from synthia.telemetry import current_span, set_span_error, start_span, traced
 
 APP_NAME = "synthia"
 USER_ID = "default"
@@ -395,6 +395,9 @@ class Agent:
             logger.info(
                 f"💰 Session cost: ${cost} (in={prompt_tokens}, cached={cached_tokens}, out={completion_tokens})"
             )
+
+        if error:
+            set_span_error(error)
 
         result = Result(
             session_id=session_id,

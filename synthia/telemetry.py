@@ -99,6 +99,12 @@ def current_span() -> trace.Span:
     return trace.get_current_span()
 
 
+def set_span_error(description: str, span: trace.Span | None = None) -> None:
+    span = span if span is not None else trace.get_current_span()
+    span.set_status(Status(StatusCode.ERROR, description))
+    span.set_attribute("error", True)
+
+
 def start_span(name: str) -> AbstractContextManager[trace.Span]:
     tracer = _tracer or trace.get_tracer(_SERVICE_NAME)
     return tracer.start_as_current_span(name)
@@ -114,7 +120,9 @@ def traced(name: str | None = None) -> Callable[[F], F]:
             with tracer.start_as_current_span(span_name) as span:
                 try:
                     result = await func(*args, **kwargs)
-                    span.set_status(Status(StatusCode.OK))
+                    status = getattr(span, "status", None)
+                    if status is None or status.status_code is not StatusCode.ERROR:
+                        span.set_status(Status(StatusCode.OK))
                     return result
                 except Exception as e:
                     span.set_status(Status(StatusCode.ERROR, str(e)))
