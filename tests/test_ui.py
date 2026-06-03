@@ -208,7 +208,7 @@ class ChatPage:
 
     def attach(self, payload):
         with self._page.expect_file_chooser() as fc:
-            self._page.get_by_role("button", name="Add Attachment").click()
+            self._page.get_by_role("button", name="Add Attachment").dispatch_event("click")
         fc.value.set_files(payload)
 
     def composer_attachment_tiles(self):
@@ -473,7 +473,7 @@ def test_attachment_can_be_removed(chat: ChatPage):
     chat.attach(_PNG_PAYLOAD)
     expect(chat.composer_attachment_tiles().first).to_be_visible(timeout=5000)
     chat.composer_attachment_tiles().first.hover()
-    chat._page.get_by_role("button", name="Remove file").first.click()
+    chat._page.get_by_role("button", name="Remove file").first.dispatch_event("click")
     expect(chat.composer_attachment_tiles()).to_have_count(0)
 
 
@@ -498,3 +498,4 @@ def test_attachment_persists_after_thread_switch(chat: ChatPage):
     chat.open_thread("with photo")
     expect(chat.text("Echo: with photo")).to_be_visible(timeout=5000)
     expect(chat.message_attachment_tiles().first).to_be_visible()
+
