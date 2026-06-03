@@ -29,20 +29,35 @@ DEFAULT_MODEL = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-6")
 _INPUT_COST_PER_M = float(os.getenv("LLM_INPUT_COST_PER_M", "3.0"))
 _OUTPUT_COST_PER_M = float(os.getenv("LLM_OUTPUT_COST_PER_M", "15.0"))
 _THINKING_BUDGET = int(os.getenv("LLM_THINKING_BUDGET", "2048"))
+_PROMPT_CACHING = os.getenv("LLM_PROMPT_CACHING", "1") != "0"
+_CACHE_READ_MULTIPLIER = 0.1
+
+
+def _is_anthropic(model_name: str) -> bool:
+    return "claude" in model_name or "anthropic" in model_name
 
 
 def _model_kwargs(model_name: str) -> dict[str, Any]:
-    if _THINKING_BUDGET <= 0 or ("claude" not in model_name and "anthropic" not in model_name):
+    if not _is_anthropic(model_name):
         return {}
-    return {
-        "thinking": {"type": "enabled", "budget_tokens": _THINKING_BUDGET},
-        "extra_headers": {"anthropic-beta": "interleaved-thinking-2025-05-14"},
-    }
+    kwargs: dict[str, Any] = {}
+    if _PROMPT_CACHING:
+        kwargs["cache_control_injection_points"] = [
+            {"location": "message", "role": "system"},
+            {"location": "message", "index": -1},
+        ]
+    if _THINKING_BUDGET > 0:
+        kwargs["thinking"] = {"type": "enabled", "budget_tokens": _THINKING_BUDGET}
+        kwargs["extra_headers"] = {"anthropic-beta": "interleaved-thinking-2025-05-14"}
+    return kwargs
 
 
-def _token_cost(prompt_tokens: int, completion_tokens: int) -> float:
+def _token_cost(prompt_tokens: int, completion_tokens: int, cached_tokens: int = 0) -> float:
+    uncached_tokens = max(prompt_tokens - cached_tokens, 0)
     return round(
-        (prompt_tokens / 1_000_000) * _INPUT_COST_PER_M + (completion_tokens / 1_000_000) * _OUTPUT_COST_PER_M,
+        (uncached_tokens / 1_000_000) * _INPUT_COST_PER_M
+        + (cached_tokens / 1_000_000) * _INPUT_COST_PER_M * _CACHE_READ_MULTIPLIER
+        + (completion_tokens / 1_000_000) * _OUTPUT_COST_PER_M,
         8,
     )
 
@@ -54,9 +69,10 @@ def _cost_tracking_callback(model_name: str) -> Callable[[Any, Any], Any]:
             return None
         prompt_tokens = getattr(usage, "prompt_token_count", 0) or 0
         completion_tokens = getattr(usage, "candidates_token_count", 0) or 0
+        cached_tokens = getattr(usage, "cached_content_token_count", 0) or 0
         if not (prompt_tokens or completion_tokens):
             return None
-        cost = _token_cost(prompt_tokens, completion_tokens)
+        cost = _token_cost(prompt_tokens, completion_tokens, cached_tokens)
         record_call_cost(model_name, cost)
         current_span().set_attribute("gen_ai.usage.cost_usd", cost)
         return None
@@ -315,6 +331,7 @@ class Agent:
         error: str | None = None
         prompt_tokens = 0
         completion_tokens = 0
+        cached_tokens = 0
         message_count = 0
 
         logger.debug(f"📤 ADK query: {prompt[:50]}...")
@@ -323,6 +340,7 @@ class Agent:
             if usage:
                 prompt_tokens += getattr(usage, "prompt_token_count", 0) or 0
                 completion_tokens += getattr(usage, "candidates_token_count", 0) or 0
+                cached_tokens += getattr(usage, "cached_content_token_count", 0) or 0
 
             if getattr(event, "error_message", None):
                 error = event.error_message
@@ -370,10 +388,13 @@ class Agent:
 
         cost: float | None = None
         if prompt_tokens or completion_tokens:
-            cost = _token_cost(prompt_tokens, completion_tokens)
+            cost = _token_cost(prompt_tokens, completion_tokens, cached_tokens)
             record_session_cost(self._model_name, cost)
             current_span().set_attribute("session_cost_usd", cost)
-            logger.info(f"💰 Session cost: ${cost} (in={prompt_tokens}, out={completion_tokens})")
+            current_span().set_attribute("cached_prompt_tokens", cached_tokens)
+            logger.info(
+                f"💰 Session cost: ${cost} (in={prompt_tokens}, cached={cached_tokens}, out={completion_tokens})"
+            )
 
         result = Result(
             session_id=session_id,
