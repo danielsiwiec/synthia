@@ -14,7 +14,7 @@ description: Publish a PDF report from a given content. Use when user mentions p
 - **ALWAYS use actual image URLs** extracted from the source pages you visited during research
 - To get real image URLs:
   1. Navigate to the source page containing the image
-  2. Use `browser_evaluate` to extract the actual `src` attribute: `() => document.querySelector('img[alt*="keyword"]').src`
+  2. Use `agent-browser eval` (via run_bash; load the `agent-browser` skill) to extract the actual `src` attribute: `agent-browser eval "document.querySelector('img[alt*=\"keyword\"]').src"`
   3. Use CDN-hosted URLs (e.g., `m.media-amazon.com`, `i.imgur.com`, `cdn.example.com`)
 - **Avoid** manufacturer marketing URLs (e.g., `bmwusa.com/content/dam/...`) - these often block external embedding
 - If you cannot obtain a real image URL, omit the image rather than using a broken placeholder

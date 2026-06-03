@@ -27,14 +27,24 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian trixie stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get update && \
-    apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin git procps nodejs && \
+    apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin git procps nodejs chromium && \
     apt-get purge -y gnupg && apt-get autoremove -y && \
     (groupadd -g 999 docker 2>/dev/null || groupadd -f docker) && \
     usermod -aG docker synthia
 
 RUN pip install uv
 
-RUN npm install -g @playwright/mcp@latest @doist/todoist-mcp@latest
+RUN npm install -g agent-browser@latest @doist/todoist-mcp@latest
+
+# `abr` wrapper: always drive the shared resident host Chrome over CDP (never a local browser).
+# It resolves the current browser WebSocket URL from the host CDP HTTP endpoint and injects --cdp.
+RUN printf '%s\n' \
+  '#!/bin/bash' \
+  'BASE="${ABR_CDP_HTTP:-http://192.168.65.254:9222}"' \
+  'WS=$(curl -s -m5 "$BASE/json/version" 2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin)[\"webSocketDebuggerUrl\"])" 2>/dev/null)' \
+  'if [ -z "$WS" ]; then echo "ERROR: host Chrome CDP unreachable at $BASE" >&2; exit 1; fi' \
+  'exec agent-browser --cdp "$WS" "$@"' \
+  > /usr/local/bin/abr && chmod +x /usr/local/bin/abr
 
 WORKDIR /home/synthia/workdir
 RUN mkdir -p /home/synthia/.cache && chown -R synthia:synthia /home/synthia
@@ -57,5 +67,6 @@ RUN mkdir -p ~/.claude ~/.cache /home/synthia/workdir/.claude
 
 ENV PATH="/home/synthia/workdir/.venv/lib/python3.13/site-packages/claude_agent_sdk/_bundled:${PATH}"
 ENV HF_HUB_OFFLINE=1
+ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 
 CMD ["uv", "run", "--frozen", "--no-sync", "uvicorn", "synthia.main:app", "--host", "0.0.0.0", "--port", "8003"]
