@@ -3,6 +3,7 @@ from typing import Any
 
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from loguru import logger
 
@@ -42,20 +43,37 @@ class SchedulerService:
         logger.info(f"Added job '{name}' with start_date '{start_date}' and interval {seconds} seconds")
         return {"name": name, "start_date": str(start_date), "seconds": seconds, "task": task}
 
+    def add_one_shot_job(self, name: str, run_date: datetime | str, task: str, silent: bool = False) -> dict[str, Any]:
+        trigger = DateTrigger(run_date=run_date)
+
+        self._scheduler.add_job(
+            "synthia.agents.scheduler.service:_publish_task_trigger",
+            trigger=trigger,
+            id=name,
+            replace_existing=True,
+            args=[task, name, silent],
+        )
+        logger.info(f"Added one-shot job '{name}' to run once at '{run_date}'")
+        return {"name": name, "run_date": str(run_date), "task": task}
+
     def list_jobs(self) -> list[dict[str, Any]]:
         jobs = []
         for job in self._scheduler.get_jobs():
             trigger = job.trigger
             interval_seconds = None
             start_date = None
+            run_date = None
             if isinstance(trigger, IntervalTrigger):
                 interval_seconds = trigger.interval_length
                 start_date = str(trigger.start_date) if trigger.start_date else None
+            elif isinstance(trigger, DateTrigger):
+                run_date = str(trigger.run_date) if trigger.run_date else None
             jobs.append(
                 {
                     "name": job.id,
                     "interval_seconds": interval_seconds,
                     "start_date": start_date,
+                    "run_date": run_date,
                     "next_run_time": str(job.next_run_time) if job.next_run_time else None,
                 }
             )

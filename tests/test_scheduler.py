@@ -38,3 +38,32 @@ async def test_scheduler_triggers_task(clean_pubsub: PubSub, scheduler_service: 
     assert len(task_triggers) == 1
     assert task_triggers[0].name == job_name
     assert task_triggers[0].task == task
+
+
+async def test_scheduler_one_shot_job_runs_once_and_removes_itself(
+    clean_pubsub: PubSub, scheduler_service: SchedulerService
+) -> None:
+    task_triggers: list[TaskTrigger] = []
+
+    def capture_trigger(trigger: TaskTrigger) -> None:
+        task_triggers.append(trigger)
+
+    pubsub.subscribe(TaskTrigger, capture_trigger)
+
+    await pubsub.start()
+
+    job_name: str = "one_shot_job"
+    task: str = "one shot task"
+    run_date: datetime = datetime.now() + timedelta(seconds=1)
+
+    scheduler_service.add_one_shot_job(name=job_name, run_date=run_date, task=task)
+
+    await await_until(lambda: len(task_triggers) >= 1, "TaskTrigger", timeout=5)
+
+    assert task_triggers[0].name == job_name
+    assert task_triggers[0].task == task
+    await await_until(
+        lambda: all(job["name"] != job_name for job in scheduler_service.list_jobs()),
+        "one-shot job removed",
+        timeout=5,
+    )

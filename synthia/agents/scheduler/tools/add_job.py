@@ -6,8 +6,10 @@ from synthia.agents.tools import error_response, success_response
 
 def create_add_job_tool(scheduler_service: SchedulerService) -> Callable:
     async def add_job(name: str, start_date: str, seconds: float, task: str, silent: bool = False) -> str:
-        """Add a new scheduled job that will trigger a task at specified intervals. Use this to
-        schedule recurring tasks like daily reports, periodic checks, or reminders.
+        """Add a new RECURRING scheduled job that triggers a task repeatedly at the specified
+        interval. Use this for genuinely recurring tasks like daily reports or periodic checks. The
+        job keeps firing forever until it is explicitly deleted — if the task should run only once
+        (a deferred or one-time action), use add_one_shot_job instead.
 
         Args:
             name: Unique name/identifier for the job.
