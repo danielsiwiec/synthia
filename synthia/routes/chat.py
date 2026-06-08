@@ -29,6 +29,10 @@ class _SendMessageRequest(BaseModel):
     attachments: list[_Attachment] | None = None
 
 
+class _UpdateThreadRequest(BaseModel):
+    title: str
+
+
 def _serialize(obj):
     if hasattr(obj, "isoformat"):
         return obj.isoformat()
@@ -79,6 +83,16 @@ async def list_threads(request: Request):
         }
         for t in threads
     ]
+
+
+@router.patch("/chat/threads/{thread_id}")
+async def update_thread(request: Request, thread_id: int, body: _UpdateThreadRequest):
+    chat_service: ChatService = request.app.state.chat_service
+    title = body.title.strip()[:100]
+    if not title:
+        raise HTTPException(status_code=400, detail="Title must not be empty")
+    await chat_service.repository.update_thread_title(thread_id, title)
+    return {"ok": True}
 
 
 @router.delete("/chat/threads/{thread_id}")

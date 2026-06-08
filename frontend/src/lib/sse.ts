@@ -12,8 +12,10 @@ export interface SseHandlers {
   onInit?: () => void;
   onProgress?: (summary: string) => void;
   onThought?: (thinking: string) => void;
+  onResultDelta?: (delta: string) => void;
   onResult?: (result: string) => void;
   onImage?: (data: ImageEvent) => void;
+  onTitle?: (title: string) => void;
 }
 
 export interface SseConnection {
@@ -46,6 +48,11 @@ export function connectThreadEvents(
     handlers.onThought?.(data.thinking);
   });
 
+  source.addEventListener("result_delta", (e) => {
+    const data = JSON.parse((e as MessageEvent).data);
+    handlers.onResultDelta?.(data.delta);
+  });
+
   source.addEventListener("result", (e) => {
     const data = JSON.parse((e as MessageEvent).data);
     handlers.onResult?.(data.result);
@@ -54,6 +61,11 @@ export function connectThreadEvents(
   source.addEventListener("image", (e) => {
     const data = JSON.parse((e as MessageEvent).data) as ImageEvent;
     handlers.onImage?.(data);
+  });
+
+  source.addEventListener("title", (e) => {
+    const data = JSON.parse((e as MessageEvent).data);
+    handlers.onTitle?.(data.title);
   });
 
   return { close: () => source.close(), opened };

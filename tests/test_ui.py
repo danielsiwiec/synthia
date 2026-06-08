@@ -68,6 +68,16 @@ def _stub_app() -> FastAPI:
     async def list_threads():
         return sorted(_threads_store.values(), key=lambda t: t["updated_at"], reverse=True)
 
+    class _UpdateThreadRequest(BaseModel):
+        title: str
+
+    @app.patch("/chat/threads/{thread_id}")
+    async def update_thread(thread_id: str, body: _UpdateThreadRequest):
+        thread = _threads_store.get(thread_id)
+        if thread:
+            thread["title"] = body.title.strip()[:100]
+        return {"ok": True}
+
     @app.delete("/chat/threads/{thread_id}")
     async def delete_thread(thread_id: str):
         _threads_store.pop(thread_id, None)
@@ -136,6 +146,29 @@ def _stub_app() -> FastAPI:
             )
             if body.content == "no-result-thought":
                 return {"ok": True}
+            if body.content == "stream-test":
+                await asyncio.sleep(0.05)
+                await queue.put({"type": "result_delta", "delta": "alpha "})
+                await asyncio.sleep(0.3)
+                await queue.put({"type": "result_delta", "delta": "beta "})
+                await asyncio.sleep(0.3)
+                await queue.put({"type": "result_delta", "delta": "gamma"})
+                await asyncio.sleep(0.05)
+                final = "alpha beta gamma"
+                await queue.put({"type": "result", "result": final})
+                msgs = _messages_store.setdefault(thread_id, [])
+                msgs.append(
+                    {
+                        "id": str(len(msgs) + 1),
+                        "thread_id": thread_id,
+                        "role": "assistant",
+                        "message_type": "result",
+                        "content": final,
+                        "metadata": None,
+                        "created_at": "2026-01-01T00:00:02",
+                    }
+                )
+                return {"ok": True}
             await asyncio.sleep(0.05)
             await queue.put({"type": "result", "result": f"Echo: {body.content}"})
             msgs = _messages_store.setdefault(thread_id, [])
@@ -150,6 +183,12 @@ def _stub_app() -> FastAPI:
                     "created_at": "2026-01-01T00:00:02",
                 }
             )
+            results = [m for m in msgs if m["message_type"] == "result"]
+            if len(results) == 1:
+                await asyncio.sleep(0.05)
+                title = f"Topic: {body.content}"
+                _threads_store[thread_id]["title"] = title
+                await queue.put({"type": "title", "title": title})
         return {"ok": True}
 
     @app.post("/chat/threads/{thread_id}/stop")
@@ -321,6 +360,43 @@ def test_delete_thread_via_trash(chat: ChatPage):
     chat.thread_items().first.hover()
     chat._page.get_by_role("button", name="Delete thread").first.click()
     expect(chat.thread_items()).to_have_count(0, timeout=5000)
+
+
+def test_result_streams_incrementally(chat: ChatPage):
+    chat.send("stream-test")
+    expect(chat.text("alpha")).to_be_visible(timeout=5000)
+    expect(chat.text("alpha beta gamma")).to_be_visible(timeout=5000)
+
+
+def test_thread_auto_titled_after_result(chat: ChatPage):
+    chat.send("My first thread")
+    expect(chat.text("Echo: My first thread")).to_be_visible(timeout=5000)
+    expect(chat.thread_item_titles().first).to_contain_text("Topic: My first thread", timeout=5000)
+
+
+def test_rename_thread_via_pencil(chat: ChatPage):
+    chat.send("rename me")
+    expect(chat.text("Echo: rename me")).to_be_visible(timeout=5000)
+    expect(chat.thread_items()).to_have_count(1, timeout=5000)
+    chat.thread_items().first.hover()
+    chat._page.get_by_role("button", name="Rename thread").first.click()
+    editor = chat._page.locator(".aui-thread-list-item-input")
+    expect(editor).to_be_visible()
+    editor.fill("Renamed thread")
+    editor.press("Enter")
+    expect(chat.thread_item_titles().first).to_contain_text("Renamed thread", timeout=5000)
+
+
+def test_rename_thread_cancelled_with_escape(chat: ChatPage):
+    chat.send("keep me")
+    expect(chat.text("Echo: keep me")).to_be_visible(timeout=5000)
+    expect(chat.thread_item_titles().first).to_contain_text("Topic: keep me", timeout=5000)
+    chat.thread_items().first.hover()
+    chat._page.get_by_role("button", name="Rename thread").first.click()
+    editor = chat._page.locator(".aui-thread-list-item-input")
+    editor.fill("discard this")
+    editor.press("Escape")
+    expect(chat.thread_item_titles().first).to_contain_text("Topic: keep me")
 
 
 def test_multiple_messages_in_thread(chat: ChatPage):
@@ -498,4 +574,3 @@ def test_attachment_persists_after_thread_switch(chat: ChatPage):
     chat.open_thread("with photo")
     expect(chat.text("Echo: with photo")).to_be_visible(timeout=5000)
     expect(chat.message_attachment_tiles().first).to_be_visible()
-

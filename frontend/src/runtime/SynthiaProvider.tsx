@@ -9,6 +9,7 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   deleteThread as apiDeleteThread,
+  renameThread as apiRenameThread,
   getMessages,
   listThreads,
   sendMessage,
@@ -188,20 +189,51 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
           });
           setIsRunning(true);
         },
+        onResultDelta: (delta) => {
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.role === "assistant" && last.message_type === "result" && last.id.startsWith("s-")) {
+              return [...prev.slice(0, -1), { ...last, content: (last.content ?? "") + delta }];
+            }
+            return [
+              ...prev,
+              {
+                id: `s-${Date.now()}-${prev.length}`,
+                thread_id: threadId,
+                role: "assistant",
+                message_type: "result",
+                content: delta,
+                metadata: null,
+                created_at: null,
+              },
+            ];
+          });
+          setIsRunning(true);
+        },
         onResult: (result) => {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `r-${Date.now()}-${prev.length}`,
-              thread_id: threadId,
-              role: "assistant",
-              message_type: "result",
-              content: result,
-              metadata: null,
-              created_at: null,
-            },
-          ]);
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.role === "assistant" && last.message_type === "result" && last.id.startsWith("s-")) {
+              return [...prev.slice(0, -1), { ...last, id: `r-${Date.now()}-${prev.length}`, content: result }];
+            }
+            return [
+              ...prev,
+              {
+                id: `r-${Date.now()}-${prev.length}`,
+                thread_id: threadId,
+                role: "assistant",
+                message_type: "result",
+                content: result,
+                metadata: null,
+                created_at: null,
+              },
+            ];
+          });
           setIsRunning(false);
+          void refreshThreads();
+        },
+        onTitle: (title) => {
+          setThreads((prev) => prev.map((t) => (t.id === threadId ? { ...t, title } : t)));
           void refreshThreads();
         },
         onImage: (data) => {
@@ -269,6 +301,17 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
       await _syncCurrentThread();
     },
     [_syncCurrentThread],
+  );
+
+  const renameThread = useCallback(
+    async (id: string, title: string) => {
+      const next = title.trim();
+      if (!next) return;
+      setThreads((prev) => prev.map((t) => (t.id === id ? { ...t, title: next } : t)));
+      await apiRenameThread(id, next);
+      await refreshThreads();
+    },
+    [refreshThreads],
   );
 
   const removeThread = useCallback(
@@ -341,6 +384,7 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
         threads: threads.map((t) => ({ status: "regular", id: t.id, title: t.title })),
         onSwitchToNewThread: newThread,
         onSwitchToThread: switchThread,
+        onRename: renameThread,
         onDelete: removeThread,
       },
     },

@@ -8,7 +8,8 @@ from typing import Any
 import asyncpg
 from loguru import logger
 
-from synthia.agents.agent import InitMessage, Message, Result, Thought, ToolCall
+from synthia.agents.agent import InitMessage, Message, Result, ResultDelta, Thought, ToolCall
+from synthia.agents.titler import generate_title
 from synthia.service.models import OutgoingImage, ProgressNotification
 
 
@@ -110,6 +111,21 @@ class MessageRepository:
     async def list_threads(self) -> list[dict[str, Any]]:
         rows = await self._pool.fetch("SELECT id, title, created_at, updated_at FROM threads ORDER BY updated_at DESC")
         return [dict(row) for row in rows]
+
+    async def update_thread_title(self, thread_id: int, title: str):
+        await self._pool.execute("UPDATE threads SET title = $1 WHERE id = $2", title, thread_id)
+
+    async def result_count(self, thread_id: int) -> int:
+        return await self._pool.fetchval(
+            "SELECT COUNT(*) FROM messages WHERE thread_id = $1 AND message_type = 'result'",
+            thread_id,
+        )
+
+    async def first_user_message(self, thread_id: int) -> str | None:
+        return await self._pool.fetchval(
+            "SELECT content FROM messages WHERE thread_id = $1 AND role = 'user' ORDER BY created_at ASC LIMIT 1",
+            thread_id,
+        )
 
     async def delete_thread(self, thread_id: int):
         await self._pool.execute("DELETE FROM threads WHERE id = $1", thread_id)
@@ -223,6 +239,24 @@ class ChatService:
                     message.result,
                     {"cost_usd": message.cost_usd, "success": message.success},
                 )
+                await self._maybe_generate_title(thread_id, message.result)
+
+    async def handle_delta(self, message: ResultDelta):
+        if message.thread_id is None:
+            return
+        await self._event_bus.push(message.thread_id, {"type": "result_delta", "delta": message.delta})
+
+    async def _maybe_generate_title(self, thread_id: int, assistant_reply: str):
+        if await self._repository.result_count(thread_id) != 1:
+            return
+        first_user = await self._repository.first_user_message(thread_id)
+        if not first_user:
+            return
+        title = await generate_title(first_user, assistant_reply)
+        if not title:
+            return
+        await self._repository.update_thread_title(thread_id, title)
+        await self._event_bus.push(thread_id, {"type": "title", "title": title})
 
     async def handle_progress(self, notification: ProgressNotification):
         if notification.thread_id is None:

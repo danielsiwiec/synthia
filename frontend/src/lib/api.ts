@@ -61,6 +61,14 @@ export async function sendMessage(
   });
 }
 
+export async function renameThread(threadId: string, title: string): Promise<void> {
+  await fetch(`/chat/threads/${threadId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+}
+
 export async function deleteThread(threadId: string): Promise<void> {
   await fetch(`/chat/threads/${threadId}`, { method: "DELETE" });
 }

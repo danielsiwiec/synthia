@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Self
 
 from google.adk.agents import LlmAgent
+from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService
@@ -144,6 +145,15 @@ class Result(BaseModel):
 
     def render(self, short: bool = False) -> str:
         return f"{'✅' if self.success else '🔴'} {self.result if self.success else self.error}"
+
+
+class ResultDelta(BaseModel):
+    session_id: str
+    thread_id: int | None = None
+    delta: str
+
+    def render(self, short: bool = False) -> str:
+        return f"… {self.delta}"
 
 
 class InitMessage(BaseModel):
@@ -320,6 +330,16 @@ class Agent:
         if session is None:
             await self._session_service.create_session(app_name=APP_NAME, user_id=USER_ID, session_id=session_id)
 
+    async def _publish_deltas(self, event: Any, session_id: str, thread_id: int) -> None:
+        content = getattr(event, "content", None)
+        parts = getattr(content, "parts", None) if content else None
+        for part in parts or []:
+            if getattr(part, "thought", False):
+                continue
+            text = getattr(part, "text", None)
+            if text:
+                await pubsub.publish(ResultDelta(session_id=session_id, thread_id=thread_id, delta=text))
+
     @traced("adk_run")
     async def run_for_result(self, objective: str, thread_id: int | None = None) -> Result | None:
         session_id = str(thread_id) if thread_id is not None else uuid.uuid4().hex
@@ -344,7 +364,10 @@ class Agent:
         start_time = time.perf_counter()
 
         logger.debug(f"📤 ADK query: {prompt[:50]}...")
-        async for event in self._runner.run_async(user_id=USER_ID, session_id=session_id, new_message=new_message):
+        run_config = RunConfig(streaming_mode=StreamingMode.SSE)
+        async for event in self._runner.run_async(
+            user_id=USER_ID, session_id=session_id, new_message=new_message, run_config=run_config
+        ):
             usage = getattr(event, "usage_metadata", None)
             if usage:
                 prompt_tokens += getattr(usage, "prompt_token_count", 0) or 0
@@ -355,6 +378,8 @@ class Agent:
                 error = event.error_message
 
             if getattr(event, "partial", False):
+                if thread_id:
+                    await self._publish_deltas(event, session_id, thread_id)
                 continue
 
             content = getattr(event, "content", None)

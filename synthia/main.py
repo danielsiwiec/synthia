@@ -61,7 +61,7 @@ logger.add(loguru_otel_sink, level="DEBUG")
 def _register_handlers(
     episodic_memory_service: EpisodicMemoryService, chat_service: ChatService, openai_client: AsyncOpenAI | None
 ):
-    from synthia.agents.agent import Message
+    from synthia.agents.agent import Message, ResultDelta
     from synthia.agents.progress import ProgressAnalyzer
     from synthia.service.models import OutgoingImage, ProgressNotification
 
@@ -69,6 +69,7 @@ def _register_handlers(
     pubsub.subscribe(ProgressAnalyzer(openai_client))
     pubsub.subscribe(Message, episodic_memory_service.track_message)
     pubsub.subscribe(Message, chat_service.handle_message)
+    pubsub.subscribe(ResultDelta, chat_service.handle_delta)
     pubsub.subscribe(ProgressNotification, chat_service.handle_progress)
     pubsub.subscribe(OutgoingImage, chat_service.handle_image)
 
