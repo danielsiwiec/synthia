@@ -1,4 +1,6 @@
+import asyncio
 import json
+import time
 from pathlib import Path
 
 from google.adk.tools.mcp_tool.mcp_session_manager import (
@@ -60,3 +62,16 @@ def build_mcp_toolsets(mcp_config_path: Path | None) -> list[McpToolset]:
         if toolset:
             toolsets.append(toolset)
     return toolsets
+
+
+async def prewarm_mcp_toolsets(toolsets: list[McpToolset]) -> None:
+    async def _warm(toolset: McpToolset) -> None:
+        prefix = getattr(toolset, "tool_name_prefix", None) or "?"
+        started = time.perf_counter()
+        try:
+            tools = await toolset.get_tools()
+            logger.info(f"Prewarmed MCP '{prefix}': {len(tools)} tools in {time.perf_counter() - started:.2f}s")
+        except Exception as error:
+            logger.warning(f"Prewarm of MCP '{prefix}' failed after {time.perf_counter() - started:.2f}s: {error}")
+
+    await asyncio.gather(*(_warm(toolset) for toolset in toolsets))

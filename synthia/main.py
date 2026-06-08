@@ -19,7 +19,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from synthia.agents.admin.client import create_admin_tools
 from synthia.agents.episodic.client import create_episodic_tools
 from synthia.agents.episodic.sync import EpisodicMemoryService
-from synthia.agents.mcp import build_mcp_toolsets
+from synthia.agents.mcp import build_mcp_toolsets, prewarm_mcp_toolsets
 from synthia.agents.memory.client import create_memory_tools
 from synthia.agents.scheduler.client import create_scheduler_tools
 from synthia.agents.skills import build_skill_toolset
@@ -141,6 +141,8 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
                 logger.warning("VAPID keys not set — Web Push notifications disabled")
 
             await pubsub.start()
+
+            await prewarm_mcp_toolsets(mcp_toolsets)
 
             _startup_duration = round(_time.perf_counter() - _t_process_start, 1)
             logger.bind(type="startup", duration_s=_startup_duration).info(f"Startup completed in {_startup_duration}s")

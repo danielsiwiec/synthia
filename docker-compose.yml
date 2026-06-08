@@ -1,6 +1,8 @@
 services:
   synthia:
     container_name: synthia
+    labels:
+      - wud.watch=false
     build:
       context: .
       args:
@@ -25,6 +27,8 @@ services:
 
   pgvector:
     container_name: pgvector
+    labels:
+      - wud.watch=false
     build:
       context: ./images/pgvector
     environment:
@@ -42,6 +46,8 @@ services:
 
   ollama:
     container_name: ollama
+    labels:
+      - wud.watch=false
     build:
       context: ./images/ollama
     volumes:
