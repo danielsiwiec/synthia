@@ -2,6 +2,7 @@ import asyncio
 import json
 import mimetypes
 import os
+import time
 import uuid
 from collections.abc import Callable
 from datetime import datetime
@@ -137,6 +138,9 @@ class Result(BaseModel):
     result: str
     error: str | None = None
     cost_usd: float | None = None
+    tool_call_names: list[str] = []
+    skill_names: list[str] = []
+    duration_s: float | None = None
 
     def render(self, short: bool = False) -> str:
         return f"{'✅' if self.success else '🔴'} {self.result if self.success else self.error}"
@@ -162,6 +166,8 @@ class Thought(BaseModel):
 
 
 Message = ToolCall | Result | InitMessage | Thought
+
+_SKILL_INVOCATION_TOOLS = {"load_skill", "run_skill_script", "load_skill_resource"}
 
 
 def create_image_tool(thread_id: int, cwd: str | Path | None = None) -> Callable:
@@ -327,12 +333,15 @@ class Agent:
 
         new_message = types.Content(role="user", parts=[types.Part(text=prompt)])
         tool_calls: dict[str, ToolCall] = {}
+        executed_tool_names: list[str] = []
+        skill_names: list[str] = []
         final_text = ""
         error: str | None = None
         prompt_tokens = 0
         completion_tokens = 0
         cached_tokens = 0
         message_count = 0
+        start_time = time.perf_counter()
 
         logger.debug(f"📤 ADK query: {prompt[:50]}...")
         async for event in self._runner.run_async(user_id=USER_ID, session_id=session_id, new_message=new_message):
@@ -378,6 +387,11 @@ class Agent:
                         input=pending.input if pending else {},
                         output=_stringify(fr.response),
                     )
+                    executed_tool_names.append(tool_call.name)
+                    if tool_call.name in _SKILL_INVOCATION_TOOLS:
+                        invoked_skill = tool_call.input.get("skill_name")
+                        if invoked_skill and invoked_skill not in skill_names:
+                            skill_names.append(invoked_skill)
                     message_count += 1
                     if thread_id:
                         with start_span("ToolCall"):
@@ -406,6 +420,9 @@ class Agent:
             result=final_text.strip(),
             error=error,
             cost_usd=cost,
+            tool_call_names=executed_tool_names,
+            skill_names=skill_names,
+            duration_s=round(time.perf_counter() - start_time, 3),
         )
         message_count += 1
         if thread_id:

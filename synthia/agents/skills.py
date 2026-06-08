@@ -57,7 +57,7 @@ def _load_skill(skill_dir: Path) -> Skill:
     )
 
 
-def build_skill_toolset(cwd: str | Path | None = None) -> SkillToolset | None:
+def _load_all_skills(cwd: str | Path | None, quiet: bool = False) -> list[Skill]:
     skills = []
     for parent in _skill_dirs(cwd):
         if not parent.is_dir():
@@ -71,10 +71,15 @@ def build_skill_toolset(cwd: str | Path | None = None) -> SkillToolset | None:
                 continue
             try:
                 skills.append(_load_skill(skill_dir))
-                logger.info(f"Loaded skill: {skill_dir.name}")
+                if not quiet:
+                    logger.info(f"Loaded skill: {skill_dir.name}")
             except Exception as error:
                 logger.warning(f"Skipping skill '{skill_dir.name}': {error}")
+    return skills
 
+
+def build_skill_toolset(cwd: str | Path | None = None) -> SkillToolset | None:
+    skills = _load_all_skills(cwd)
     if not skills:
         return None
 
@@ -84,3 +89,34 @@ def build_skill_toolset(cwd: str | Path | None = None) -> SkillToolset | None:
     # discover skills, which it does unreliably once many other tools are present.
     toolset._tools = [t for t in toolset._tools if not isinstance(t, ListSkillsTool)]
     return toolset
+
+
+_reload_signatures: dict[str, tuple[int, int]] = {}
+
+
+def _skills_signature(cwd: str | Path | None) -> tuple[int, int]:
+    latest = 0
+    count = 0
+    for parent in _skill_dirs(cwd):
+        if not parent.is_dir():
+            continue
+        for entry in [parent, *parent.rglob("*")]:
+            try:
+                latest = max(latest, entry.stat().st_mtime_ns)
+            except OSError:
+                continue
+            count += 1
+    return latest, count
+
+
+def reload_skills(toolset: SkillToolset, cwd: str | Path | None = None) -> int:
+    key = str(Path(cwd).resolve()) if cwd else str(Path.cwd())
+    signature = _skills_signature(cwd)
+    if toolset._skills and _reload_signatures.get(key) == signature:
+        return len(toolset._skills)
+    skills = _load_all_skills(cwd, quiet=True)
+    if not skills:
+        return 0
+    toolset._skills = {skill.name: skill for skill in skills}
+    _reload_signatures[key] = signature
+    return len(skills)

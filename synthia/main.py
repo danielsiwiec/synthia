@@ -23,6 +23,7 @@ from synthia.agents.mcp import build_mcp_toolsets, prewarm_mcp_toolsets
 from synthia.agents.memory.client import create_memory_tools
 from synthia.agents.scheduler.client import create_scheduler_tools
 from synthia.agents.skills import build_skill_toolset
+from synthia.agents.skilltools.client import create_skilltools_tools
 from synthia.helpers.pubsub import pubsub
 from synthia.metrics import create_instrumentator
 from synthia.migrations.runner import run_migrations
@@ -31,6 +32,7 @@ from synthia.routes.health import router as health_router
 from synthia.routes.push import router as push_router
 from synthia.routes.task import router as task_router
 from synthia.service.chat import ChatService
+from synthia.service.job_execution_repository import JobExecutionRepository
 from synthia.service.models import AppStartup
 from synthia.service.push import PushService
 from synthia.service.session_repository import SessionRepository
@@ -103,10 +105,20 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             logger.info("Enabling episodic memory tools...")
             episodic_tools = create_episodic_tools(db_pool)
 
+            job_execution_repo = JobExecutionRepository(db_pool)
+            skilltools = create_skilltools_tools(job_execution_repo)
+
             mcp_toolsets = build_mcp_toolsets(config.mcp_config_path)
             skill_toolset = build_skill_toolset(config.claude_cwd)
 
-            tools: list = [*memory_tools, *scheduler_tools, *admin_tools, *episodic_tools, *mcp_toolsets]
+            tools: list = [
+                *memory_tools,
+                *scheduler_tools,
+                *admin_tools,
+                *episodic_tools,
+                *skilltools,
+                *mcp_toolsets,
+            ]
             if skill_toolset:
                 tools.append(skill_toolset)
 
@@ -127,6 +139,8 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
                 session_repository=session_repository,
                 session_service=session_service,
                 cwd=config.claude_cwd,
+                job_execution_repo=job_execution_repo,
+                skill_toolset=skill_toolset,
             )
 
             scheduler_service.start()
