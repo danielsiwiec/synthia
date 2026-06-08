@@ -2,10 +2,18 @@ from typing import Any
 
 from pydantic import BaseModel
 
+VISION_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+
+
+class TaskImage(BaseModel):
+    path: str
+    content_type: str
+
 
 class TaskRequest(BaseModel):
     task: str
     thread_id: int
+    images: list[TaskImage] = []
 
 
 class TaskResponse(BaseModel):

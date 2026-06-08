@@ -91,6 +91,7 @@ class TaskService:
             agent.run_for_result(
                 objective=objective,
                 thread_id=request.thread_id,
+                images=request.images,
             )
         )
         self._tasks[request.thread_id] = task

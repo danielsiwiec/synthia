@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from synthia.agents.builtins import create_builtin_tools
 from synthia.helpers.pubsub import pubsub
 from synthia.metrics import record_call_cost, record_session_cost
-from synthia.service.models import OutgoingImage
+from synthia.service.models import VISION_MIME_TYPES, OutgoingImage, TaskImage
 from synthia.telemetry import current_span, set_span_error, start_span, traced
 
 APP_NAME = "synthia"
@@ -266,6 +266,20 @@ def create_diagram_tool(thread_id: int, cwd: str | Path | None = None) -> Callab
     return render_diagram
 
 
+def _build_parts(prompt: str, images: list[TaskImage] | None) -> list[Any]:
+    parts: list[Any] = [types.Part(text=prompt)]
+    for image in images or []:
+        if image.content_type not in VISION_MIME_TYPES:
+            continue
+        try:
+            data = Path(image.path).read_bytes()
+        except OSError as error:
+            logger.warning(f"skipping unreadable image {image.path}: {error}")
+            continue
+        parts.append(types.Part.from_bytes(data=data, mime_type=image.content_type))
+    return parts
+
+
 def _stringify(response: Any) -> str:
     if response is None:
         return ""
@@ -341,7 +355,9 @@ class Agent:
                 await pubsub.publish(ResultDelta(session_id=session_id, thread_id=thread_id, delta=text))
 
     @traced("adk_run")
-    async def run_for_result(self, objective: str, thread_id: int | None = None) -> Result | None:
+    async def run_for_result(
+        self, objective: str, thread_id: int | None = None, images: list[TaskImage] | None = None
+    ) -> Result | None:
         session_id = str(thread_id) if thread_id is not None else uuid.uuid4().hex
         prompt = f"{objective}\n\nthread_id: {thread_id}" if thread_id else objective
 
@@ -351,7 +367,7 @@ class Agent:
             with start_span("InitMessage"):
                 await pubsub.publish(InitMessage(session_id=session_id, thread_id=thread_id, prompt=objective))
 
-        new_message = types.Content(role="user", parts=[types.Part(text=prompt)])
+        new_message = types.Content(role="user", parts=_build_parts(prompt, images))
         tool_calls: dict[str, ToolCall] = {}
         executed_tool_names: list[str] = []
         skill_names: list[str] = []

@@ -1,8 +1,30 @@
 import asyncio
+import struct
 import time
+import zlib
 from collections.abc import Callable
+from pathlib import Path
 
 from loguru import logger
+
+
+def _png_chunk(tag: bytes, data: bytes) -> bytes:
+    body = tag + data
+    return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+
+def write_band_png(path: Path, top: tuple[int, int, int], bottom: tuple[int, int, int], size: int = 96) -> Path:
+    half = size // 2
+    rows = [bytes(top) * size if y < half else bytes(bottom) * size for y in range(size)]
+    raw = b"".join(b"\x00" + row for row in rows)
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + _png_chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0))
+        + _png_chunk(b"IDAT", zlib.compress(raw, 9))
+        + _png_chunk(b"IEND", b"")
+    )
+    path.write_bytes(png)
+    return path
 
 
 async def await_until(func: Callable[[], bool], name: str, poll_delay: float = 0.5, timeout: int = 120) -> None:

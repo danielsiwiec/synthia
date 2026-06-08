@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from synthia.helpers.pubsub import pubsub
 from synthia.service.chat import ChatService
-from synthia.service.models import StopTaskRequest, TaskRequest
+from synthia.service.models import VISION_MIME_TYPES, StopTaskRequest, TaskImage, TaskRequest
 
 router = APIRouter()
 
@@ -153,13 +153,26 @@ async def send_message(request: Request, thread_id: int, body: _SendMessageReque
         ]
     await chat_service.repository.save_message(thread_id, "user", "user", body.content, metadata or None)
 
-    task = body.content
-    if saved:
-        files = "\n".join(f"- {s['path']}" for s in saved)
-        prefix = f"{body.content}\n\n" if body.content else ""
-        task = f"{prefix}The user attached the following file(s). Use the Read tool to view them:\n{files}"
+    images = [
+        TaskImage(path=s["path"], content_type=s["content_type"])
+        for s in saved
+        if s["content_type"] in VISION_MIME_TYPES
+    ]
+    other_files = [s for s in saved if s["content_type"] not in VISION_MIME_TYPES]
 
-    await pubsub.publish(TaskRequest(task=task, thread_id=thread_id))
+    task = body.content
+    notes = []
+    if images:
+        names = ", ".join(Path(s["path"]).name for s in saved if s["content_type"] in VISION_MIME_TYPES)
+        notes.append(f"The user attached the following image(s), shown inline above: {names}.")
+    if other_files:
+        files = "\n".join(f"- {s['path']}" for s in other_files)
+        notes.append(f"The user attached the following file(s). Use the read_file tool to view them:\n{files}")
+    if notes:
+        prefix = f"{body.content}\n\n" if body.content else ""
+        task = prefix + "\n\n".join(notes)
+
+    await pubsub.publish(TaskRequest(task=task, thread_id=thread_id, images=images))
 
     return {"ok": True}
 
