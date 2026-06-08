@@ -3,10 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import defaultdict
+from collections.abc import Coroutine
 from pathlib import Path
+from typing import Any
 
 import asyncpg
 from loguru import logger
+from opentelemetry import context as otel_context
 
 from synthia.agents.agent import Agent, InitMessage, Message, Result, Thought, ToolCall
 from synthia.agents.episodic.db import generate_embedding
@@ -14,6 +17,14 @@ from synthia.telemetry import traced
 
 _SUMMARIZATION_MARKER = "[EPISODIC_SUMMARIZATION]"
 _MAX_CONCURRENT_SUMMARIZATIONS = 2
+
+
+def _spawn_detached(coro: Coroutine[Any, Any, Any]) -> None:
+    token = otel_context.attach(otel_context.Context())
+    try:
+        asyncio.create_task(coro)
+    finally:
+        otel_context.detach(token)
 
 
 class EpisodicMemoryService:
@@ -98,7 +109,7 @@ Transcript:
             else:
                 transcript += f"\nError: {message.error}"
 
-            asyncio.create_task(self._summarize_and_store(session_id, transcript, original_prompt))
+            _spawn_detached(self._summarize_and_store(session_id, transcript, original_prompt))
             return
 
         if isinstance(message, ToolCall):
