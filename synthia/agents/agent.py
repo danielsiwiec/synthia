@@ -378,6 +378,17 @@ class Agent:
         cached_tokens = 0
         message_count = 0
         start_time = time.perf_counter()
+        thought_buffer: list[str] = []
+
+        async def _flush_thoughts() -> None:
+            nonlocal message_count
+            thinking = "".join(thought_buffer).strip()
+            thought_buffer.clear()
+            if not thinking or not thread_id:
+                return
+            message_count += 1
+            with start_span("Thought"):
+                await pubsub.publish(Thought(session_id=session_id, thread_id=thread_id, thinking=thinking))
 
         logger.debug(f"📤 ADK query: {prompt[:50]}...")
         run_config = RunConfig(streaming_mode=StreamingMode.SSE)
@@ -404,10 +415,12 @@ class Agent:
                 is_thought = bool(getattr(part, "thought", False))
                 text = getattr(part, "text", None)
 
-                if is_thought and text and thread_id:
-                    message_count += 1
-                    with start_span("Thought"):
-                        await pubsub.publish(Thought(session_id=session_id, thread_id=thread_id, thinking=text))
+                if is_thought:
+                    if text:
+                        thought_buffer.append(text)
+                    continue
+
+                await _flush_thoughts()
 
                 fc = getattr(part, "function_call", None)
                 if fc is not None:
@@ -440,6 +453,8 @@ class Agent:
 
                 if text and not is_thought:
                     final_text = text
+
+        await _flush_thoughts()
 
         cost: float | None = None
         if prompt_tokens or completion_tokens:
