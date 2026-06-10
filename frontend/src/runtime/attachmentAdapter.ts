@@ -3,6 +3,7 @@ import type {
   CompleteAttachment,
   PendingAttachment,
 } from "@assistant-ui/react";
+import heic2any from "heic2any";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPT = "image/*,.heic,.heif,application/pdf,text/*,.csv,.json,.md";
@@ -16,6 +17,23 @@ function _resolveContentType(file: File): string {
   if (file.type) return file.type;
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
   return _EXTENSION_MIME_TYPES[ext] ?? "";
+}
+
+function _isHeic(file: File): boolean {
+  const contentType = _resolveContentType(file);
+  return contentType === "image/heic" || contentType === "image/heif";
+}
+
+async function _convertHeic(file: File): Promise<File> {
+  try {
+    const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.9 });
+    const blob = Array.isArray(converted) ? converted[0] : converted;
+    const name = file.name.replace(/\.(heic|heif)$/i, "") + ".jpg";
+    return new File([blob], name, { type: "image/jpeg" });
+  } catch (error) {
+    console.error("HEIC conversion failed, sending original:", error);
+    return file;
+  }
 }
 
 function _readDataUrl(file: File): Promise<string> {
@@ -39,13 +57,14 @@ export const attachmentAdapter: AttachmentAdapter = {
     if (file.size > MAX_BYTES) {
       throw new Error(`"${file.name}" exceeds the ${MAX_BYTES / 1024 / 1024}MB limit`);
     }
-    const contentType = _resolveContentType(file);
+    const resolved = _isHeic(file) ? await _convertHeic(file) : file;
+    const contentType = _resolveContentType(resolved);
     return {
       id: crypto.randomUUID(),
       type: _attachmentType(contentType),
-      name: file.name,
+      name: resolved.name,
       contentType,
-      file,
+      file: resolved,
       status: { type: "requires-action", reason: "composer-send" },
     };
   },
