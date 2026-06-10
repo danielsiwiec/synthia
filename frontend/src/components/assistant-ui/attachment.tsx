@@ -1,7 +1,7 @@
 "use client";
 
 import { type PropsWithChildren, useEffect, useState, type FC } from "react";
-import { XIcon, PlusIcon, FileText } from "lucide-react";
+import { XIcon, PlusIcon, FileText, ImageIcon } from "lucide-react";
 import {
   AttachmentPrimitive,
   ComposerPrimitive,
@@ -108,6 +108,8 @@ const AttachmentPreviewDialog: FC<PropsWithChildren> = ({ children }) => {
 
 const AttachmentThumb: FC = () => {
   const src = useAttachmentSrc();
+  const isImage = useAuiState((s) => s.attachment.type === "image");
+  const FallbackIcon = isImage ? ImageIcon : FileText;
 
   return (
     <Avatar className="aui-attachment-tile-avatar h-full w-full rounded-none">
@@ -117,7 +119,7 @@ const AttachmentThumb: FC = () => {
         className="aui-attachment-tile-image object-cover"
       />
       <AvatarFallback>
-        <FileText className="aui-attachment-tile-fallback-icon text-muted-foreground size-8" />
+        <FallbackIcon className="aui-attachment-tile-fallback-icon text-muted-foreground size-8" />
       </AvatarFallback>
     </Avatar>
   );
