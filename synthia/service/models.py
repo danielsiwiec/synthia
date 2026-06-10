@@ -2,7 +2,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-VISION_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+VISION_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp", "image/heic", "image/heif"})
 
 
 class TaskImage(BaseModel):

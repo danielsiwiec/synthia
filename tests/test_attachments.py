@@ -1,7 +1,7 @@
 import base64
 from pathlib import Path
 
-from synthia.agents.agent import create_image_tool
+from synthia.agents.agent import _build_parts, create_image_tool
 from synthia.service.chat import (
     _attachment_path,
     _safe_filename,
@@ -9,6 +9,7 @@ from synthia.service.chat import (
     _save_image_file,
     _unique_path,
 )
+from synthia.service.models import TaskImage
 
 
 def test_safe_filename_strips_paths():
@@ -83,3 +84,10 @@ async def test_send_image_tool_accepts_image(tmp_path):
     (tmp_path / "a.png").write_bytes(b"\x89PNG")
     tool = create_image_tool(1, tmp_path)
     assert "Sent image 'a.png'" in await tool("a.png")
+
+
+def test_build_parts_includes_heic_image(tmp_path):
+    image = tmp_path / "photo.heic"
+    image.write_bytes(b"\x00\x00\x00\x18ftypheic")
+    parts = _build_parts("hi", [TaskImage(path=str(image), content_type="image/heic")])
+    assert len(parts) == 2
