@@ -47,6 +47,21 @@ class JobExecutionRepository:
         except Exception as e:
             logger.error(f"Failed to record job execution: {e}")
 
+    async def recent(self, limit: int = 10, query: str = "") -> list[dict[str, Any]]:
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, job_name, skill_names, thread_id, success, error, cost_usd, duration_s, created_at
+                FROM job_executions
+                WHERE ($2 = '' OR job_name ILIKE '%' || $2 || '%' OR error ILIKE '%' || $2 || '%')
+                ORDER BY created_at DESC
+                LIMIT $1
+                """,
+                limit,
+                query,
+            )
+        return [dict(row) for row in rows]
+
     async def recent_for_skill(self, skill_name: str, days: int = 30, limit: int = 50) -> list[dict[str, Any]]:
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(

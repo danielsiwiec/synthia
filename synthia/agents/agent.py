@@ -5,9 +5,11 @@ import os
 import time
 import uuid
 from collections.abc import Callable
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Self
+from zoneinfo import ZoneInfo
 
 from google.adk.agents import LlmAgent
 from google.adk.agents.run_config import RunConfig, StreamingMode
@@ -27,12 +29,19 @@ from synthia.telemetry import current_span, set_span_error, start_span, traced
 APP_NAME = "synthia"
 USER_ID = "default"
 DEFAULT_MODEL = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-6")
+FRONT_MODEL = os.getenv("FRONT_LLM_MODEL", "openai/gpt-5.4-nano")
 
 _INPUT_COST_PER_M = float(os.getenv("LLM_INPUT_COST_PER_M", "3.0"))
 _OUTPUT_COST_PER_M = float(os.getenv("LLM_OUTPUT_COST_PER_M", "15.0"))
+_FRONT_INPUT_COST_PER_M = float(os.getenv("FRONT_LLM_INPUT_COST_PER_M", "0.05"))
+_FRONT_OUTPUT_COST_PER_M = float(os.getenv("FRONT_LLM_OUTPUT_COST_PER_M", "0.40"))
 _THINKING_BUDGET = int(os.getenv("LLM_THINKING_BUDGET", "2048"))
 _PROMPT_CACHING = os.getenv("LLM_PROMPT_CACHING", "1") != "0"
 _CACHE_READ_MULTIPLIER = 0.1
+_MAX_TURNS = int(os.getenv("MAX_TURNS", "100"))
+_MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "50000"))
+
+_delegated_cost: ContextVar[list[float] | None] = ContextVar("_delegated_cost", default=None)
 
 
 def _is_anthropic(model_name: str) -> bool:
@@ -54,17 +63,53 @@ def _model_kwargs(model_name: str) -> dict[str, Any]:
     return kwargs
 
 
-def _token_cost(prompt_tokens: int, completion_tokens: int, cached_tokens: int = 0) -> float:
+def _pricing(model_name: str) -> tuple[float, float]:
+    if _is_anthropic(model_name):
+        return _INPUT_COST_PER_M, _OUTPUT_COST_PER_M
+    return _FRONT_INPUT_COST_PER_M, _FRONT_OUTPUT_COST_PER_M
+
+
+def _token_cost(
+    prompt_tokens: int,
+    completion_tokens: int,
+    cached_tokens: int,
+    input_cost_per_m: float,
+    output_cost_per_m: float,
+) -> float:
     uncached_tokens = max(prompt_tokens - cached_tokens, 0)
     return round(
-        (uncached_tokens / 1_000_000) * _INPUT_COST_PER_M
-        + (cached_tokens / 1_000_000) * _INPUT_COST_PER_M * _CACHE_READ_MULTIPLIER
-        + (completion_tokens / 1_000_000) * _OUTPUT_COST_PER_M,
+        (uncached_tokens / 1_000_000) * input_cost_per_m
+        + (cached_tokens / 1_000_000) * input_cost_per_m * _CACHE_READ_MULTIPLIER
+        + (completion_tokens / 1_000_000) * output_cost_per_m,
         8,
     )
 
 
-def _cost_tracking_callback(model_name: str) -> Callable[[Any, Any], Any]:
+def record_delegated_cost(cost: float | None) -> None:
+    acc = _delegated_cost.get()
+    if acc is not None and cost:
+        acc.append(cost)
+
+
+def _truncate_tool_callback(tool: Any, args: Any, tool_context: Any, tool_response: Any) -> dict | None:
+    if _MAX_TOOL_OUTPUT_CHARS <= 0 or not isinstance(tool_response, dict):
+        return None
+    changed = False
+    truncated: dict[str, Any] = {}
+    for key, value in tool_response.items():
+        if isinstance(value, str) and len(value) > _MAX_TOOL_OUTPUT_CHARS:
+            truncated[key] = value[:_MAX_TOOL_OUTPUT_CHARS] + (
+                f"\n... [truncated {len(value) - _MAX_TOOL_OUTPUT_CHARS} chars]"
+            )
+            changed = True
+        else:
+            truncated[key] = value
+    return truncated if changed else None
+
+
+def _cost_tracking_callback(
+    model_name: str, input_cost_per_m: float, output_cost_per_m: float
+) -> Callable[[Any, Any], Any]:
     def _after_model(callback_context: Any, llm_response: Any) -> None:
         usage = getattr(llm_response, "usage_metadata", None)
         if usage is None:
@@ -74,7 +119,7 @@ def _cost_tracking_callback(model_name: str) -> Callable[[Any, Any], Any]:
         cached_tokens = getattr(usage, "cached_content_token_count", 0) or 0
         if not (prompt_tokens or completion_tokens):
             return None
-        cost = _token_cost(prompt_tokens, completion_tokens, cached_tokens)
+        cost = _token_cost(prompt_tokens, completion_tokens, cached_tokens, input_cost_per_m, output_cost_per_m)
         record_call_cost(model_name, cost)
         current_span().set_attribute("gen_ai.usage.cost_usd", cost)
         return None
@@ -82,10 +127,15 @@ def _cost_tracking_callback(model_name: str) -> Callable[[Any, Any], Any]:
     return _after_model
 
 
-SYSTEM_PROMPT = f"""
+def _today() -> str:
+    tz = ZoneInfo(os.environ.get("TIMEZONE", "America/Los_Angeles"))
+    return datetime.now(tz).strftime("%A, %Y-%m-%d")
+
+
+SYSTEM_PROMPT = """
 Your name is Synthia. You are a helpful assistant that can help with tasks and questions.
 
-# Today is {datetime.now().strftime("%Y-%m-%d")}.
+# Today is {today}.
 
 ## Shell and files
 Use the run_bash tool to execute shell commands and run scripts. Use read_file and write_file for file access.
@@ -113,6 +163,102 @@ render_diagram tool with Mermaid source. It renders the diagram to an image and 
 directly — do not hand-write SVG or screenshot a browser for diagrams, and do not also call
 send_image. Prefer Mermaid diagrams over ad-hoc drawings whenever the content is a diagram.
 """
+
+
+FRONT_SYSTEM_PROMPT = """
+Your name is Synthia. You are the fast, friendly assistant the user talks to directly. You decide how
+to handle each message: answer it yourself, or hand the work to your task agent.
+
+# Today is {today}.
+
+## Voice
+Sound like a warm, natural person — a helpful friend, not a system. Keep replies easy and
+conversational, and don't over-hedge or pile on qualifiers.
+
+Never describe HOW your memory or internals work. Don't reference "recent activity", "recent
+history", "context", "snippets", "the bits I can access", "system instructions", "sessions",
+"thread_id", a "task agent", or "delegating" — to the user, you simply remember things or you don't.
+Lead with the answer, not a disclaimer about your memory. If the user asks what you remember, just
+tell them what comes to mind. Only if you truly can't recall something, add one short warm line —
+never a multi-clause explanation of how your memory works.
+  Bad:  "I don't have perfect long-term memory of every conversation—just the bits that show up in
+         the recent history I can access here."
+  Good: "I only remember the most recent conversations we've had — here's what comes to mind:"
+
+## Your tools
+- delegate_to_task_agent(request, task_id?): run the capable task agent NOW and wait for its result.
+  Use this for anything that needs tools, web access, files, code, research, or multi-step work AND
+  that the user is actively waiting on. The task agent is powerful: it can control a computer, run
+  shell commands and scripts, read and write files, drive a real web browser, manage downloads, and
+  use many skills — assume it CAN do almost any operational task. Never tell the user you can't do
+  something the task agent could do; delegate it instead. Pass the user's actual request straight
+  through (plus any context you already have); do NOT coach it on how to do its job or tell it to ask
+  clarifying questions. It returns a `task_id=<id>` line as the first line of its output — remember
+  that id; if the user later continues or refines that SAME work, pass the id back as task_id.
+- dispatch_background_task(request, label, task_id?): start the task agent in the background and
+  return immediately. Use this for long-running work, "go do X and tell me later" requests, or when
+  the user wants to keep chatting. Acknowledge that you started it; the result is delivered to the
+  chat automatically when ready.
+- check_tasks(): list this conversation's tasks (in-flight and finished) with their task_id, label,
+  status, and a result summary.
+- find_past_work(query?, kind?): look up your full history of past tasks and scheduled jobs — well
+  beyond the few recent tasks shown below. Use it to recall earlier work, find an old task to resume
+  (it returns task_ids), or check whether a scheduled job ran. kind is "task", "job", or "all".
+- episodic_search(query) / episodic_show(id): search summaries of your past conversations with the
+  user, and read a full one by id.
+
+## Memories and scheduled jobs (handle these yourself — do NOT delegate)
+You manage the user's durable memories and their recurring automations directly:
+- search_memories(query) / add_memory(content): recall or save lasting facts about the user.
+- list_jobs() / add_job(name, start_date, seconds, task) / delete_job(name): view, create, or remove
+  the user's scheduled jobs. A "job" is a recurring automation, distinct from a one-off task.
+Do this work yourself with these tools; do not hand memory or job management to the task agent.
+
+## Looking things up before saying you don't know
+If the user refers to something you don't see in the recent activity below, search before you say you
+don't remember: use find_past_work for past tasks/jobs and episodic_search for past conversations.
+Only say you don't have it after a lookup turns up nothing.
+
+## Relaying results (CRITICAL)
+When delegate_to_task_agent returns, your reply to the user MUST be that result — present it in full,
+lightly cleaned up for tone, dropping no detail. NEVER discard a completed result and reply with your
+own clarifying question instead; if the task agent did the work, show the user what it found. Only ask
+the user for clarification when you have NOT delegated AND the request genuinely cannot start without
+it — and even then, prefer to just delegate and let the task agent ask if it actually gets stuck.
+
+## Sync vs background
+If the user is waiting and the work is quick, use delegate_to_task_agent. If it is long-running, or
+the user asked you to do it in the background / report back later, or wants to continue chatting, use
+dispatch_background_task.
+
+## Task continuity (IMPORTANT)
+Each task runs in its own persistent session identified by a task_id, which both delegate tools
+return.
+- Reuse a task_id ONLY when the new request is genuinely a continuation or refinement of that SAME
+  task, so the task agent keeps its prior context.
+- If the request is a new or unrelated task, do NOT pass a task_id — start fresh so unrelated context
+  does not leak in.
+- For a task you started earlier in THIS conversation, its task_id is the `task_id=<id>` line in the
+  tool result you got back when you ran it. Reuse that exact id for follow-ups about it; if you're not
+  sure of the id, call check_tasks() to look it up rather than starting a brand-new task.
+- The recent activity below lists each past task with its task_id. When the user wants MORE work done
+  on one of those tasks (continue it, refine it, add to it), pass that task_id to
+  delegate_to_task_agent. But if they only ask a question you can answer from that task's result, just
+  answer — do not delegate. For older tasks not listed, call check_tasks() or find_past_work() to get
+  the task_id first. Do not show raw task_ids to the user unless they ask.
+
+## Answering directly
+For greetings, small talk, clarifying questions, or anything you can answer from the recent activity
+below — including facts contained in a past task's result — just reply, do not delegate.
+
+## Recent activity across your conversations
+Each entry starts with the task_id you can pass to delegate_to_task_agent to resume that task.
+{recent_tasks}
+"""
+
+
+def build_front_instruction(recent_tasks: str) -> str:
+    return FRONT_SYSTEM_PROMPT.format(today=_today(), recent_tasks=recent_tasks or "(no recent activity)")
 
 
 class ToolCall(BaseModel):
@@ -296,10 +442,21 @@ def _stringify(response: Any) -> str:
 
 
 class Agent:
-    def __init__(self, runner: Runner, session_service: BaseSessionService, model_name: str):
+    def __init__(
+        self,
+        runner: Runner,
+        session_service: BaseSessionService,
+        model_name: str,
+        input_cost_per_m: float,
+        output_cost_per_m: float,
+        prompt_thread_hint: bool = True,
+    ):
         self._runner = runner
         self._session_service = session_service
         self._model_name = model_name
+        self._input_cost = input_cost_per_m
+        self._output_cost = output_cost_per_m
+        self._prompt_thread_hint = prompt_thread_hint
         self._live = True
 
     @classmethod
@@ -310,23 +467,33 @@ class Agent:
         system_prompt: str | None = None,
         session_service: BaseSessionService | None = None,
         model: str | None = None,
+        name: str = "synthia",
+        description: str | None = None,
+        include_builtins: bool = True,
+        prompt_thread_hint: bool = True,
     ) -> "Agent":
         model_name = model or DEFAULT_MODEL
+        input_cost, output_cost = _pricing(model_name)
         all_tools: list[Any] = list(tools or [])
-        all_tools.extend(create_builtin_tools(cwd))
+        if include_builtins:
+            all_tools.extend(create_builtin_tools(cwd))
 
         llm_agent = LlmAgent(
-            name="synthia",
+            name=name,
+            description=description or "",
             model=LiteLlm(model=model_name, **_model_kwargs(model_name)),
-            instruction=system_prompt if system_prompt is not None else SYSTEM_PROMPT,
+            instruction=system_prompt
+            if system_prompt is not None
+            else (lambda _: SYSTEM_PROMPT.format(today=_today())),
             tools=all_tools,
-            after_model_callback=_cost_tracking_callback(model_name),
+            after_model_callback=_cost_tracking_callback(model_name, input_cost, output_cost),
+            after_tool_callback=_truncate_tool_callback,
         )
 
         session_service = session_service or InMemorySessionService()
         runner = Runner(app_name=APP_NAME, agent=llm_agent, session_service=session_service)
-        logger.debug(f"🔌 ADK agent created (model={model_name}, tools={len(all_tools)})")
-        return cls(runner, session_service, model_name)
+        logger.debug(f"🔌 ADK agent created (name={name}, model={model_name}, tools={len(all_tools)})")
+        return cls(runner, session_service, model_name, input_cost, output_cost, prompt_thread_hint)
 
     async def disconnect(self) -> None:
         self._live = False
@@ -356,11 +523,16 @@ class Agent:
 
     @traced("adk_run")
     async def run_for_result(
-        self, objective: str, thread_id: int | None = None, images: list[TaskImage] | None = None
+        self,
+        objective: str,
+        thread_id: int | None = None,
+        images: list[TaskImage] | None = None,
+        session_id: str | None = None,
     ) -> Result | None:
-        session_id = str(thread_id) if thread_id is not None else uuid.uuid4().hex
-        prompt = f"{objective}\n\nthread_id: {thread_id}" if thread_id else objective
+        session_id = session_id or (str(thread_id) if thread_id is not None else uuid.uuid4().hex)
+        prompt = f"{objective}\n\nthread_id: {thread_id}" if (thread_id and self._prompt_thread_hint) else objective
 
+        _dc_token = _delegated_cost.set([])
         await self._ensure_session(session_id)
 
         if thread_id:
@@ -373,6 +545,7 @@ class Agent:
         skill_names: list[str] = []
         final_text = ""
         error: str | None = None
+        capped = False
         prompt_tokens = 0
         completion_tokens = 0
         cached_tokens = 0
@@ -450,20 +623,33 @@ class Agent:
                     if thread_id:
                         with start_span("ToolCall"):
                             await pubsub.publish(tool_call)
+                    if _MAX_TURNS and len(executed_tool_names) >= _MAX_TURNS:
+                        error = f"turn cap of {_MAX_TURNS} exceeded"
+                        capped = True
+                        break
 
                 if text and not is_thought:
                     final_text = text
 
+            if capped:
+                break
+
         await _flush_thoughts()
 
+        delegated_total = sum(_delegated_cost.get() or [])
+        _delegated_cost.reset(_dc_token)
         cost: float | None = None
-        if prompt_tokens or completion_tokens:
-            cost = _token_cost(prompt_tokens, completion_tokens, cached_tokens)
+        if prompt_tokens or completion_tokens or delegated_total:
+            front_cost = _token_cost(
+                prompt_tokens, completion_tokens, cached_tokens, self._input_cost, self._output_cost
+            )
+            cost = round(front_cost + delegated_total, 8)
             record_session_cost(self._model_name, cost)
             current_span().set_attribute("session_cost_usd", cost)
             current_span().set_attribute("cached_prompt_tokens", cached_tokens)
             logger.info(
-                f"💰 Session cost: ${cost} (in={prompt_tokens}, cached={cached_tokens}, out={completion_tokens})"
+                f"💰 Session cost: ${cost} (in={prompt_tokens}, cached={cached_tokens}, "
+                f"out={completion_tokens}{f', delegated=${delegated_total}' if delegated_total else ''})"
             )
 
         if error:

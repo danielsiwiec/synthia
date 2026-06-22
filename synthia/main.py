@@ -37,6 +37,7 @@ from synthia.service.models import AppStartup
 from synthia.service.push import PushService
 from synthia.service.session_repository import SessionRepository
 from synthia.service.task import TaskService
+from synthia.service.task_repository import TaskRepository
 from synthia.telemetry import instrument_fastapi, loguru_otel_sink, setup_telemetry
 
 load_dotenv()
@@ -107,6 +108,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             episodic_tools = create_episodic_tools(db_pool)
 
             job_execution_repo = JobExecutionRepository(db_pool)
+            task_repository = TaskRepository(db_pool)
             skilltools = create_skilltools_tools(job_execution_repo)
 
             mcp_toolsets = build_mcp_toolsets(config.mcp_config_path)
@@ -116,7 +118,6 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
                 *memory_tools,
                 *scheduler_tools,
                 *admin_tools,
-                *episodic_tools,
                 *skilltools,
                 *mcp_toolsets,
             ]
@@ -142,6 +143,9 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
                 cwd=config.claude_cwd,
                 job_execution_repo=job_execution_repo,
                 skill_toolset=skill_toolset,
+                message_repository=chat_service.repository,
+                task_repository=task_repository,
+                front_tools=[*episodic_tools, *memory_tools, *scheduler_tools],
             )
 
             scheduler_service.start()
