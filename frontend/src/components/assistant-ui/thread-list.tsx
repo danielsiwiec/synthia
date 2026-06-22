@@ -10,27 +10,28 @@ import {
 import { PencilIcon, PlusIcon, TrashIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FC } from "react";
 
-export const ThreadList: FC = () => {
+export const ThreadList: FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
   return (
     <ThreadListPrimitive.Root className="aui-root aui-thread-list-root flex flex-col gap-1">
-      <ThreadListNew />
+      <ThreadListNew onNavigate={onNavigate} />
       <AuiIf condition={(s) => s.threads.isLoading}>
         <ThreadListSkeleton />
       </AuiIf>
       <AuiIf condition={(s) => !s.threads.isLoading}>
         <ThreadListPrimitive.Items>
-          {() => <ThreadListItem />}
+          {() => <ThreadListItem onNavigate={onNavigate} />}
         </ThreadListPrimitive.Items>
       </AuiIf>
     </ThreadListPrimitive.Root>
   );
 };
 
-const ThreadListNew: FC = () => {
+const ThreadListNew: FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
   return (
     <ThreadListPrimitive.New asChild>
       <Button
         variant="outline"
+        onClick={() => onNavigate?.()}
         className="aui-thread-list-new hover:bg-muted data-active:bg-muted h-9 justify-start gap-2 rounded-lg px-3 text-sm"
       >
         <PlusIcon className="size-4" />
@@ -112,8 +113,9 @@ const ThreadListItemEditor: FC<{ onDone: () => void }> = ({ onDone }) => {
   );
 };
 
-const ThreadListItem: FC = () => {
+const ThreadListItem: FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
   const [editing, setEditing] = useState(false);
+  const isMain = useThreadListItem((s) => s.isMain);
   return (
     <ThreadListItemPrimitive.Root className="aui-thread-list-item group hover:bg-muted focus-visible:bg-muted data-active:bg-muted flex h-9 items-center gap-2 rounded-lg transition-colors focus-visible:outline-none">
       {editing ? (
@@ -122,7 +124,12 @@ const ThreadListItem: FC = () => {
         </div>
       ) : (
         <>
-          <ThreadListItemPrimitive.Trigger className="aui-thread-list-item-trigger flex h-full min-w-0 flex-1 items-center px-3 text-start text-sm">
+          <ThreadListItemPrimitive.Trigger
+            onClick={() => {
+              if (isMain) onNavigate?.();
+            }}
+            className="aui-thread-list-item-trigger flex h-full min-w-0 flex-1 items-center px-3 text-start text-sm"
+          >
             <span className="aui-thread-list-item-title min-w-0 flex-1 truncate">
               <ThreadListItemPrimitive.Title fallback="New Chat" />
             </span>

@@ -84,7 +84,7 @@ export default function App() {
               </Button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2">
-              <ThreadList />
+              <ThreadList onNavigate={() => setCollapsed(true)} />
             </div>
             <div
               role="separator"
