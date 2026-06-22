@@ -3,9 +3,10 @@ import type {
   CompleteAttachment,
   PendingAttachment,
 } from "@assistant-ui/react";
-import heic2any from "heic2any";
 
 const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_IMAGE_EDGE = 1568;
+const _IMAGE_QUALITY = 0.85;
 const ACCEPT = "image/*,.heic,.heif,application/pdf,text/*,.csv,.json,.md";
 
 const _EXTENSION_MIME_TYPES: Record<string, string> = {
@@ -26,12 +27,45 @@ function _isHeic(file: File): boolean {
 
 async function _convertHeic(file: File): Promise<File> {
   try {
-    const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.9 });
-    const blob = Array.isArray(converted) ? converted[0] : converted;
+    const { heicTo } = await import("heic-to");
+    const blob = await heicTo({ blob: file, type: "image/jpeg", quality: 0.9 });
     const name = file.name.replace(/\.(heic|heif)$/i, "") + ".jpg";
     return new File([blob], name, { type: "image/jpeg" });
   } catch (error) {
     console.error("HEIC conversion failed, sending original:", error);
+    return file;
+  }
+}
+
+async function _downscaleImage(file: File): Promise<File> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const longEdge = Math.max(bitmap.width, bitmap.height);
+    if (longEdge <= MAX_IMAGE_EDGE) {
+      bitmap.close();
+      return file;
+    }
+    const scale = MAX_IMAGE_EDGE / longEdge;
+    const width = Math.round(bitmap.width * scale);
+    const height = Math.round(bitmap.height * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      bitmap.close();
+      return file;
+    }
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", _IMAGE_QUALITY),
+    );
+    if (!blob) return file;
+    const name = file.name.replace(/\.[^./]+$/, "") + ".jpg";
+    return new File([blob], name, { type: "image/jpeg" });
+  } catch (error) {
+    console.error("Image downscale failed, sending original:", error);
     return file;
   }
 }
@@ -57,7 +91,10 @@ export const attachmentAdapter: AttachmentAdapter = {
     if (file.size > MAX_BYTES) {
       throw new Error(`"${file.name}" exceeds the ${MAX_BYTES / 1024 / 1024}MB limit`);
     }
-    const resolved = _isHeic(file) ? await _convertHeic(file) : file;
+    let resolved = _isHeic(file) ? await _convertHeic(file) : file;
+    if (_attachmentType(_resolveContentType(resolved)) === "image") {
+      resolved = await _downscaleImage(resolved);
+    }
     const contentType = _resolveContentType(resolved);
     return {
       id: crypto.randomUUID(),

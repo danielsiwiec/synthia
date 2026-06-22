@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# vitest browser failure screenshots
+__screenshots__/
+# vitest browser runtime attachments
+.vitest-attachments/

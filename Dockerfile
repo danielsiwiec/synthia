@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.4
 FROM node:22-slim AS frontend
 WORKDIR /build/frontend
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend ./
