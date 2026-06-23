@@ -20,6 +20,7 @@ from synthia.agents.agent import (
     create_image_tool,
     record_consulted_persona,
     record_delegated_cost,
+    required_api_key,
 )
 from synthia.agents.personas import get_persona, persona_system_prompt
 from synthia.agents.skills import reload_skills
@@ -160,7 +161,8 @@ class TaskService:
             return False
         if not self._message_repository.is_chat_thread(thread_id):
             return False
-        if FRONT_MODEL.startswith("openai/") and not os.getenv("OPENAI_API_KEY"):
+        required_key = required_api_key(FRONT_MODEL)
+        if required_key and not os.getenv(required_key):
             return False
         return True
 

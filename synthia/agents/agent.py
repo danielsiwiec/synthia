@@ -6,6 +6,7 @@ import time
 import uuid
 from collections.abc import Callable
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Self
@@ -28,14 +29,41 @@ from synthia.telemetry import current_span, set_span_error, start_span, traced
 
 APP_NAME = "synthia"
 USER_ID = "default"
-DEFAULT_MODEL = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-6")
-FRONT_MODEL = os.getenv("FRONT_LLM_MODEL", "openai/gpt-5.4-nano")
-PERSONA_MODEL = os.getenv("PERSONA_LLM_MODEL", FRONT_MODEL)
 
-_INPUT_COST_PER_M = float(os.getenv("LLM_INPUT_COST_PER_M", "3.0"))
-_OUTPUT_COST_PER_M = float(os.getenv("LLM_OUTPUT_COST_PER_M", "15.0"))
-_FRONT_INPUT_COST_PER_M = float(os.getenv("FRONT_LLM_INPUT_COST_PER_M", "0.05"))
-_FRONT_OUTPUT_COST_PER_M = float(os.getenv("FRONT_LLM_OUTPUT_COST_PER_M", "0.40"))
+
+@dataclass(frozen=True)
+class ModelSpec:
+    name: str
+    input_cost_per_m: float
+    output_cost_per_m: float
+
+
+# ─── Model configuration: single source of truth ─────────────────────────────
+# The front and task agent models (and their pricing) are defined ONLY here.
+# Both the deployed app and the test suite import these constants, so this block
+# is the one place to change a model. The two agents may use different models.
+TASK_MODEL = ModelSpec("gemini/gemini-3.1-flash-lite", input_cost_per_m=0.10, output_cost_per_m=0.40)
+FRONT_MODEL_SPEC = ModelSpec("gemini/gemini-3.1-flash-lite", input_cost_per_m=0.10, output_cost_per_m=0.40)
+PERSONA_MODEL_SPEC = FRONT_MODEL_SPEC
+
+DEFAULT_MODEL = TASK_MODEL.name
+FRONT_MODEL = FRONT_MODEL_SPEC.name
+PERSONA_MODEL = PERSONA_MODEL_SPEC.name
+
+_MODEL_SPECS = {spec.name: spec for spec in (TASK_MODEL, FRONT_MODEL_SPEC, PERSONA_MODEL_SPEC)}
+_FALLBACK_PRICING = (3.0, 15.0)
+
+_PROVIDER_API_KEYS = {
+    "openai": "OPENAI_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+}
+
+
+def required_api_key(model_name: str) -> str | None:
+    return _PROVIDER_API_KEYS.get(model_name.split("/", 1)[0])
+
+
 _THINKING_BUDGET = int(os.getenv("LLM_THINKING_BUDGET", "2048"))
 _MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "32000"))
 _PROMPT_CACHING = os.getenv("LLM_PROMPT_CACHING", "1") != "0"
@@ -69,9 +97,10 @@ def _model_kwargs(model_name: str) -> dict[str, Any]:
 
 
 def _pricing(model_name: str) -> tuple[float, float]:
-    if _is_anthropic(model_name):
-        return _INPUT_COST_PER_M, _OUTPUT_COST_PER_M
-    return _FRONT_INPUT_COST_PER_M, _FRONT_OUTPUT_COST_PER_M
+    spec = _MODEL_SPECS.get(model_name)
+    if spec is not None:
+        return spec.input_cost_per_m, spec.output_cost_per_m
+    return _FALLBACK_PRICING
 
 
 def _token_cost(

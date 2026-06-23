@@ -6,12 +6,17 @@ from time import perf_counter
 
 import pytest
 
-from synthia.agents.agent import FRONT_MODEL, Agent, build_front_instruction
+from synthia.agents.agent import FRONT_MODEL, Agent, build_front_instruction, required_api_key
 from synthia.agents.projects.context import build_project_context
+
+_FRONT_KEY = required_api_key(FRONT_MODEL)
 
 pytestmark = [
     pytest.mark.eval,
-    pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="front agent eval needs OPENAI_API_KEY"),
+    pytest.mark.skipif(
+        not (_FRONT_KEY and os.getenv(_FRONT_KEY)),
+        reason=f"front agent eval needs {_FRONT_KEY}",
+    ),
 ]
 
 # Tweak these to evaluate different front-agent configurations.

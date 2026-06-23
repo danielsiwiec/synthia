@@ -111,9 +111,10 @@ These evals are a debugging tool, not just a gate. Run them, read the failure de
 ## Running
 
 ```bash
-set -a; source .env; set +a            # eval needs OPENAI_API_KEY (front model is nano)
 uv run pytest tests/test_eval_front_agent.py -p no:testmon -o addopts="" -m eval
 ```
 
-The suite is gated by `@pytest.mark.eval` + `skipif(no OPENAI_API_KEY)`, so it is opt-in and excluded
-from the default `make test` run.
+`conftest.py` loads `.env`, so the provider key is picked up automatically. The model is the single
+source of truth in `synthia/agents/agent.py` (`FRONT_MODEL_SPEC`); the suite is gated by
+`@pytest.mark.eval` + a `skipif` on that model's provider key (derived via `required_api_key`), so it
+is opt-in and excluded from the default `make test` run.

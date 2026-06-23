@@ -4,11 +4,12 @@ from pathlib import Path
 import asyncpg
 import pytest
 
-from synthia.agents.agent import Agent
+from synthia.agents.agent import DEFAULT_MODEL, Agent, required_api_key
 from synthia.migrations.runner import run_migrations
 from synthia.service.task_repository import TaskRepository
 
-_HAS_KEYS = bool(os.getenv("OPENAI_API_KEY") and os.getenv("ANTHROPIC_API_KEY"))
+_TASK_KEY = required_api_key(DEFAULT_MODEL)
+_HAS_KEYS = bool(_TASK_KEY and os.getenv(_TASK_KEY))
 
 
 @pytest.fixture
@@ -92,7 +93,7 @@ async def test_search_filters_by_query_across_fields(repo: TaskRepository) -> No
     assert {t["id"] for t in await repo.search("")} == {"t1", "t2"}
 
 
-@pytest.mark.skipif(not _HAS_KEYS, reason="requires OPENAI_API_KEY and ANTHROPIC_API_KEY")
+@pytest.mark.skipif(not _HAS_KEYS, reason=f"requires {_TASK_KEY}")
 async def test_explicit_session_id_resumes_context() -> None:
     agent = await Agent.create(cwd=Path(__file__).parent)
     try:
