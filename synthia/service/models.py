@@ -14,6 +14,7 @@ class TaskRequest(BaseModel):
     task: str
     thread_id: int
     images: list[TaskImage] = []
+    persona: str | None = None
 
 
 class TaskResponse(BaseModel):
@@ -39,6 +40,12 @@ class OutgoingImage(BaseModel):
     name: str
     content_type: str
     caption: str = ""
+
+
+class ProjectSelected(BaseModel):
+    thread_id: int
+    project_id: str
+    name: str = ""
 
 
 class TaskTrigger(BaseModel):

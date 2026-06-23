@@ -7,6 +7,7 @@ from time import perf_counter
 import pytest
 
 from synthia.agents.agent import FRONT_MODEL, Agent, build_front_instruction
+from synthia.agents.projects.context import build_project_context
 
 pytestmark = [
     pytest.mark.eval,
@@ -60,6 +61,31 @@ TV = {
     "result": "The Sony BRAVIA 9 (2024) is the newer flagship above the A95L.",
     "status": "done",
 }
+GARAGE_PROJECT = {
+    "id": "proj-garage",
+    "name": "Garage shelving build",
+    "status": "active",
+    "document": "# Garage shelving build\nInstall wall shelves this weekend.",
+}
+TRIP_PROJECT = {
+    "id": "proj-japan",
+    "name": "Japan trip",
+    "status": "active",
+    "document": "# Japan trip\nPlan a two-week itinerary for the spring.",
+}
+MARMOT_PROJECT = {
+    "id": "proj-marmot",
+    "name": "MarmotCD",
+    "status": "active",
+    "document": "# MarmotCD\nFeature readiness platform for the agentic software era.",
+}
+VACUUM_PROJECT = {
+    "id": "aea1f33a-4f8e-4a77-8739-b441c442df1d",
+    "name": "New robot vacuum purchase",
+    "status": "active",
+    "next_step": "Refresh the shortlist of candidates",
+    "document": "# New robot vacuum purchase\n\n## Shortlist (draft)\n- (to be researched)",
+}
 GARMIN_CONV = {
     "id": "conv-garmin",
     "summary": "Discussed the Garmin FR970 falsely logging sleep and stairs; decided to update the firmware to fix it.",
@@ -81,6 +107,7 @@ class StubWorld:
     jobs: list[dict] = field(default_factory=list)
     conversations: list[dict] = field(default_factory=list)
     memories: list[dict] = field(default_factory=list)
+    projects: list[dict] = field(default_factory=list)
     model: str = EVAL_MODEL
     instruction: str | None = EVAL_INSTRUCTION
 
@@ -203,6 +230,19 @@ class StubWorld:
                     sections.append("Jobs:\n" + "\n".join(lines))
             return "\n\n".join(sections) if sections else "No matching tasks or jobs found."
 
+        async def consult_persona(persona: str, question: str, session_id: str = "") -> str:
+            """Consult a "thinking hat" persona for a focused, single-lens perspective, then weave it
+            into your own answer. The persona is a lightweight reasoner with no tools.
+
+            Args:
+                persona: One of "white", "red", "black", "yellow", "green", or "blue".
+                question: The question or topic to consider from that persona's lens.
+                session_id: Optional. Pass a persona_session_id returned earlier to continue.
+            """
+            world.calls.append({"tool": "consult_persona", "persona": persona, "question": question})
+            sid = session_id or f"persona-{persona}-1"
+            return f"persona_session_id={sid}\n\n[{persona} hat perspective on: {question[:60]}]"
+
         async def episodic_search(query: str, days: int = 30) -> str:
             """Search past Synthia conversations by keyword. Use this to find context from previous
             sessions.
@@ -289,11 +329,94 @@ class StubWorld:
             world.calls.append({"tool": "add_memory", "content": content})
             return f"Saved memory {mid}."
 
+        async def list_projects() -> str:
+            """List all of the user's projects with their id, name, status, and document."""
+            world.calls.append({"tool": "list_projects"})
+            if not world.projects:
+                return "No projects found."
+            return "\n".join(
+                f"- id={p['id']} | {p['name']} | {p['status']} | {(p.get('document') or '')[:120]}"
+                for p in world.projects
+            )
+
+        async def select_project(project_id: str) -> str:
+            """Open a project in the user's view and make it the selected one. If you don't know the
+            id, call list_projects first.
+
+            Args:
+                project_id: The id of the project to open.
+            """
+            world.calls.append({"tool": "select_project", "project_id": project_id})
+            match = next((p for p in world.projects if p["id"] == project_id), None)
+            if match is None:
+                return f"Project {project_id} not found."
+            return f'Opened project "{match["name"]}" in the user\'s view.'
+
+        async def create_project(name: str, document: str = "", next_step: str = "") -> str:
+            """Create a new project with a name, a markdown document, and a short next step.
+
+            Args:
+                name: The project name.
+                document: The markdown document with details, plan, or notes.
+                next_step: A short statement of the next action.
+            """
+            pid = f"proj-new-{len(world.projects) + 1}"
+            world.projects.append(
+                {"id": pid, "name": name, "status": "active", "document": document, "next_step": next_step}
+            )
+            world.calls.append({"tool": "create_project", "name": name, "project_id": pid})
+            return f"Created project {pid}."
+
+        async def update_project(
+            project_id: str, name: str = "", status: str = "", document: str = "", next_step: str = ""
+        ) -> str:
+            """Update an existing project's name, status, document, or next step. Only the fields you
+            pass are changed. The document field REPLACES the existing document.
+
+            Args:
+                project_id: The id of the project to update.
+                name: Optional new name.
+                status: Optional new status — 'active' or 'closed'.
+                document: Optional new markdown document (replaces the existing one).
+                next_step: Optional new next step.
+            """
+            match = next((p for p in world.projects if p["id"] == project_id), None)
+            world.calls.append(
+                {
+                    "tool": "update_project",
+                    "project_id": project_id,
+                    "name": name,
+                    "status": status,
+                    "document": document,
+                    "next_step": next_step,
+                }
+            )
+            if match is None:
+                return f"Project {project_id} not found."
+            for key, value in (("name", name), ("status", status), ("document", document), ("next_step", next_step)):
+                if value:
+                    match[key] = value
+            return f"Project {project_id} updated."
+
+        async def delete_project(project_id: str) -> str:
+            """Delete a project permanently.
+
+            Args:
+                project_id: The id of the project to delete.
+            """
+            world.calls.append({"tool": "delete_project", "project_id": project_id})
+            before = len(world.projects)
+            world.projects[:] = [p for p in world.projects if p["id"] != project_id]
+            if len(world.projects) < before:
+                return f"Project {project_id} deleted."
+            return f"Project {project_id} not found."
+
         return [
             delegate_to_task_agent,
             dispatch_background_task,
             check_tasks,
             find_past_work,
+            consult_persona,
             episodic_search,
             episodic_show,
             add_job,
@@ -301,6 +424,11 @@ class StubWorld:
             delete_job,
             search_memories,
             add_memory,
+            list_projects,
+            select_project,
+            create_project,
+            update_project,
+            delete_project,
         ]
 
     async def front_agent(self) -> Agent:
@@ -389,6 +517,25 @@ async def test_eval_start_new_task() -> None:
             await agent.disconnect()
 
     _assert("start_new_task", await run_eval(scenario), min_rate=0.75, max_seconds=50)
+
+
+async def test_eval_research_runs_in_background() -> None:
+    async def scenario():
+        world = StubWorld()
+        agent = await world.front_agent()
+        try:
+            text = await _run(
+                world,
+                agent,
+                "Research current robot vacuums under $1000, analyze recent reviews and deals, and "
+                "give me a shortlist.",
+            )
+            backgrounded = world.called("dispatch_background_task") and not world.called("delegate_to_task_agent")
+            return backgrounded, f"calls={[c['tool'] for c in world.delegations()]} | {text[:60]}"
+        finally:
+            await agent.disconnect()
+
+    _assert("research_runs_in_background", await run_eval(scenario), min_rate=0.75, max_seconds=50)
 
 
 async def test_eval_direct_answer_no_delegation() -> None:
@@ -512,6 +659,102 @@ async def test_eval_continue_task_same_session() -> None:
             await agent.disconnect()
 
     _assert("continue_same_session", await run_eval(scenario), min_rate=0.75, max_seconds=75)
+
+
+async def test_eval_select_project_by_name() -> None:
+    async def scenario():
+        world = StubWorld(projects=[GARAGE_PROJECT, TRIP_PROJECT])
+        agent = await world.front_agent()
+        try:
+            await _run(world, agent, "Pull up my Japan trip project so we can work on it.")
+            selects = [c for c in world.calls if c["tool"] == "select_project"]
+            ok = any(c["project_id"] == TRIP_PROJECT["id"] for c in selects)
+            return ok, f"selects={[c.get('project_id') for c in selects]}"
+        finally:
+            await agent.disconnect()
+
+    _assert("select_project_by_name", await run_eval(scenario), min_rate=0.75, max_seconds=60)
+
+
+async def test_eval_select_project_on_lets_work_on() -> None:
+    # Regression: "let's work on marmot" should select the project, not just list it and ask which
+    # direction to go (the agent's earlier miss in a real session).
+    async def scenario():
+        world = StubWorld(projects=[MARMOT_PROJECT, GARAGE_PROJECT])
+        agent = await world.front_agent()
+        try:
+            await _run(world, agent, "let's work on marmot")
+            selects = [c for c in world.calls if c["tool"] == "select_project"]
+            ok = any(c["project_id"] == MARMOT_PROJECT["id"] for c in selects)
+            return ok, f"selects={[c.get('project_id') for c in selects]}"
+        finally:
+            await agent.disconnect()
+
+    _assert("select_project_lets_work_on", await run_eval(scenario), min_rate=0.75, max_seconds=60)
+
+
+async def test_eval_project_update_from_research_done_by_front() -> None:
+    # Regression: in a real session the user, working inside a project, asked to research and update
+    # the project doc. The front agent delegated the WHOLE job — including the project id — to the
+    # task agent, which has no project tools, mistook the project's UUID for a Notion page, and asked
+    # the user to share that page with the Synthia integration. The front agent must instead delegate
+    # ONLY the research (never handing over the project id), and when that result comes back, apply
+    # it to the project itself with update_project. This models the two turns: the dispatch turn, then
+    # the background completion routed back to the front agent.
+    async def scenario():
+        world = StubWorld(projects=[VACUUM_PROJECT])
+        agent = await world.front_agent()
+        context = build_project_context(VACUUM_PROJECT)
+        try:
+            await _run(
+                world,
+                agent,
+                f"{context}\n\ndo a full research on the current best robot vacuums that meet my "
+                "must-haves and update the shortlist of candidates in the project doc",
+            )
+            delegated = bool(world.delegations())
+            leaked = any(VACUUM_PROJECT["id"] in (d.get("request") or "") for d in world.delegations())
+            await _run(
+                world,
+                agent,
+                '[The background task you dispatched (label: "robot vacuum research") just finished. '
+                "Its result is below. If this work was meant to update a project, apply it now to that "
+                "project with your project tools — keep its next step current — then tell me briefly "
+                "what you changed. Do not start any new task.]\n\nResult:\nShortlist: Roborock Saros "
+                "10R, Roomba Combo 10 Max, and Ecovacs Deebot X8 Pro Omni — all under $1000 with "
+                "mopping, self-emptying bases, strong carpet pickup and obstacle avoidance.",
+            )
+            updated = any(
+                c["tool"] == "update_project" and c["project_id"] == VACUUM_PROJECT["id"] for c in world.calls
+            )
+            ok = delegated and not leaked and updated
+            return (
+                ok,
+                f"delegated={delegated} leaked={leaked} updated={updated} calls={[c['tool'] for c in world.calls]}",
+            )
+        finally:
+            await agent.disconnect()
+
+    _assert("project_update_from_research", await run_eval(scenario), min_rate=0.75, max_seconds=80)
+
+
+async def test_eval_consult_persona_for_critical_take() -> None:
+    async def scenario():
+        world = StubWorld()
+        agent = await world.front_agent()
+        try:
+            text = await _run(
+                world,
+                agent,
+                "Give me a brutally critical take on quitting my job to day-trade crypto full time.",
+            )
+            consulted = [c for c in world.calls if c["tool"] == "consult_persona"]
+            ok = bool(consulted) and not world.delegations()
+            return ok, f"personas={[c.get('persona') for c in consulted]} | {text[:60]}"
+        finally:
+            await agent.disconnect()
+
+    _assert("consult_persona_critical", await run_eval(scenario), min_rate=0.75, max_seconds=50)
 
 
 # --- Stretch evals (the agent is not expected to do these reliably) ---------

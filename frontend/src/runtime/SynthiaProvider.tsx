@@ -20,6 +20,7 @@ import {
   type ThreadSummary,
 } from "@/lib/api";
 import { attachmentAdapter } from "@/runtime/attachmentAdapter";
+import { PersonaContext } from "@/runtime/personaContext";
 import { connectThreadEvents, type SseConnection } from "@/lib/sse";
 import { initPush } from "@/lib/push";
 
@@ -123,7 +124,15 @@ function _convertMessage(m: SynthiaMessage): ThreadMessageLike {
     const images = m.attachments.map((a) => ({ type: "image" as const, image: a.url }));
     return { role: "assistant", id: m.id, content: [...caption, ...images] };
   }
-  return { role: "assistant", id: m.id, content: [{ type: "text", text: m.content }] };
+  const persona = m.metadata?.persona ?? null;
+  const consultedPersonas = m.metadata?.consulted_personas ?? [];
+  const hasPersona = Boolean(persona) || consultedPersonas.length > 0;
+  return {
+    role: "assistant",
+    id: m.id,
+    content: [{ type: "text", text: m.content }],
+    ...(hasPersona ? { metadata: { custom: { persona, consultedPersonas } } } : {}),
+  };
 }
 
 function _inferRunning(messages: SynthiaMessage[]): boolean {
@@ -140,19 +149,57 @@ function _inferRunning(messages: SynthiaMessage[]): boolean {
   return lastResult < lastUser;
 }
 
-export function SynthiaProvider({ children }: { children: ReactNode }) {
+export function SynthiaProvider({
+  children,
+  selectedProjectId = null,
+  onThreadSelect,
+  onAgentResult,
+  onProjectSelected,
+}: {
+  children: ReactNode;
+  selectedProjectId?: string | null;
+  onThreadSelect?: () => void;
+  onAgentResult?: () => void;
+  onProjectSelected?: (projectId: string) => void;
+}) {
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<SynthiaMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [selectedPersona, setSelectedPersona] = useState<string | null>(null);
 
   const threadIdRef = useRef<string | null>(null);
   const messagesRef = useRef<SynthiaMessage[]>([]);
   const connRef = useRef<SseConnection | null>(null);
+  const selectedProjectIdRef = useRef<string | null>(selectedProjectId);
+  const selectedPersonaRef = useRef<string | null>(null);
+  const onThreadSelectRef = useRef(onThreadSelect);
+  const onAgentResultRef = useRef(onAgentResult);
+  const onProjectSelectedRef = useRef(onProjectSelected);
 
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    selectedProjectIdRef.current = selectedProjectId;
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    selectedPersonaRef.current = selectedPersona;
+  }, [selectedPersona]);
+
+  useEffect(() => {
+    onThreadSelectRef.current = onThreadSelect;
+  }, [onThreadSelect]);
+
+  useEffect(() => {
+    onAgentResultRef.current = onAgentResult;
+  }, [onAgentResult]);
+
+  useEffect(() => {
+    onProjectSelectedRef.current = onProjectSelected;
+  }, [onProjectSelected]);
 
   const refreshThreads = useCallback(async () => {
     setThreads(await listThreads());
@@ -210,11 +257,18 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
           });
           setIsRunning(true);
         },
-        onResult: (result) => {
+        onResult: (result, meta) => {
+          const metadata =
+            meta && (meta.persona || meta.consultedPersonas?.length)
+              ? { persona: meta.persona ?? null, consulted_personas: meta.consultedPersonas ?? [] }
+              : null;
           setMessages((prev) => {
             const last = prev[prev.length - 1];
             if (last?.role === "assistant" && last.message_type === "result" && last.id.startsWith("s-")) {
-              return [...prev.slice(0, -1), { ...last, id: `r-${Date.now()}-${prev.length}`, content: result }];
+              return [
+                ...prev.slice(0, -1),
+                { ...last, id: `r-${Date.now()}-${prev.length}`, content: result, metadata },
+              ];
             }
             return [
               ...prev,
@@ -224,17 +278,21 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
                 role: "assistant",
                 message_type: "result",
                 content: result,
-                metadata: null,
+                metadata,
                 created_at: null,
               },
             ];
           });
           setIsRunning(false);
           void refreshThreads();
+          onAgentResultRef.current?.();
         },
         onTitle: (title) => {
           setThreads((prev) => prev.map((t) => (t.id === threadId ? { ...t, title } : t)));
           void refreshThreads();
+        },
+        onProjectSelected: (projectId) => {
+          onProjectSelectedRef.current?.(projectId);
         },
         onImage: (data) => {
           void (async () => {
@@ -270,6 +328,7 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
   );
 
   const newThread = useCallback(() => {
+    onThreadSelectRef.current?.();
     const id = String(Date.now());
     threadIdRef.current = id;
     setCurrentThreadId(id);
@@ -296,6 +355,7 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
 
   const switchThread = useCallback(
     async (id: string) => {
+      onThreadSelectRef.current?.();
       threadIdRef.current = id;
       setCurrentThreadId(id);
       await _syncCurrentThread();
@@ -359,7 +419,14 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
       ]);
       setIsRunning(true);
       await connRef.current?.opened;
-      await sendMessage(tid, text, null, outgoing.length ? outgoing : undefined);
+      await sendMessage(
+        tid,
+        text,
+        null,
+        outgoing.length ? outgoing : undefined,
+        selectedProjectIdRef.current,
+        selectedPersonaRef.current,
+      );
       void refreshThreads();
     },
     [_connect, refreshThreads],
@@ -423,7 +490,9 @@ export function SynthiaProvider({ children }: { children: ReactNode }) {
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <TooltipProvider>{children}</TooltipProvider>
+      <PersonaContext.Provider value={{ persona: selectedPersona, setPersona: setSelectedPersona }}>
+        <TooltipProvider>{children}</TooltipProvider>
+      </PersonaContext.Provider>
     </AssistantRuntimeProvider>
   );
 }

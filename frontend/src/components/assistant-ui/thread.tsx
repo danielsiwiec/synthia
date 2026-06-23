@@ -3,6 +3,8 @@ import {
   ComposerAttachments,
   UserMessageAttachments,
 } from "@/components/assistant-ui/attachment";
+import { PersonaBadges } from "@/components/assistant-ui/persona-badges";
+import { PersonaSelector } from "@/components/assistant-ui/persona-selector";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { Reasoning } from "@/components/assistant-ui/reasoning";
 import {
@@ -191,7 +193,10 @@ const Composer: FC = () => {
 const ComposerAction: FC = () => {
   return (
     <div className="aui-composer-action-wrapper relative flex items-center justify-between">
-      <ComposerAddAttachment />
+      <div className="flex items-center gap-1">
+        <ComposerAddAttachment />
+        <PersonaSelector />
+      </div>
       <AuiIf condition={(s) => !s.thread.isRunning}>
         <ComposerPrimitive.Send asChild>
           <TooltipIconButton
@@ -259,12 +264,18 @@ const AssistantImage: FC<{ src: string }> = ({ src }) => {
 };
 
 const AssistantMessage: FC = () => {
+  const custom = useAuiState((s) => s.message.metadata?.custom) as
+    | { persona?: string | null; consultedPersonas?: string[] }
+    | undefined;
   return (
     <MessagePrimitive.Root
       data-slot="aui_assistant-message-root"
       data-role="assistant"
       className="fade-in slide-in-from-bottom-1 animate-in relative mb-2 duration-150"
     >
+      {custom && (
+        <PersonaBadges persona={custom.persona} consulted={custom.consultedPersonas} />
+      )}
       <div
         data-slot="aui_assistant-message-content"
         // [contain-intrinsic-size:auto_24px] fixes issue #4104, don't change without checking for regressions

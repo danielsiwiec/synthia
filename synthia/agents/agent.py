@@ -30,18 +30,21 @@ APP_NAME = "synthia"
 USER_ID = "default"
 DEFAULT_MODEL = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-6")
 FRONT_MODEL = os.getenv("FRONT_LLM_MODEL", "openai/gpt-5.4-nano")
+PERSONA_MODEL = os.getenv("PERSONA_LLM_MODEL", FRONT_MODEL)
 
 _INPUT_COST_PER_M = float(os.getenv("LLM_INPUT_COST_PER_M", "3.0"))
 _OUTPUT_COST_PER_M = float(os.getenv("LLM_OUTPUT_COST_PER_M", "15.0"))
 _FRONT_INPUT_COST_PER_M = float(os.getenv("FRONT_LLM_INPUT_COST_PER_M", "0.05"))
 _FRONT_OUTPUT_COST_PER_M = float(os.getenv("FRONT_LLM_OUTPUT_COST_PER_M", "0.40"))
 _THINKING_BUDGET = int(os.getenv("LLM_THINKING_BUDGET", "2048"))
+_MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "32000"))
 _PROMPT_CACHING = os.getenv("LLM_PROMPT_CACHING", "1") != "0"
 _CACHE_READ_MULTIPLIER = 0.1
 _MAX_TURNS = int(os.getenv("MAX_TURNS", "100"))
 _MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "50000"))
 
 _delegated_cost: ContextVar[list[float] | None] = ContextVar("_delegated_cost", default=None)
+_consulted_personas: ContextVar[list[str] | None] = ContextVar("_consulted_personas", default=None)
 
 
 def _is_anthropic(model_name: str) -> bool:
@@ -52,6 +55,8 @@ def _model_kwargs(model_name: str) -> dict[str, Any]:
     if not _is_anthropic(model_name):
         return {}
     kwargs: dict[str, Any] = {}
+    if _MAX_OUTPUT_TOKENS > 0:
+        kwargs["max_tokens"] = _MAX_OUTPUT_TOKENS
     if _PROMPT_CACHING:
         kwargs["cache_control_injection_points"] = [
             {"location": "message", "role": "system"},
@@ -89,6 +94,12 @@ def record_delegated_cost(cost: float | None) -> None:
     acc = _delegated_cost.get()
     if acc is not None and cost:
         acc.append(cost)
+
+
+def record_consulted_persona(persona_id: str | None) -> None:
+    acc = _consulted_personas.get()
+    if acc is not None and persona_id and persona_id not in acc:
+        acc.append(persona_id)
 
 
 def _truncate_tool_callback(tool: Any, args: Any, tool_context: Any, tool_response: Any) -> dict | None:
@@ -187,8 +198,9 @@ never a multi-clause explanation of how your memory works.
 
 ## Your tools
 - delegate_to_task_agent(request, task_id?): run the capable task agent NOW and wait for its result.
-  Use this for anything that needs tools, web access, files, code, research, or multi-step work AND
-  that the user is actively waiting on. The task agent is powerful: it can control a computer, run
+  Use this ONLY for a quick, single-step lookup the user is actively waiting on that should finish in
+  well under a minute; for anything longer or multi-step prefer dispatch_background_task (see "Sync vs
+  background" below). The task agent is powerful: it can control a computer, run
   shell commands and scripts, read and write files, drive a real web browser, manage downloads, and
   use many skills — assume it CAN do almost any operational task. Never tell the user you can't do
   something the task agent could do; delegate it instead. Pass the user's actual request straight
@@ -204,6 +216,13 @@ never a multi-clause explanation of how your memory works.
 - find_past_work(query?, kind?): look up your full history of past tasks and scheduled jobs — well
   beyond the few recent tasks shown below. Use it to recall earlier work, find an old task to resume
   (it returns task_ids), or check whether a scheduled job ran. kind is "task", "job", or "all".
+- consult_persona(persona, question, session_id?): get a focused single-lens perspective from a
+  "thinking hat" — "black" (critical, risks), "yellow" (optimistic, benefits), "green" (creative,
+  ideas), "white" (facts only), "red" (gut feeling), or "blue" (big-picture, process). Use it when a
+  sharper angle would improve your answer — to pressure-test an idea, brainstorm, or weigh pros and
+  cons. Weave the perspective into your reply in your OWN voice; never mention personas, hats, or that
+  you consulted anything. It is a thinking aid only — it has no tools, so use the task agent for real
+  work. Reuse a returned persona_session_id to continue the same line of thought.
 - episodic_search(query) / episodic_show(id): search summaries of your past conversations with the
   user, and read a full one by id.
 
@@ -213,6 +232,35 @@ You manage the user's durable memories and their recurring automations directly:
 - list_jobs() / add_job(name, start_date, seconds, task) / delete_job(name): view, create, or remove
   the user's scheduled jobs. A "job" is a recurring automation, distinct from a one-off task.
 Do this work yourself with these tools; do not hand memory or job management to the task agent.
+
+## Projects (handle these yourself — do NOT delegate)
+You also manage the user's projects directly. A project is a tracked piece of work with a name, a
+status (active or closed), a creation date, a single short next step, and a markdown document
+holding its details, plan, or notes.
+- list_projects(): show all projects with their id, name, status, next step, creation date, and
+  document.
+- create_project(name, document, next_step): start a new project. Put the details, plan, or notes in
+  the markdown document, and set next_step to a short (about 5-10 word) statement of the next action.
+- update_project(project_id, name?, status?, document?, next_step?): rename a project, set its status
+  to 'active' or 'closed', edit its document, or update its next step. The document field REPLACES
+  the whole document, so when editing, pass the full updated markdown, not just the change. Look up
+  the current document with list_projects first when you need to amend it. Keep next_step current as
+  work progresses — a concise, actionable statement of the single next action.
+- delete_project(project_id): remove a project permanently.
+- select_project(project_id): open a project in the user's view and make it the selected one, so you
+  are both working in the context of that project. Phrases like "let's work on X", "work on X",
+  "open X", "pull up X", or "switch to X" are ALL requests to select that project — call this. If you
+  don't know its id, call list_projects first to find it (match even a partial or lowercase name),
+  then select_project with that id. Do NOT just summarize the project or ask which direction to go
+  without selecting it first — select it, then you can ask. After creating a project the user wants
+  to work on, select it too.
+All project edits are yours: never delegate a project change, and never give a project id to the
+task agent — it has no project tools and would mistake the id for an external resource (e.g. a Notion
+page) and fail. When a change needs information you must gather first (research, a lookup, an
+operational step), delegate ONLY that gathering to the task agent (no project id, no instruction to
+edit anything); you will be handed its result when it finishes, and THEN you write that result into
+the project yourself with update_project. Phrases like "replace", "update the doc", "add this", or
+"put it in the project" while a project is in context are project edits — do them yourself.
 
 ## Looking things up before saying you don't know
 If the user refers to something you don't see in the recent activity below, search before you say you
@@ -226,10 +274,16 @@ own clarifying question instead; if the task agent did the work, show the user w
 the user for clarification when you have NOT delegated AND the request genuinely cannot start without
 it — and even then, prefer to just delegate and let the task agent ask if it actually gets stuck.
 
-## Sync vs background
-If the user is waiting and the work is quick, use delegate_to_task_agent. If it is long-running, or
-the user asked you to do it in the background / report back later, or wants to continue chatting, use
-dispatch_background_task.
+## Sync vs background (decide deliberately every time you delegate)
+Default to dispatch_background_task. Only use delegate_to_task_agent when the work is a quick,
+single-step lookup the user is actively waiting on and that should finish in well under a minute
+(e.g. a single fact, one page, one short command).
+Use dispatch_background_task whenever ANY of these is true:
+- the work needs web research, browsing, comparison shopping, or reading multiple sources;
+- it is multi-step or likely to take more than ~30-60 seconds;
+- the user asked you to do it in the background / report back later, or wants to keep chatting.
+When unsure, choose dispatch_background_task: a backgrounded result is delivered to the chat
+automatically, while a long sync delegation blocks the whole conversation until it finishes.
 
 ## Task continuity (IMPORTANT)
 Each task runs in its own persistent session identified by a task_id, which both delegate tools
@@ -288,6 +342,8 @@ class Result(BaseModel):
     tool_call_names: list[str] = []
     skill_names: list[str] = []
     duration_s: float | None = None
+    persona: str | None = None
+    consulted_personas: list[str] = []
 
     def render(self, short: bool = False) -> str:
         return f"{'✅' if self.success else '🔴'} {self.result if self.success else self.error}"
@@ -528,11 +584,13 @@ class Agent:
         thread_id: int | None = None,
         images: list[TaskImage] | None = None,
         session_id: str | None = None,
+        persona: str | None = None,
     ) -> Result | None:
         session_id = session_id or (str(thread_id) if thread_id is not None else uuid.uuid4().hex)
         prompt = f"{objective}\n\nthread_id: {thread_id}" if (thread_id and self._prompt_thread_hint) else objective
 
         _dc_token = _delegated_cost.set([])
+        _cp_token = _consulted_personas.set([])
         await self._ensure_session(session_id)
 
         if thread_id:
@@ -574,8 +632,9 @@ class Agent:
                 completion_tokens += getattr(usage, "candidates_token_count", 0) or 0
                 cached_tokens += getattr(usage, "cached_content_token_count", 0) or 0
 
-            if getattr(event, "error_message", None):
-                error = event.error_message
+            event_error = getattr(event, "error_message", None)
+            if event_error:
+                error = event_error
 
             if getattr(event, "partial", False):
                 if thread_id:
@@ -630,6 +689,8 @@ class Agent:
 
                 if text and not is_thought:
                     final_text = text
+                    if not event_error:
+                        error = None
 
             if capped:
                 break
@@ -638,6 +699,8 @@ class Agent:
 
         delegated_total = sum(_delegated_cost.get() or [])
         _delegated_cost.reset(_dc_token)
+        consulted_personas = list(_consulted_personas.get() or [])
+        _consulted_personas.reset(_cp_token)
         cost: float | None = None
         if prompt_tokens or completion_tokens or delegated_total:
             front_cost = _token_cost(
@@ -665,6 +728,8 @@ class Agent:
             tool_call_names=executed_tool_names,
             skill_names=skill_names,
             duration_s=round(time.perf_counter() - start_time, 3),
+            persona=persona,
+            consulted_personas=consulted_personas,
         )
         message_count += 1
         if thread_id:

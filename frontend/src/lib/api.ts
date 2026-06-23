@@ -8,6 +8,16 @@ export interface ThreadSummary {
   updated_at: string | null;
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  status: "active" | "closed";
+  next_step: string;
+  document: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 export interface OutgoingAttachment {
   name: string;
   content_type: string;
@@ -28,7 +38,12 @@ export interface SynthiaMessage {
   role: Role;
   message_type: MessageType;
   content: string;
-  metadata: { reaction?: string; [key: string]: unknown } | null;
+  metadata: {
+    reaction?: string;
+    persona?: string | null;
+    consulted_personas?: string[];
+    [key: string]: unknown;
+  } | null;
   created_at: string | null;
   attachments?: DisplayAttachment[];
 }
@@ -42,6 +57,10 @@ export function listThreads(): Promise<ThreadSummary[]> {
   return fetch("/chat/threads").then((r) => _json<ThreadSummary[]>(r));
 }
 
+export function listProjects(): Promise<Project[]> {
+  return fetch("/chat/projects").then((r) => _json<Project[]>(r));
+}
+
 export function getMessages(threadId: string): Promise<SynthiaMessage[]> {
   return fetch(`/chat/threads/${threadId}/messages`).then((r) =>
     _json<SynthiaMessage[]>(r),
@@ -53,11 +72,19 @@ export async function sendMessage(
   content: string,
   reaction: string | null,
   attachments?: OutgoingAttachment[],
+  projectId?: string | null,
+  persona?: string | null,
 ): Promise<void> {
   await fetch(`/chat/threads/${threadId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content, reaction, attachments }),
+    body: JSON.stringify({
+      content,
+      reaction,
+      attachments,
+      project_id: projectId ?? null,
+      persona: persona ?? null,
+    }),
   });
 }
 

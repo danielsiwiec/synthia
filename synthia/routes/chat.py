@@ -7,6 +7,8 @@ from fastapi.responses import FileResponse, StreamingResponse
 from loguru import logger
 from pydantic import BaseModel
 
+from synthia.agents.personas import persona_directive
+from synthia.agents.projects.context import build_project_context
 from synthia.helpers.pubsub import pubsub
 from synthia.service.chat import ChatService
 from synthia.service.models import VISION_MIME_TYPES, StopTaskRequest, TaskImage, TaskRequest
@@ -27,6 +29,8 @@ class _SendMessageRequest(BaseModel):
     content: str
     reaction: str | None = None
     attachments: list[_Attachment] | None = None
+    project_id: str | None = None
+    persona: str | None = None
 
 
 class _UpdateThreadRequest(BaseModel):
@@ -39,6 +43,21 @@ def _serialize(obj):
     if hasattr(obj, "hex"):
         return str(obj)
     return obj
+
+
+async def _project_context(request: Request, project_id: str | None) -> str:
+    if not project_id:
+        return ""
+    repository = getattr(request.app.state, "project_repository", None)
+    if repository is None:
+        return ""
+    try:
+        project = await repository.get(project_id)
+    except Exception:
+        return ""
+    if project is None:
+        return ""
+    return build_project_context(project)
 
 
 def _attachment_type(content_type: str) -> str:
@@ -82,6 +101,24 @@ async def list_threads(request: Request):
             "updated_at": t["updated_at"].isoformat() if t["updated_at"] else None,
         }
         for t in threads
+    ]
+
+
+@router.get("/chat/projects")
+async def list_projects(request: Request):
+    project_repository = request.app.state.project_repository
+    projects = await project_repository.list_all()
+    return [
+        {
+            "id": str(p["id"]),
+            "name": p["name"],
+            "status": p["status"],
+            "next_step": p["next_step"],
+            "document": p["document"],
+            "created_at": p["created_at"].isoformat() if p["created_at"] else None,
+            "updated_at": p["updated_at"].isoformat() if p["updated_at"] else None,
+        }
+        for p in projects
     ]
 
 
@@ -147,6 +184,8 @@ async def send_message(request: Request, thread_id: int, body: _SendMessageReque
     metadata: dict = {}
     if body.reaction:
         metadata["reaction"] = body.reaction
+    if body.persona:
+        metadata["persona"] = body.persona
     if saved:
         metadata["attachments"] = [
             {"name": s["name"], "content_type": s["content_type"], "file": Path(s["path"]).name} for s in saved
@@ -172,7 +211,15 @@ async def send_message(request: Request, thread_id: int, body: _SendMessageReque
         prefix = f"{body.content}\n\n" if body.content else ""
         task = prefix + "\n\n".join(notes)
 
-    await pubsub.publish(TaskRequest(task=task, thread_id=thread_id, images=images))
+    project_context = await _project_context(request, body.project_id)
+    if project_context:
+        task = f"{project_context}\n\n{task}" if task else project_context
+
+    directive = persona_directive(body.persona)
+    if directive:
+        task = f"{directive}\n\n{task}" if task else directive
+
+    await pubsub.publish(TaskRequest(task=task, thread_id=thread_id, images=images, persona=body.persona))
 
     return {"ok": True}
 

@@ -12,13 +12,16 @@ from loguru import logger
 
 from synthia.agents.agent import (
     FRONT_MODEL,
+    PERSONA_MODEL,
     Agent,
     Result,
     build_front_instruction,
     create_diagram_tool,
     create_image_tool,
+    record_consulted_persona,
     record_delegated_cost,
 )
+from synthia.agents.personas import get_persona, persona_system_prompt
 from synthia.agents.skills import reload_skills
 from synthia.agents.skilltools import versions
 from synthia.helpers.pubsub import pubsub
@@ -31,6 +34,7 @@ from synthia.service.models import (
     TaskResponse,
     TaskTrigger,
 )
+from synthia.service.project_repository import ProjectRepository
 from synthia.service.session_repository import SessionRepository
 from synthia.service.task_repository import TaskRepository
 from synthia.telemetry import traced
@@ -59,9 +63,11 @@ class TaskService:
         message_repository: MessageRepository | None = None,
         task_repository: TaskRepository | None = None,
         front_tools: list[Any] | None = None,
+        project_repository: ProjectRepository | None = None,
     ):
         self._tools = tools
         self._front_tools = front_tools or []
+        self._project_repo = project_repository
         self._session_service = session_service
         self._cwd = cwd
         self._tasks: dict[int, asyncio.Task] = {}
@@ -128,6 +134,7 @@ class TaskService:
                 objective=objective,
                 thread_id=request.thread_id,
                 images=request.images,
+                persona=request.persona,
             )
         )
         self._tasks[request.thread_id] = task
@@ -165,13 +172,16 @@ class TaskService:
             name="task_agent",
             description=_TASK_AGENT_DESCRIPTION,
         )
+        front_holder: list[Agent] = []
         front_tools = [
-            *self._build_delegation_tools(thread_id, task_agent),
+            *self._build_delegation_tools(thread_id, task_agent, front_holder),
             self._build_find_past_work_tool(),
+            *self._build_persona_tools(),
             *self._front_tools,
+            *self._build_project_view_tools(thread_id),
         ]
         instruction = build_front_instruction(await self._recent_tasks_block(thread_id))
-        return await Agent.create(
+        front_agent = await Agent.create(
             tools=front_tools,
             cwd=self._cwd,
             session_service=self._session_service,
@@ -181,8 +191,10 @@ class TaskService:
             name="synthia",
             prompt_thread_hint=False,
         )
+        front_holder.append(front_agent)
+        return front_agent
 
-    def _build_delegation_tools(self, thread_id: int, task_agent: Agent) -> list[Callable]:
+    def _build_delegation_tools(self, thread_id: int, task_agent: Agent, front_holder: list[Agent]) -> list[Callable]:
         async def delegate_to_task_agent(request: str, task_id: str = "") -> str:
             """Run the capable task agent now, wait for its result, and return it for you to relay to
             the user. The task agent is powerful and runs silently: it can control a computer, run
@@ -221,7 +233,9 @@ class TaskService:
             """
             session_id = task_id or f"task-{uuid.uuid4().hex}"
             await self._start_task(session_id, thread_id, label or request, request, background=True)
-            bg = asyncio.create_task(self._run_background(task_agent, request, session_id, thread_id))
+            bg = asyncio.create_task(
+                self._run_background(task_agent, request, label or request, session_id, thread_id, front_holder)
+            )
             self._bg_handles[session_id] = bg
             self._bg_threads[session_id] = thread_id
             shown = label or request[:40]
@@ -247,6 +261,13 @@ class TaskService:
             return "\n".join(lines)
 
         return [delegate_to_task_agent, dispatch_background_task, check_tasks]
+
+    def _build_project_view_tools(self, thread_id: int) -> list[Callable]:
+        if self._project_repo is None:
+            return []
+        from synthia.agents.projects.tools.select_project import create_select_project_tool
+
+        return [create_select_project_tool(self._project_repo, thread_id)]
 
     def _build_find_past_work_tool(self) -> Callable:
         async def find_past_work(query: str = "", kind: str = "all", limit: int = 10) -> str:
@@ -286,6 +307,46 @@ class TaskService:
 
         return find_past_work
 
+    def _build_persona_tools(self) -> list[Callable]:
+        agents: dict[str, Agent] = {}
+
+        async def consult_persona(persona: str, question: str, session_id: str = "") -> str:
+            """Consult a "thinking hat" persona for a focused, single-lens perspective, then weave it
+            into your own answer. The persona is a lightweight reasoner with no tools — use it to
+            sharpen your thinking, not to do operational work.
+
+            Args:
+                persona: One of "white" (facts/data), "red" (emotion/intuition), "black"
+                    (caution/risks), "yellow" (optimism/benefits), "green" (creativity/ideas), or
+                    "blue" (process/big-picture).
+                question: The question or topic to consider from that persona's lens.
+                session_id: Optional. Pass a persona_session_id returned earlier to continue that SAME
+                    persona thread with its prior context. Omit it for a fresh consultation.
+            """
+            spec = get_persona(persona)
+            if spec is None:
+                return f"Unknown persona '{persona}'. Choose one of: white, red, black, yellow, green, blue."
+            record_consulted_persona(persona)
+            agent = agents.get(persona)
+            if agent is None:
+                agent = await Agent.create(
+                    cwd=self._cwd,
+                    session_service=self._session_service,
+                    model=PERSONA_MODEL,
+                    system_prompt=persona_system_prompt(persona),
+                    include_builtins=False,
+                    name=f"persona_{persona}",
+                    prompt_thread_hint=False,
+                )
+                agents[persona] = agent
+            sid = session_id or f"persona-{persona}-{uuid.uuid4().hex}"
+            result = await agent.run_for_result(objective=question, thread_id=None, session_id=sid)
+            record_delegated_cost(result.cost_usd if result else None)
+            answer = result.result if result and result.success else (result.error if result else None)
+            return f"persona_session_id={sid}\n\n{answer or '(the persona returned no perspective)'}"
+
+        return [consult_persona]
+
     async def _start_task(
         self, task_id: str, thread_id: int, label_source: str, request: str, background: bool
     ) -> None:
@@ -303,7 +364,15 @@ class TaskService:
         text = result.result if result and result.success else ((result.error if result else None) or "no result")
         await self._task_repo.finish(task_id=task_id, success=success, result=text)
 
-    async def _run_background(self, task_agent: Agent, request: str, session_id: str, thread_id: int) -> None:
+    async def _run_background(
+        self,
+        task_agent: Agent,
+        request: str,
+        label: str,
+        session_id: str,
+        thread_id: int,
+        front_holder: list[Agent],
+    ) -> None:
         try:
             async with self._bg_semaphore:
                 if self._task_repo is not None:
@@ -324,12 +393,34 @@ class TaskService:
             self._bg_threads.pop(session_id, None)
         await self._finish_task(session_id, result)
         if result and result.success:
-            text = f"✅ Background task complete:\n\n{result.result}"
+            await self._deliver_via_front(thread_id, session_id, label, result, front_holder)
         else:
             text = f"🔴 Background task failed: {result.error if result else 'no result'}"
-        await self._deliver_background(
-            thread_id, session_id, bool(result and result.success), text, result.cost_usd if result else None
+            await self._deliver_background(thread_id, session_id, False, text, result.cost_usd if result else None)
+
+    async def _deliver_via_front(
+        self, thread_id: int, session_id: str, label: str, result: Result, front_holder: list[Agent]
+    ) -> None:
+        front = front_holder[0] if front_holder else None
+        if front is None or not front._live:
+            await self._deliver_background(
+                thread_id, session_id, True, f"✅ Background task complete:\n\n{result.result}", result.cost_usd
+            )
+            return
+        objective = (
+            f'[The background task you dispatched (label: "{label}", task_id={session_id}) just '
+            "finished. Its result is below. If this work was meant to update a project, apply it now to "
+            "that project with your project tools — keep its next step current — then tell me briefly "
+            "what you changed. If it was not about a project, just relay the result to me in your own "
+            f"voice. Do not start any new task.]\n\nResult:\n{result.result}"
         )
+        try:
+            await front.run_for_result(objective=objective, thread_id=thread_id, session_id=str(thread_id))
+        except Exception as error:
+            logger.error(f"front relay of background task {session_id} failed: {error}")
+            await self._deliver_background(
+                thread_id, session_id, True, f"✅ Background task complete:\n\n{result.result}", result.cost_usd
+            )
 
     async def _deliver_background(
         self, thread_id: int, session_id: str, success: bool, text: str, cost: float | None

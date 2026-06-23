@@ -21,6 +21,7 @@ from synthia.agents.episodic.client import create_episodic_tools
 from synthia.agents.episodic.sync import EpisodicMemoryService
 from synthia.agents.mcp import build_mcp_toolsets, prewarm_mcp_toolsets
 from synthia.agents.memory.client import create_memory_tools
+from synthia.agents.projects.client import create_project_tools
 from synthia.agents.scheduler.client import create_scheduler_tools
 from synthia.agents.skills import build_skill_toolset
 from synthia.agents.skilltools.client import create_skilltools_tools
@@ -34,6 +35,7 @@ from synthia.routes.task import router as task_router
 from synthia.service.chat import ChatService
 from synthia.service.job_execution_repository import JobExecutionRepository
 from synthia.service.models import AppStartup
+from synthia.service.project_repository import ProjectRepository
 from synthia.service.push import PushService
 from synthia.service.session_repository import SessionRepository
 from synthia.service.task import TaskService
@@ -64,7 +66,7 @@ def _register_handlers(
 ):
     from synthia.agents.agent import Message, ResultDelta
     from synthia.agents.progress import ProgressAnalyzer
-    from synthia.service.models import OutgoingImage, ProgressNotification
+    from synthia.service.models import OutgoingImage, ProgressNotification, ProjectSelected
 
     pubsub.subscribe(Message, lambda message: logger.info(f"{message.render()}"))
     pubsub.subscribe(ProgressAnalyzer(openai_client))
@@ -73,6 +75,7 @@ def _register_handlers(
     pubsub.subscribe(ResultDelta, chat_service.handle_delta)
     pubsub.subscribe(ProgressNotification, chat_service.handle_progress)
     pubsub.subscribe(OutgoingImage, chat_service.handle_image)
+    pubsub.subscribe(ProjectSelected, chat_service.handle_project_selected)
 
 
 class Config(BaseSettings):
@@ -109,6 +112,8 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
 
             job_execution_repo = JobExecutionRepository(db_pool)
             task_repository = TaskRepository(db_pool)
+            project_repository = ProjectRepository(db_pool)
+            project_tools = create_project_tools(project_repository)
             skilltools = create_skilltools_tools(job_execution_repo)
 
             mcp_toolsets = build_mcp_toolsets(config.mcp_config_path)
@@ -132,6 +137,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             chat_service = ChatService(db_pool, cwd=config.claude_cwd)
             await chat_service.initialize()
             app.state.chat_service = chat_service
+            app.state.project_repository = project_repository
             app.state.openai_client = AsyncOpenAI() if os.getenv("OPENAI_API_KEY") else None
 
             _register_handlers(episodic_memory_service, chat_service, app.state.openai_client)
@@ -145,7 +151,8 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
                 skill_toolset=skill_toolset,
                 message_repository=chat_service.repository,
                 task_repository=task_repository,
-                front_tools=[*episodic_tools, *memory_tools, *scheduler_tools],
+                front_tools=[*episodic_tools, *memory_tools, *scheduler_tools, *project_tools],
+                project_repository=project_repository,
             )
 
             scheduler_service.start()

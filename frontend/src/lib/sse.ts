@@ -8,14 +8,20 @@ export interface ImageEvent {
   };
 }
 
+export interface ResultMeta {
+  persona?: string | null;
+  consultedPersonas?: string[];
+}
+
 export interface SseHandlers {
   onInit?: () => void;
   onProgress?: (summary: string) => void;
   onThought?: (thinking: string) => void;
   onResultDelta?: (delta: string) => void;
-  onResult?: (result: string) => void;
+  onResult?: (result: string, meta?: ResultMeta) => void;
   onImage?: (data: ImageEvent) => void;
   onTitle?: (title: string) => void;
+  onProjectSelected?: (projectId: string) => void;
 }
 
 export interface SseConnection {
@@ -55,7 +61,10 @@ export function connectThreadEvents(
 
   source.addEventListener("result", (e) => {
     const data = JSON.parse((e as MessageEvent).data);
-    handlers.onResult?.(data.result);
+    handlers.onResult?.(data.result, {
+      persona: data.persona ?? null,
+      consultedPersonas: data.consulted_personas ?? [],
+    });
   });
 
   source.addEventListener("image", (e) => {
@@ -66,6 +75,11 @@ export function connectThreadEvents(
   source.addEventListener("title", (e) => {
     const data = JSON.parse((e as MessageEvent).data);
     handlers.onTitle?.(data.title);
+  });
+
+  source.addEventListener("project_selected", (e) => {
+    const data = JSON.parse((e as MessageEvent).data);
+    handlers.onProjectSelected?.(data.project_id);
   });
 
   return { close: () => source.close(), opened };

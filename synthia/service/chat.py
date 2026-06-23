@@ -10,7 +10,7 @@ from loguru import logger
 
 from synthia.agents.agent import InitMessage, Message, Result, ResultDelta, Thought, ToolCall
 from synthia.agents.titler import generate_title
-from synthia.service.models import OutgoingImage, ProgressNotification
+from synthia.service.models import OutgoingImage, ProgressNotification, ProjectSelected
 
 
 def _safe_filename(name: str) -> str:
@@ -222,12 +222,18 @@ class ChatService:
             return
 
         if isinstance(message, Result):
+            persona_meta: dict[str, Any] = {}
+            if message.persona:
+                persona_meta["persona"] = message.persona
+            if message.consulted_personas:
+                persona_meta["consulted_personas"] = message.consulted_personas
             event = {
                 "type": "result",
                 "success": message.success,
                 "result": message.result,
                 "error": message.error,
                 "cost_usd": message.cost_usd,
+                **persona_meta,
             }
             await self._event_bus.push(thread_id, event)
 
@@ -237,7 +243,7 @@ class ChatService:
                     "assistant",
                     "result",
                     message.result,
-                    {"cost_usd": message.cost_usd, "success": message.success},
+                    {"cost_usd": message.cost_usd, "success": message.success, **persona_meta},
                 )
                 await self._maybe_generate_title(thread_id, message.result)
 
@@ -262,6 +268,14 @@ class ChatService:
         if notification.thread_id is None:
             return
         await self._event_bus.push(notification.thread_id, {"type": "progress", "summary": notification.summary})
+
+    async def handle_project_selected(self, event: ProjectSelected):
+        if not self._repository.is_chat_thread(event.thread_id):
+            return
+        await self._event_bus.push(
+            event.thread_id,
+            {"type": "project_selected", "project_id": event.project_id, "name": event.name},
+        )
 
     async def handle_image(self, image: OutgoingImage):
         thread_id = image.thread_id
