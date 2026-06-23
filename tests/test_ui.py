@@ -266,6 +266,9 @@ class ChatPage:
         return self._page.locator(".aui-thread-list-item-title")
 
     def open_thread(self, title: str):
+        expander = self._page.get_by_role("button", name="Expand sidebar")
+        if expander.is_visible():
+            expander.click()
         self._page.locator(".aui-thread-list-item-trigger", has_text=title).first.click()
 
     def text(self, value: str):
