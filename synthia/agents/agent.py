@@ -42,8 +42,8 @@ class ModelSpec:
 # The front and task agent models (and their pricing) are defined ONLY here.
 # Both the deployed app and the test suite import these constants, so this block
 # is the one place to change a model. The two agents may use different models.
-TASK_MODEL = ModelSpec("gemini/gemini-3.1-flash-lite", input_cost_per_m=0.10, output_cost_per_m=0.40)
-FRONT_MODEL_SPEC = ModelSpec("gemini/gemini-3.1-flash-lite", input_cost_per_m=0.10, output_cost_per_m=0.40)
+TASK_MODEL = ModelSpec("gemini/gemini-3.1-flash-lite", input_cost_per_m=0.25, output_cost_per_m=1.50)
+FRONT_MODEL_SPEC = ModelSpec("gemini/gemini-3.1-flash-lite", input_cost_per_m=0.25, output_cost_per_m=1.50)
 PERSONA_MODEL_SPEC = FRONT_MODEL_SPEC
 
 DEFAULT_MODEL = TASK_MODEL.name
@@ -624,9 +624,12 @@ class Agent:
         _cp_token = _consulted_personas.set([])
         await self._ensure_session(session_id)
 
+        _log = logger.bind(session_id=session_id, agent=self._name)
+        init_message = InitMessage(session_id=session_id, thread_id=thread_id, prompt=objective)
+        _log.info(init_message.render())
         if thread_id:
             with start_span("InitMessage"):
-                await pubsub.publish(InitMessage(session_id=session_id, thread_id=thread_id, prompt=objective))
+                await pubsub.publish(init_message)
 
         new_message = types.Content(role="user", parts=_build_parts(prompt, images))
         tool_calls: dict[str, ToolCall] = {}
@@ -710,6 +713,7 @@ class Agent:
                         if invoked_skill and invoked_skill not in skill_names:
                             skill_names.append(invoked_skill)
                     message_count += 1
+                    _log.info(tool_call.render())
                     if thread_id:
                         with start_span("ToolCall"):
                             await pubsub.publish(tool_call)
@@ -750,7 +754,7 @@ class Agent:
             span.set_attribute("gen_ai.usage.session_cost_usd", cost)
             span.set_attribute("session_cost_usd", cost)
             span.set_attribute("cached_prompt_tokens", cached_tokens)
-            logger.info(
+            _log.info(
                 f"💰 Session cost: ${cost} (in={prompt_tokens}, cached={cached_tokens}, "
                 f"out={completion_tokens}{f', delegated=${delegated_total}' if delegated_total else ''})"
             )
@@ -772,6 +776,7 @@ class Agent:
             consulted_personas=consulted_personas,
         )
         message_count += 1
+        _log.info(result.render())
         if thread_id:
             with start_span("Result"):
                 current_span().set_attribute("message_count", message_count)
