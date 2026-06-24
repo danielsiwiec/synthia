@@ -7,8 +7,15 @@ from pathlib import Path
 
 _t_process_start = _time.perf_counter()
 
-import asyncpg
 from dotenv import load_dotenv
+
+from synthia.telemetry import instrument_fastapi, loguru_otel_sink, setup_telemetry
+
+load_dotenv()
+
+setup_telemetry()
+
+import asyncpg
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from google.adk.sessions import DatabaseSessionService
@@ -40,11 +47,6 @@ from synthia.service.push import PushService
 from synthia.service.session_repository import SessionRepository
 from synthia.service.task import TaskService
 from synthia.service.task_repository import TaskRepository
-from synthia.telemetry import instrument_fastapi, loguru_otel_sink, setup_telemetry
-
-load_dotenv()
-
-setup_telemetry()
 
 logging.getLogger("uvicorn.access").disabled = True
 logging.getLogger("uvicorn.error").disabled = True

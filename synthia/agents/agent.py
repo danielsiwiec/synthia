@@ -535,6 +535,7 @@ class Agent:
         input_cost_per_m: float,
         output_cost_per_m: float,
         prompt_thread_hint: bool = True,
+        name: str = "synthia",
     ):
         self._runner = runner
         self._session_service = session_service
@@ -542,6 +543,7 @@ class Agent:
         self._input_cost = input_cost_per_m
         self._output_cost = output_cost_per_m
         self._prompt_thread_hint = prompt_thread_hint
+        self._name = name
         self._live = True
 
     @classmethod
@@ -578,7 +580,7 @@ class Agent:
         session_service = session_service or InMemorySessionService()
         runner = Runner(app_name=APP_NAME, agent=llm_agent, session_service=session_service)
         logger.debug(f"🔌 ADK agent created (name={name}, model={model_name}, tools={len(all_tools)})")
-        return cls(runner, session_service, model_name, input_cost, output_cost, prompt_thread_hint)
+        return cls(runner, session_service, model_name, input_cost, output_cost, prompt_thread_hint, name=name)
 
     async def disconnect(self) -> None:
         self._live = False
@@ -731,14 +733,23 @@ class Agent:
         consulted_personas = list(_consulted_personas.get() or [])
         _consulted_personas.reset(_cp_token)
         cost: float | None = None
+        span = current_span()
+        span.set_attribute("gen_ai.agent.name", self._name)
+        span.set_attribute("gen_ai.request.model", self._model_name)
+        span.set_attribute("gen_ai.usage.input_tokens", prompt_tokens)
+        span.set_attribute("gen_ai.usage.output_tokens", completion_tokens)
+        span.set_attribute("gen_ai.usage.cached_input_tokens", cached_tokens)
         if prompt_tokens or completion_tokens or delegated_total:
-            front_cost = _token_cost(
+            agent_cost = _token_cost(
                 prompt_tokens, completion_tokens, cached_tokens, self._input_cost, self._output_cost
             )
-            cost = round(front_cost + delegated_total, 8)
+            cost = round(agent_cost + delegated_total, 8)
             record_session_cost(self._model_name, cost)
-            current_span().set_attribute("session_cost_usd", cost)
-            current_span().set_attribute("cached_prompt_tokens", cached_tokens)
+            span.set_attribute("gen_ai.usage.agent_cost_usd", agent_cost)
+            span.set_attribute("gen_ai.usage.delegated_cost_usd", round(delegated_total, 8))
+            span.set_attribute("gen_ai.usage.session_cost_usd", cost)
+            span.set_attribute("session_cost_usd", cost)
+            span.set_attribute("cached_prompt_tokens", cached_tokens)
             logger.info(
                 f"💰 Session cost: ${cost} (in={prompt_tokens}, cached={cached_tokens}, "
                 f"out={completion_tokens}{f', delegated=${delegated_total}' if delegated_total else ''})"

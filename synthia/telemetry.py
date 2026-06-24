@@ -17,7 +17,7 @@ from opentelemetry.sdk._logs.export import SimpleLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import SpanLimits, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import Status, StatusCode
 
@@ -25,6 +25,7 @@ _SERVICE_NAME = "synthia"
 _SERVICE_INSTANCE_ID = str(uuid.uuid4())[:8]
 _OTEL_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 _OTEL_ENABLED = bool(_OTEL_ENDPOINT)
+_MAX_SPAN_ATTR_LEN = int(os.getenv("OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT", "8192"))
 
 _tracer: trace.Tracer | None = None
 _otel_logger: logging.Logger | None = None
@@ -43,7 +44,10 @@ def setup_telemetry() -> None:
         }
     )
 
-    trace_provider = TracerProvider(resource=resource)
+    trace_provider = TracerProvider(
+        resource=resource,
+        span_limits=SpanLimits(max_attribute_length=_MAX_SPAN_ATTR_LEN),
+    )
     if _OTEL_ENABLED:
         trace_exporter = OTLPSpanExporter(endpoint=_OTEL_ENDPOINT, insecure=True)
         trace_provider.add_span_processor(BatchSpanProcessor(trace_exporter))
