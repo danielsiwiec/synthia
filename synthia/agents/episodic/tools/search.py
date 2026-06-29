@@ -1,14 +1,16 @@
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import asyncpg
 
+from synthia.agents.episodic.attachments import attachments_for_thread
 from synthia.agents.episodic.db import generate_embedding
 from synthia.agents.tools import error_response, success_response
 
 
-def create_search_tool(pool: asyncpg.Pool) -> Callable:
+def create_search_tool(pool: asyncpg.Pool, cwd: str | Path | None = None) -> Callable:
     async def episodic_search(query: str, days: int = 30) -> str:
         """Search past Synthia conversations by semantic similarity and keyword matching. Use this to
         find relevant context from previous sessions.
@@ -28,6 +30,7 @@ def create_search_tool(pool: asyncpg.Pool) -> Callable:
                         id,
                         summary,
                         created_at,
+                        thread_id,
                         1 - (embedding <=> $1::vector) as similarity,
                         ts_rank(to_tsvector('english', summary || ' ' || transcript),
                                 plainto_tsquery('english', $2)) as keyword_rank
@@ -50,12 +53,20 @@ def create_search_tool(pool: asyncpg.Pool) -> Callable:
                 output = []
                 for i, row in enumerate(results, 1):
                     summary = row["summary"]
+                    has_files = False
+                    if row["thread_id"] is not None:
+                        has_files = bool(await attachments_for_thread(pool, cwd, row["thread_id"]))
+                    files_line = (
+                        "\n- Attachments: yes (call episodic_show with this ID to get their file paths)"
+                        if has_files
+                        else ""
+                    )
                     output.append(f"""
 **Result {i}**
 - ID: `{row["id"]}`
 - Date: {row["created_at"].strftime("%Y-%m-%d %H:%M")}
 - Similarity: {row["similarity"]:.2%}
-- Summary: {summary[:500]}{"..." if len(summary) > 500 else ""}
+- Summary: {summary[:500]}{"..." if len(summary) > 500 else ""}{files_line}
 """)
 
                 return success_response("\n".join(output))

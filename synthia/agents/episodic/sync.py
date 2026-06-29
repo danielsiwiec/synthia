@@ -33,13 +33,16 @@ class EpisodicMemoryService:
         self._cwd = cwd
         self._transcripts_by_session: dict[str, list[str]] = defaultdict(list)
         self._prompts_by_session: dict[str, str] = {}
+        self._thread_id_by_session: dict[str, int | None] = {}
         self._summarization_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_SUMMARIZATIONS)
 
     def _is_summarization_session(self, prompt: str) -> bool:
         return _SUMMARIZATION_MARKER in prompt
 
     @traced("episodic_memory.summarize_and_store")
-    async def _summarize_and_store(self, session_id: str, transcript: str, original_prompt: str) -> None:
+    async def _summarize_and_store(
+        self, session_id: str, transcript: str, original_prompt: str, thread_id: int | None
+    ) -> None:
         async with self._summarization_semaphore:
             summarization_prompt = f"""{_SUMMARIZATION_MARKER}
 Summarize the following conversation transcript in 2-3 sentences. Focus on:
@@ -70,12 +73,13 @@ Transcript:
                 async with self._pool.acquire() as conn:
                     await conn.execute(
                         """
-                        INSERT INTO conversations (transcript, summary, embedding)
-                        VALUES ($1, $2, $3::vector)
+                        INSERT INTO conversations (transcript, summary, embedding, thread_id)
+                        VALUES ($1, $2, $3::vector, $4)
                         """,
                         transcript,
                         summary,
                         json.dumps(embedding),
+                        thread_id,
                     )
 
                 logger.info(f"Stored episodic memory for session {session_id[:8]}")
@@ -90,6 +94,7 @@ Transcript:
                 return
             self._transcripts_by_session[message.session_id] = [f"User: {message.prompt}"]
             self._prompts_by_session[message.session_id] = message.prompt
+            self._thread_id_by_session[message.session_id] = message.thread_id
             return
 
         session_id = message.session_id
@@ -100,16 +105,18 @@ Transcript:
         if isinstance(message, Result):
             transcript = "\n".join(self._transcripts_by_session[session_id])
             original_prompt = self._prompts_by_session.get(session_id, "")
+            thread_id = self._thread_id_by_session.get(session_id, message.thread_id)
 
             self._transcripts_by_session.pop(session_id, None)
             self._prompts_by_session.pop(session_id, None)
+            self._thread_id_by_session.pop(session_id, None)
 
             if message.success:
                 transcript += f"\nResult: {message.result}"
             else:
                 transcript += f"\nError: {message.error}"
 
-            _spawn_detached(self._summarize_and_store(session_id, transcript, original_prompt))
+            _spawn_detached(self._summarize_and_store(session_id, transcript, original_prompt, thread_id))
             return
 
         if isinstance(message, ToolCall):

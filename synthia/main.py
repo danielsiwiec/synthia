@@ -109,7 +109,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             session_repository = await SessionRepository.create(config.postgres_connection_string)
 
             logger.info("Enabling episodic memory tools...")
-            episodic_tools = create_episodic_tools(db_pool)
+            episodic_tools = create_episodic_tools(db_pool, cwd=config.claude_cwd)
 
             job_execution_repo = JobExecutionRepository(db_pool)
             task_repository = TaskRepository(db_pool)
