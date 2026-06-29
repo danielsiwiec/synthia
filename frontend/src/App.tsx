@@ -28,6 +28,7 @@ export default function App() {
   const [resizing, setResizing] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [newThreadSignal, setNewThreadSignal] = useState(0);
   const [splitVertical, setSplitVertical] = useState(
     () => localStorage.getItem(_SPLIT_VERTICAL_KEY) === "1",
   );
@@ -35,6 +36,18 @@ export default function App() {
 
   const selectedProject =
     projects.find((p) => p.id === selectedProjectId) ?? null;
+
+  const handleSelectProject = useCallback(
+    (id: string) => {
+      setSelectedProjectId((cur) => {
+        if (cur === id) return null;
+        const project = projects.find((p) => p.id === id);
+        if (project && !project.thread_id) setNewThreadSignal((n) => n + 1);
+        return id;
+      });
+    },
+    [projects],
+  );
 
   const refreshProjects = useCallback(() => {
     void listProjects()
@@ -96,6 +109,8 @@ export default function App() {
   return (
     <SynthiaProvider
       selectedProjectId={selectedProjectId}
+      selectedProjectThreadId={selectedProject?.thread_id ?? null}
+      newThreadSignal={newThreadSignal}
       onThreadSelect={() => setSelectedProjectId(null)}
       onAgentResult={refreshProjects}
       onProjectSelected={(id) => {
@@ -132,9 +147,7 @@ export default function App() {
               <ProjectList
                 projects={projects}
                 selectedId={selectedProjectId}
-                onSelect={(id) =>
-                  setSelectedProjectId((cur) => (cur === id ? null : id))
-                }
+                onSelect={handleSelectProject}
               />
               <ThreadList onNavigate={() => setCollapsed(true)} />
             </div>

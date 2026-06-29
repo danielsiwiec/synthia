@@ -109,8 +109,23 @@ class MessageRepository:
         self._chat_thread_ids.add(thread_id)
 
     async def list_threads(self) -> list[dict[str, Any]]:
-        rows = await self._pool.fetch("SELECT id, title, created_at, updated_at FROM threads ORDER BY updated_at DESC")
+        rows = await self._pool.fetch(
+            "SELECT id, title, created_at, updated_at FROM threads WHERE project_id IS NULL ORDER BY updated_at DESC"
+        )
         return [dict(row) for row in rows]
+
+    async def link_thread_to_project(self, thread_id: int, project_id: str):
+        await self._pool.execute(
+            "UPDATE threads SET project_id = $1 WHERE id = $2",
+            project_id,
+            thread_id,
+        )
+
+    async def thread_id_for_project(self, project_id: str) -> int | None:
+        return await self._pool.fetchval(
+            "SELECT id FROM threads WHERE project_id = $1",
+            project_id,
+        )
 
     async def update_thread_title(self, thread_id: int, title: str):
         await self._pool.execute("UPDATE threads SET title = $1 WHERE id = $2", title, thread_id)

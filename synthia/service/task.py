@@ -265,11 +265,11 @@ class TaskService:
         return [delegate_to_task_agent, dispatch_background_task, check_tasks]
 
     def _build_project_view_tools(self, thread_id: int) -> list[Callable]:
-        if self._project_repo is None:
+        if self._project_repo is None or self._message_repository is None:
             return []
-        from synthia.agents.projects.tools.select_project import create_select_project_tool
+        from synthia.agents.projects.client import create_project_thread_tools
 
-        return [create_select_project_tool(self._project_repo, thread_id)]
+        return create_project_thread_tools(self._project_repo, self._message_repository, thread_id)
 
     def _build_find_past_work_tool(self) -> Callable:
         async def find_past_work(query: str = "", kind: str = "all", limit: int = 10) -> str:

@@ -5,11 +5,11 @@ from typing import Any
 import asyncpg
 import pytest
 
-from synthia.agents.projects.client import create_project_tools
+from synthia.agents.projects.client import create_project_thread_tools, create_project_tools
 from synthia.agents.projects.tools.select_project import create_select_project_tool
 from synthia.migrations.runner import run_migrations
 from synthia.routes.chat import _project_context, list_projects
-from synthia.service.chat import ChatService
+from synthia.service.chat import ChatService, MessageRepository
 from synthia.service.models import ProjectSelected
 from synthia.service.project_repository import ProjectRepository
 
@@ -18,6 +18,7 @@ from synthia.service.project_repository import ProjectRepository
 async def repo(pgvector_container: str):
     run_migrations(pgvector_container)
     pool = await asyncpg.create_pool(pgvector_container, min_size=1, max_size=2)
+    await pool.execute("DELETE FROM threads")
     await pool.execute("DELETE FROM projects")
     try:
         yield ProjectRepository(pool)
@@ -25,13 +26,18 @@ async def repo(pgvector_container: str):
         await pool.close()
 
 
-def _tools(repo: ProjectRepository) -> dict:
-    create, list_, update, delete = create_project_tools(repo)
+async def _tools(repo: ProjectRepository, thread_id: int = 1) -> dict:
+    list_, update, delete = create_project_tools(repo)
+    message_repo = MessageRepository(repo._pool)
+    await message_repo.initialize()
+    await message_repo.save_thread(thread_id, "thread")
+    create, _select = create_project_thread_tools(repo, message_repo, thread_id)
     return {
         "create_project": create,
         "list_projects": list_,
         "update_project": update,
         "delete_project": delete,
+        "message_repository": message_repo,
     }
 
 
@@ -92,7 +98,7 @@ async def test_delete_removes_project(repo: ProjectRepository) -> None:
 
 @pytest.mark.smoke
 async def test_tools_round_trip(repo: ProjectRepository) -> None:
-    tools = _tools(repo)
+    tools = await _tools(repo)
 
     created = await tools["create_project"]("Garden", document="plant tomatoes")
     project_id = json.loads(created.split("\n", 1)[1])["id"]
@@ -111,7 +117,7 @@ async def test_tools_round_trip(repo: ProjectRepository) -> None:
 
 @pytest.mark.smoke
 async def test_update_tool_rejects_invalid_status(repo: ProjectRepository) -> None:
-    tools = _tools(repo)
+    tools = await _tools(repo)
     project = await repo.create(name="X")
 
     result = await tools["update_project"](str(project["id"]), status="archived")
@@ -122,7 +128,11 @@ async def test_update_tool_rejects_invalid_status(repo: ProjectRepository) -> No
 @pytest.mark.smoke
 async def test_list_projects_endpoint_serializes_all_fields(repo: ProjectRepository) -> None:
     await repo.create(name="API project", document="# Notes", next_step="ship the mvp")
-    request: Any = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(project_repository=repo)))
+    chat = ChatService(repo._pool)
+    await chat.initialize()
+    request: Any = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(project_repository=repo, chat_service=chat))
+    )
 
     body = await list_projects(request)
 
@@ -131,8 +141,22 @@ async def test_list_projects_endpoint_serializes_all_fields(repo: ProjectReposit
     assert body[0]["status"] == "active"
     assert body[0]["next_step"] == "ship the mvp"
     assert body[0]["document"] == "# Notes"
+    assert body[0]["thread_id"] is None
     assert isinstance(body[0]["id"], str)
     assert body[0]["created_at"] is not None
+
+
+@pytest.mark.smoke
+async def test_create_project_binds_current_thread(repo: ProjectRepository) -> None:
+    tools = await _tools(repo, thread_id=42)
+    message_repo: MessageRepository = tools["message_repository"]
+
+    created = await tools["create_project"]("Bound", document="x")
+    project_id = json.loads(created.split("\n", 1)[1])["id"]
+
+    assert await message_repo.thread_id_for_project(project_id) == 42
+    threads = await message_repo.list_threads()
+    assert all(t["id"] != 42 for t in threads)
 
 
 @pytest.mark.smoke

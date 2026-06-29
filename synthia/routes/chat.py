@@ -106,20 +106,25 @@ async def list_threads(request: Request):
 
 @router.get("/chat/projects")
 async def list_projects(request: Request):
+    chat_service: ChatService = request.app.state.chat_service
     project_repository = request.app.state.project_repository
     projects = await project_repository.list_all()
-    return [
-        {
-            "id": str(p["id"]),
-            "name": p["name"],
-            "status": p["status"],
-            "next_step": p["next_step"],
-            "document": p["document"],
-            "created_at": p["created_at"].isoformat() if p["created_at"] else None,
-            "updated_at": p["updated_at"].isoformat() if p["updated_at"] else None,
-        }
-        for p in projects
-    ]
+    result = []
+    for p in projects:
+        thread_id = await chat_service.repository.thread_id_for_project(str(p["id"]))
+        result.append(
+            {
+                "id": str(p["id"]),
+                "name": p["name"],
+                "status": p["status"],
+                "next_step": p["next_step"],
+                "document": p["document"],
+                "thread_id": str(thread_id) if thread_id is not None else None,
+                "created_at": p["created_at"].isoformat() if p["created_at"] else None,
+                "updated_at": p["updated_at"].isoformat() if p["updated_at"] else None,
+            }
+        )
+    return result
 
 
 @router.patch("/chat/threads/{thread_id}")
@@ -178,6 +183,9 @@ async def send_message(request: Request, thread_id: int, body: _SendMessageReque
         title_source = body.content or (body.attachments[0].name if body.attachments else "New chat")
         title = title_source[:100] if len(title_source) <= 100 else title_source[:97] + "..."
         await chat_service.repository.save_thread(thread_id, title)
+
+    if body.project_id and await chat_service.repository.thread_id_for_project(body.project_id) is None:
+        await chat_service.repository.link_thread_to_project(thread_id, body.project_id)
 
     saved = await chat_service.save_attachments(thread_id, [a.model_dump() for a in body.attachments or []])
 

@@ -14,6 +14,7 @@ export interface Project {
   status: "active" | "closed";
   next_step: string;
   document: string;
+  thread_id: string | null;
   created_at: string | null;
   updated_at: string | null;
 }

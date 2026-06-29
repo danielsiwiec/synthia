@@ -152,12 +152,16 @@ function _inferRunning(messages: SynthiaMessage[]): boolean {
 export function SynthiaProvider({
   children,
   selectedProjectId = null,
+  selectedProjectThreadId = null,
+  newThreadSignal = 0,
   onThreadSelect,
   onAgentResult,
   onProjectSelected,
 }: {
   children: ReactNode;
   selectedProjectId?: string | null;
+  selectedProjectThreadId?: string | null;
+  newThreadSignal?: number;
   onThreadSelect?: () => void;
   onAgentResult?: () => void;
   onProjectSelected?: (projectId: string) => void;
@@ -327,15 +331,18 @@ export function SynthiaProvider({
     [_disconnect, refreshThreads],
   );
 
-  const newThread = useCallback(() => {
-    onThreadSelectRef.current?.();
-    const id = String(Date.now());
-    threadIdRef.current = id;
-    setCurrentThreadId(id);
-    setMessages([]);
-    setIsRunning(false);
-    _connect(id);
-  }, [_connect]);
+  const newThread = useCallback(
+    (keepProject = false) => {
+      if (!keepProject) onThreadSelectRef.current?.();
+      const id = String(Date.now());
+      threadIdRef.current = id;
+      setCurrentThreadId(id);
+      setMessages([]);
+      setIsRunning(false);
+      _connect(id);
+    },
+    [_connect],
+  );
 
   const _syncCurrentThread = useCallback(async () => {
     const id = threadIdRef.current;
@@ -354,8 +361,8 @@ export function SynthiaProvider({
   }, [_connect]);
 
   const switchThread = useCallback(
-    async (id: string) => {
-      onThreadSelectRef.current?.();
+    async (id: string, keepProject = false) => {
+      if (!keepProject) onThreadSelectRef.current?.();
       threadIdRef.current = id;
       setCurrentThreadId(id);
       await _syncCurrentThread();
@@ -438,6 +445,20 @@ export function SynthiaProvider({
     setIsRunning(false);
   }, []);
 
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    if (!selectedProjectThreadId) return;
+    if (threadIdRef.current === selectedProjectThreadId) return;
+    void switchThread(selectedProjectThreadId, true);
+  }, [selectedProjectId, selectedProjectThreadId, switchThread]);
+
+  const lastNewThreadSignal = useRef(newThreadSignal);
+  useEffect(() => {
+    if (newThreadSignal === lastNewThreadSignal.current) return;
+    lastNewThreadSignal.current = newThreadSignal;
+    queueMicrotask(() => newThread(true));
+  }, [newThreadSignal, newThread]);
+
   const runtime = useExternalStoreRuntime<SynthiaMessage>({
     isRunning,
     messages,
@@ -449,7 +470,7 @@ export function SynthiaProvider({
       threadList: {
         threadId: currentThreadId ?? undefined,
         threads: threads.map((t) => ({ status: "regular", id: t.id, title: t.title })),
-        onSwitchToNewThread: newThread,
+        onSwitchToNewThread: () => newThread(),
         onSwitchToThread: switchThread,
         onRename: renameThread,
         onDelete: removeThread,

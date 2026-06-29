@@ -2,13 +2,18 @@ from collections.abc import Callable
 
 from synthia.agents.projects.tools._serialize import serialize_project
 from synthia.agents.tools import error_response, success_response
+from synthia.service.chat import MessageRepository
 from synthia.service.project_repository import ProjectRepository
 
 
-def create_create_project_tool(repository: ProjectRepository) -> Callable:
+def create_create_project_tool(
+    repository: ProjectRepository, message_repository: MessageRepository, thread_id: int
+) -> Callable:
     async def create_project(name: str, document: str = "", next_step: str = "") -> str:
         """Create a new project for the user. A project is a tracked piece of work with a status, a
         creation date, a single next step, and a markdown document holding its details, plan, or notes.
+        The current conversation becomes this project's thread: it moves out of the standalone thread
+        list and is shown together with the project from now on.
 
         Args:
             name: A short title for the project (shown in the project list).
@@ -19,6 +24,7 @@ def create_create_project_tool(repository: ProjectRepository) -> Callable:
         """
         try:
             project = await repository.create(name=name, document=document, next_step=next_step)
+            await message_repository.link_thread_to_project(thread_id, str(project["id"]))
             return success_response(f"Project created:\n{serialize_project(project)}")
         except Exception as error:
             return error_response(f"Error creating project: {error}")
