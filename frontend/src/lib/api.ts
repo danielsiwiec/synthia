@@ -8,6 +8,20 @@ export interface ThreadSummary {
   updated_at: string | null;
 }
 
+export interface ProjectSection {
+  id: string;
+  title: string;
+  body: string;
+}
+
+export interface ProjectMedia {
+  id: string;
+  name: string;
+  content_type: string;
+  caption: string;
+  url: string | null;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -15,6 +29,8 @@ export interface Project {
   next_step: string;
   document: string;
   thread_id: string | null;
+  sections: ProjectSection[];
+  media: ProjectMedia[];
   created_at: string | null;
   updated_at: string | null;
 }
@@ -86,6 +102,17 @@ export async function sendMessage(
       project_id: projectId ?? null,
       persona: persona ?? null,
     }),
+  });
+}
+
+export async function reorderProjectSections(
+  projectId: string,
+  sectionIds: string[],
+): Promise<void> {
+  await fetch(`/chat/projects/${projectId}/sections/reorder`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ section_ids: sectionIds }),
   });
 }
 

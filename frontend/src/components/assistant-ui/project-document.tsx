@@ -1,10 +1,36 @@
-import { type FC } from "react";
-import { ArrowRightIcon, Columns2Icon, Rows2Icon, XIcon } from "lucide-react";
+import { useState, type FC } from "react";
+import {
+  ArrowRightIcon,
+  Columns2Icon,
+  GripVerticalIcon,
+  Rows2Icon,
+  XIcon,
+} from "lucide-react";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/assistant-ui/project-status-badge";
-import type { Project } from "@/lib/api";
+import {
+  reorderProjectSections,
+  type Project,
+  type ProjectMedia,
+  type ProjectSection,
+} from "@/lib/api";
 
 function _formatDate(value: string | null): string {
   if (!value) return "";
@@ -17,12 +43,108 @@ function _formatDate(value: string | null): string {
   });
 }
 
+const SortableSection: FC<{ section: ProjectSection }> = ({ section }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: section.id });
+  return (
+    <section
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={`aui-project-section group border-border bg-background relative rounded-lg border p-3 ${
+        isDragging ? "z-10 opacity-80 shadow-md" : ""
+      }`}
+    >
+      <div className="mb-1 flex items-center gap-1.5">
+        <button
+          type="button"
+          aria-label="Drag to reorder section"
+          className="text-muted-foreground hover:text-foreground cursor-grab touch-none active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVerticalIcon className="size-4" />
+        </button>
+        <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">
+          {section.title || "Untitled section"}
+        </h3>
+      </div>
+      <div className="aui-md text-sm break-words">
+        {section.body.trim() ? (
+          <Markdown remarkPlugins={[remarkGfm]}>{section.body}</Markdown>
+        ) : (
+          <span className="text-muted-foreground italic">Empty section.</span>
+        )}
+      </div>
+    </section>
+  );
+};
+
+const MediaItem: FC<{ item: ProjectMedia }> = ({ item }) => {
+  const isImage = item.content_type.startsWith("image/") && item.url;
+  return (
+    <figure className="border-border bg-background overflow-hidden rounded-lg border">
+      {isImage ? (
+        <img
+          src={item.url ?? undefined}
+          alt={item.caption || item.name}
+          className="max-h-80 w-full object-contain"
+        />
+      ) : (
+        <a
+          href={item.url ?? undefined}
+          target="_blank"
+          rel="noreferrer"
+          className="text-primary block truncate px-3 py-2 text-sm underline"
+        >
+          {item.name}
+        </a>
+      )}
+      {item.caption && (
+        <figcaption className="text-muted-foreground px-3 py-1.5 text-xs">
+          {item.caption}
+        </figcaption>
+      )}
+    </figure>
+  );
+};
+
 export const ProjectDocument: FC<{
   project: Project;
   vertical: boolean;
   onToggleLayout: () => void;
   onClose: () => void;
 }> = ({ project, vertical, onToggleLayout, onClose }) => {
+  const [localOrder, setLocalOrder] = useState<string[]>(() =>
+    project.sections.map((s) => s.id),
+  );
+
+  const serverIds = project.sections.map((s) => s.id);
+  const known = new Set(serverIds);
+  const order = [
+    ...localOrder.filter((id) => known.has(id)),
+    ...serverIds.filter((id) => !localOrder.includes(id)),
+  ];
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+  );
+
+  const sectionsById = new Map(project.sections.map((s) => [s.id, s]));
+  const orderedSections = order
+    .map((id) => sectionsById.get(id))
+    .filter((s): s is ProjectSection => Boolean(s));
+
+  const onDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const from = order.indexOf(String(active.id));
+    const to = order.indexOf(String(over.id));
+    if (from < 0 || to < 0) return;
+    const next = arrayMove(order, from, to);
+    setLocalOrder(next);
+    void reorderProjectSections(project.id, next).catch(() => {});
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-border flex items-center gap-2 border-b px-4 py-2">
@@ -74,11 +196,47 @@ export const ProjectDocument: FC<{
           </div>
         </div>
       </div>
-      <div className="aui-project-document aui-md min-h-0 flex-1 overflow-y-auto px-4 py-3 text-sm break-words">
-        {project.document.trim() ? (
-          <Markdown remarkPlugins={[remarkGfm]}>{project.document}</Markdown>
-        ) : (
-          <span className="text-muted-foreground italic">No document yet.</span>
+      <div className="aui-project-document min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+        {orderedSections.length > 0 && (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={onDragEnd}
+          >
+            <SortableContext
+              items={order}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="space-y-2">
+                {orderedSections.map((section) => (
+                  <SortableSection key={section.id} section={section} />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+        )}
+
+        <div className="aui-md text-sm break-words">
+          {project.document.trim() ? (
+            <Markdown remarkPlugins={[remarkGfm]}>{project.document}</Markdown>
+          ) : (
+            orderedSections.length === 0 && (
+              <span className="text-muted-foreground italic">No document yet.</span>
+            )
+          )}
+        </div>
+
+        {project.media.length > 0 && (
+          <div className="border-border space-y-2 border-t pt-3">
+            <div className="text-muted-foreground text-[10px] font-semibold tracking-wide uppercase">
+              Media
+            </div>
+            <div className="space-y-2">
+              {project.media.map((item) => (
+                <MediaItem key={item.id} item={item} />
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>

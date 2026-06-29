@@ -26,18 +26,21 @@ async def repo(pgvector_container: str):
         await pool.close()
 
 
-async def _tools(repo: ProjectRepository, thread_id: int = 1) -> dict:
+async def _tools(repo: ProjectRepository, thread_id: int = 1, tmp_path: Any = None) -> dict:
     list_, update, delete = create_project_tools(repo)
-    message_repo = MessageRepository(repo._pool)
-    await message_repo.initialize()
-    await message_repo.save_thread(thread_id, "thread")
-    create, _select = create_project_thread_tools(repo, message_repo, thread_id)
+    chat = ChatService(repo._pool, cwd=tmp_path)
+    await chat.initialize()
+    await chat.repository.save_thread(thread_id, "thread")
+    create, _select, add_section, attach_media = create_project_thread_tools(repo, chat, thread_id)
     return {
         "create_project": create,
         "list_projects": list_,
         "update_project": update,
         "delete_project": delete,
-        "message_repository": message_repo,
+        "add_project_section": add_section,
+        "attach_project_media": attach_media,
+        "message_repository": chat.repository,
+        "chat_service": chat,
     }
 
 
@@ -142,8 +145,76 @@ async def test_list_projects_endpoint_serializes_all_fields(repo: ProjectReposit
     assert body[0]["next_step"] == "ship the mvp"
     assert body[0]["document"] == "# Notes"
     assert body[0]["thread_id"] is None
+    assert body[0]["sections"] == []
+    assert body[0]["media"] == []
     assert isinstance(body[0]["id"], str)
     assert body[0]["created_at"] is not None
+
+
+@pytest.mark.smoke
+async def test_add_section_appends_in_order(repo: ProjectRepository) -> None:
+    tools = await _tools(repo)
+    project = await repo.create(name="Garden")
+
+    await tools["add_project_section"](str(project["id"]), title="Plan", body="dig")
+    after = await tools["add_project_section"](str(project["id"]), title="Budget", body="$50")
+
+    sections = json.loads(after.split("\n", 1)[1])["sections"]
+    assert [s["title"] for s in sections] == ["Plan", "Budget"]
+    stored = await repo.get(str(project["id"]))
+    assert stored is not None
+    assert [s["order"] for s in stored["sections"]] == [0, 1]
+
+
+@pytest.mark.smoke
+async def test_reorder_sections(repo: ProjectRepository) -> None:
+    project = await repo.create(name="Trip")
+    await repo.add_section(str(project["id"]), "A", "a")
+    await repo.add_section(str(project["id"]), "B", "b")
+    loaded = await repo.get(str(project["id"]))
+    assert loaded is not None
+    ids = [s["id"] for s in loaded["sections"]]
+
+    reordered = await repo.reorder_sections(str(project["id"]), [ids[1], ids[0]])
+
+    assert reordered is not None
+    assert [s["title"] for s in reordered["sections"]] == ["B", "A"]
+
+
+@pytest.mark.smoke
+async def test_reorder_sections_rejects_mismatched_ids(repo: ProjectRepository) -> None:
+    project = await repo.create(name="Trip")
+    await repo.add_section(str(project["id"]), "A", "a")
+
+    assert await repo.reorder_sections(str(project["id"]), ["nonexistent"]) is None
+
+
+@pytest.mark.smoke
+async def test_attach_media_stores_file_and_records_metadata(repo: ProjectRepository, tmp_path) -> None:
+    tools = await _tools(repo, thread_id=7, tmp_path=tmp_path)
+    project = await repo.create(name="Album")
+    src = tmp_path / "shot.png"
+    src.write_bytes(b"\x89PNG\r\n")
+
+    result = await tools["attach_project_media"](str(project["id"]), str(src), caption="A shot")
+
+    media = json.loads(result.split("\n", 1)[1])["media"]
+    assert media[0]["name"] == "shot.png"
+    stored = await repo.get(str(project["id"]))
+    assert stored is not None
+    assert stored["media"][0]["caption"] == "A shot"
+    assert stored["media"][0]["content_type"] == "image/png"
+    assert (tmp_path / "uploads" / "7" / "shot.png").exists()
+
+
+@pytest.mark.smoke
+async def test_attach_media_missing_file(repo: ProjectRepository, tmp_path) -> None:
+    tools = await _tools(repo, thread_id=8, tmp_path=tmp_path)
+    project = await repo.create(name="Album")
+
+    result = await tools["attach_project_media"](str(project["id"]), str(tmp_path / "nope.png"))
+
+    assert "not found" in result.lower()
 
 
 @pytest.mark.smoke

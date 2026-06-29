@@ -1,10 +1,20 @@
 _MAX_PROJECT_CONTEXT_DOC = 6000
 
 
+def _sections_block(project: dict) -> str:
+    sections = project.get("sections") or []
+    if not sections:
+        return ""
+    ordered = sorted(sections, key=lambda s: s.get("order", 0))
+    lines = "\n".join(f"- {s.get('title') or '(untitled)'} (section id: {s['id']})" for s in ordered)
+    return f" The project has these sections (add_project_section appends new ones):\n{lines}\n"
+
+
 def build_project_context(project: dict, max_doc: int = _MAX_PROJECT_CONTEXT_DOC) -> str:
     document = (project.get("document") or "").strip()
     if len(document) > max_doc:
         document = document[:max_doc] + "\n…(document truncated)"
+    sections = _sections_block(project)
     return (
         f'[The user is currently working in the context of the project "{project["name"]}" '
         f"(status: {project['status']}, project id: {project['id']}). Next step: "
@@ -16,6 +26,6 @@ def build_project_context(project: dict, max_doc: int = _MAX_PROJECT_CONTEXT_DOC
         f"resource (e.g. a Notion page). If the change needs research or other information you must "
         f"gather first, delegate ONLY that gathering to the task agent (no project id); you will be "
         f"handed its result when it finishes, and then you write that result into the project "
-        f"yourself with update_project. The project's current document is:\n---\n"
+        f"yourself with update_project.{sections} The project's current document is:\n---\n"
         f"{document or '(empty)'}\n---]"
     )

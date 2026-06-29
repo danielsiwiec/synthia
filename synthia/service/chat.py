@@ -212,6 +212,9 @@ class ChatService:
     async def save_attachments(self, thread_id: int, attachments: list[dict[str, Any]]) -> list[dict[str, str]]:
         return await _save_attachments(self._uploads_dir, thread_id, attachments)
 
+    async def save_file_by_path(self, thread_id: int, src: Path, name: str | None = None) -> Path:
+        return await _save_image_file(self._uploads_dir, thread_id, src, name or src.name)
+
     def attachment_path(self, thread_id: int, filename: str) -> Path | None:
         return _attachment_path(self._uploads_dir, thread_id, filename)
 

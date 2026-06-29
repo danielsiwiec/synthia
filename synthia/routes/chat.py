@@ -104,6 +104,25 @@ async def list_threads(request: Request):
     ]
 
 
+def _serialize_sections(sections: list[dict]) -> list[dict]:
+    ordered = sorted(sections, key=lambda s: s.get("order", 0))
+    return [{"id": s["id"], "title": s.get("title", ""), "body": s.get("body", "")} for s in ordered]
+
+
+def _serialize_media(media: list[dict], thread_id: int | None) -> list[dict]:
+    ordered = sorted(media, key=lambda m: m.get("order", 0))
+    return [
+        {
+            "id": m["id"],
+            "name": m.get("name", ""),
+            "content_type": m.get("content_type", ""),
+            "caption": m.get("caption", ""),
+            "url": f"/chat/threads/{thread_id}/attachments/{m['file']}" if thread_id is not None else None,
+        }
+        for m in ordered
+    ]
+
+
 @router.get("/chat/projects")
 async def list_projects(request: Request):
     chat_service: ChatService = request.app.state.chat_service
@@ -120,11 +139,26 @@ async def list_projects(request: Request):
                 "next_step": p["next_step"],
                 "document": p["document"],
                 "thread_id": str(thread_id) if thread_id is not None else None,
+                "sections": _serialize_sections(p.get("sections", [])),
+                "media": _serialize_media(p.get("media", []), thread_id),
                 "created_at": p["created_at"].isoformat() if p["created_at"] else None,
                 "updated_at": p["updated_at"].isoformat() if p["updated_at"] else None,
             }
         )
     return result
+
+
+class _ReorderSectionsRequest(BaseModel):
+    section_ids: list[str]
+
+
+@router.patch("/chat/projects/{project_id}/sections/reorder")
+async def reorder_project_sections(request: Request, project_id: str, body: _ReorderSectionsRequest):
+    project_repository = request.app.state.project_repository
+    project = await project_repository.reorder_sections(project_id, body.section_ids)
+    if project is None:
+        raise HTTPException(status_code=400, detail="Invalid project or section ids")
+    return {"ok": True}
 
 
 @router.patch("/chat/threads/{thread_id}")

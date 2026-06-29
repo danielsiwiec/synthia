@@ -154,6 +154,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
                 task_repository=task_repository,
                 front_tools=[*episodic_tools, *memory_tools, *scheduler_tools, *project_tools],
                 project_repository=project_repository,
+                chat_service=chat_service,
             )
 
             scheduler_service.start()
