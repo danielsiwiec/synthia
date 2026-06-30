@@ -87,13 +87,24 @@ class ProjectRepository:
         return deleted
 
     async def add_section(self, project_id: str, title: str, body: str) -> dict[str, Any] | None:
-        project = await self.get(project_id)
-        if project is None:
-            return None
-        sections = project["sections"]
-        order = max((s.get("order", 0) for s in sections), default=-1) + 1
-        sections.append({"id": uuid.uuid4().hex, "title": title, "body": body, "order": order})
-        return await self._write_sections(project_id, sections)
+        entry = {"id": uuid.uuid4().hex, "title": title, "body": body}
+        row = await self._pool.fetchrow(
+            f"""
+            UPDATE projects
+            SET sections = sections || jsonb_build_object(
+                    'id', $2::text, 'title', $3::text, 'body', $4::text,
+                    'order', jsonb_array_length(sections)
+                ),
+                updated_at = NOW()
+            WHERE id = $1
+            RETURNING {_COLUMNS}
+            """,
+            project_id,
+            entry["id"],
+            title,
+            body,
+        )
+        return _row_to_project(row)
 
     async def update_section(
         self, project_id: str, section_id: str, title: str | None, body: str | None
@@ -124,25 +135,24 @@ class ProjectRepository:
     async def add_media(
         self, project_id: str, name: str, content_type: str, file: str, caption: str
     ) -> dict[str, Any] | None:
-        project = await self.get(project_id)
-        if project is None:
-            return None
-        media = project["media"]
-        order = max((m.get("order", 0) for m in media), default=-1) + 1
-        media.append(
-            {
-                "id": uuid.uuid4().hex,
-                "name": name,
-                "content_type": content_type,
-                "file": file,
-                "caption": caption,
-                "order": order,
-            }
-        )
         row = await self._pool.fetchrow(
-            f"UPDATE projects SET media = $2, updated_at = NOW() WHERE id = $1 RETURNING {_COLUMNS}",
+            f"""
+            UPDATE projects
+            SET media = media || jsonb_build_object(
+                    'id', $2::text, 'name', $3::text, 'content_type', $4::text,
+                    'file', $5::text, 'caption', $6::text,
+                    'order', jsonb_array_length(media)
+                ),
+                updated_at = NOW()
+            WHERE id = $1
+            RETURNING {_COLUMNS}
+            """,
             project_id,
-            json.dumps(media),
+            uuid.uuid4().hex,
+            name,
+            content_type,
+            file,
+            caption,
         )
         return _row_to_project(row)
 

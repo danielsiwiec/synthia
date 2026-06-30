@@ -24,6 +24,12 @@ import { CSS } from "@dnd-kit/utilities";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/assistant-ui/project-status-badge";
 import {
   reorderProjectSections,
@@ -80,15 +86,38 @@ const SortableSection: FC<{ section: ProjectSection }> = ({ section }) => {
 };
 
 const MediaItem: FC<{ item: ProjectMedia }> = ({ item }) => {
-  const isImage = item.content_type.startsWith("image/") && item.url;
+  const isImage = Boolean(item.content_type.startsWith("image/") && item.url);
   return (
     <figure className="border-border bg-background overflow-hidden rounded-lg border">
       {isImage ? (
-        <img
-          src={item.url ?? undefined}
-          alt={item.caption || item.name}
-          className="max-h-80 w-full object-contain"
-        />
+        <Dialog>
+          <DialogTrigger asChild>
+            <button
+              type="button"
+              aria-label={`Expand ${item.caption || item.name}`}
+              className="block w-full cursor-zoom-in"
+            >
+              <img
+                src={item.url ?? undefined}
+                alt={item.caption || item.name}
+                className="max-h-80 w-full object-contain transition-opacity hover:opacity-90"
+              />
+            </button>
+          </DialogTrigger>
+          <DialogContent className="max-w-[95vw] p-2 sm:max-w-4xl">
+            <DialogTitle className="sr-only">{item.caption || item.name}</DialogTitle>
+            <img
+              src={item.url ?? undefined}
+              alt={item.caption || item.name}
+              className="mx-auto block max-h-[85vh] w-auto max-w-full object-contain"
+            />
+            {item.caption && (
+              <div className="text-muted-foreground px-1 pt-1 text-center text-xs">
+                {item.caption}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       ) : (
         <a
           href={item.url ?? undefined}

@@ -190,6 +190,40 @@ async def test_reorder_sections_rejects_mismatched_ids(repo: ProjectRepository) 
 
 
 @pytest.mark.smoke
+async def test_concurrent_add_media_keeps_all(repo: ProjectRepository) -> None:
+    import asyncio
+
+    project = await repo.create(name="Album")
+    pid = str(project["id"])
+
+    await asyncio.gather(
+        *(
+            repo.add_media(pid, name=f"f{i}.png", content_type="image/png", file=f"f{i}.png", caption="")
+            for i in range(5)
+        )
+    )
+
+    stored = await repo.get(pid)
+    assert stored is not None
+    assert sorted(m["name"] for m in stored["media"]) == [f"f{i}.png" for i in range(5)]
+    assert sorted(m["order"] for m in stored["media"]) == [0, 1, 2, 3, 4]
+
+
+@pytest.mark.smoke
+async def test_concurrent_add_section_keeps_all(repo: ProjectRepository) -> None:
+    import asyncio
+
+    project = await repo.create(name="Plan")
+    pid = str(project["id"])
+
+    await asyncio.gather(*(repo.add_section(pid, f"S{i}", f"body{i}") for i in range(5)))
+
+    stored = await repo.get(pid)
+    assert stored is not None
+    assert sorted(s["title"] for s in stored["sections"]) == [f"S{i}" for i in range(5)]
+
+
+@pytest.mark.smoke
 async def test_attach_media_stores_file_and_records_metadata(repo: ProjectRepository, tmp_path) -> None:
     tools = await _tools(repo, thread_id=7, tmp_path=tmp_path)
     project = await repo.create(name="Album")
