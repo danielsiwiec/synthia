@@ -8,7 +8,7 @@ import pytest
 from synthia.agents.projects.client import create_project_thread_tools, create_project_tools
 from synthia.agents.projects.tools.select_project import create_select_project_tool
 from synthia.migrations.runner import run_migrations
-from synthia.routes.chat import _project_context, list_projects
+from synthia.routes.chat import _Attachment, _project_context, _SendMessageRequest, list_projects, send_message
 from synthia.service.chat import ChatService, MessageRepository
 from synthia.service.models import ProjectSelected
 from synthia.service.project_repository import ProjectRepository
@@ -187,6 +187,56 @@ async def test_reorder_sections_rejects_mismatched_ids(repo: ProjectRepository) 
     await repo.add_section(str(project["id"]), "A", "a")
 
     assert await repo.reorder_sections(str(project["id"]), ["nonexistent"]) is None
+
+
+@pytest.mark.smoke
+async def test_send_message_with_project_adds_attachment_to_media(repo: ProjectRepository, tmp_path) -> None:
+    import base64
+
+    chat = ChatService(repo._pool, cwd=tmp_path)
+    await chat.initialize()
+    project = await repo.create(name="Album")
+    request: Any = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(project_repository=repo, chat_service=chat))
+    )
+    body = _SendMessageRequest(
+        content="here you go",
+        project_id=str(project["id"]),
+        attachments=[
+            _Attachment(name="ticket.png", content_type="image/png", data=base64.b64encode(b"\x89PNG").decode())
+        ],
+    )
+
+    await send_message(request, 998877, body)
+
+    stored = await repo.get(str(project["id"]))
+    assert stored is not None
+    assert [m["name"] for m in stored["media"]] == ["ticket.png"]
+    assert stored["media"][0]["content_type"] == "image/png"
+
+
+@pytest.mark.smoke
+async def test_send_message_without_project_adds_no_media(repo: ProjectRepository, tmp_path) -> None:
+    import base64
+
+    chat = ChatService(repo._pool, cwd=tmp_path)
+    await chat.initialize()
+    project = await repo.create(name="Album")
+    request: Any = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(project_repository=repo, chat_service=chat))
+    )
+    body = _SendMessageRequest(
+        content="no project here",
+        attachments=[
+            _Attachment(name="loose.png", content_type="image/png", data=base64.b64encode(b"\x89PNG").decode())
+        ],
+    )
+
+    await send_message(request, 998878, body)
+
+    stored = await repo.get(str(project["id"]))
+    assert stored is not None
+    assert stored["media"] == []
 
 
 @pytest.mark.smoke

@@ -234,6 +234,18 @@ async def send_message(request: Request, thread_id: int, body: _SendMessageReque
         ]
     await chat_service.repository.save_message(thread_id, "user", "user", body.content, metadata or None)
 
+    if body.project_id and saved:
+        project_repository = getattr(request.app.state, "project_repository", None)
+        if project_repository is not None:
+            for s in saved:
+                await project_repository.add_media(
+                    body.project_id,
+                    name=s["name"],
+                    content_type=s["content_type"],
+                    file=Path(s["path"]).name,
+                    caption="",
+                )
+
     images = [
         TaskImage(path=s["path"], content_type=s["content_type"])
         for s in saved
