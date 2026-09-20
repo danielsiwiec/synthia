@@ -32,6 +32,18 @@ _OBJECTIVES = {
 }
 _START_URL, _OBJECTIVE, _VALUES = _OBJECTIVES[os.getenv("EVAL_OBJECTIVE", "guided")]
 _RUNS = int(os.getenv("EVAL_RUNS", "1"))
+_GEMINI_MODEL = os.getenv("EVAL_GEMINI_MODEL", TASK_MODEL.name)
+
+
+def _gemini_rates() -> tuple[float, float, float]:
+    import litellm
+
+    cost = litellm.model_cost.get(_GEMINI_MODEL) or litellm.model_cost.get(_GEMINI_MODEL.split("/", 1)[-1]) or {}
+    def per_m(key):
+        return float(cost.get(key) or 0) * 1_000_000
+    return per_m("input_cost_per_token"), per_m("output_cost_per_token"), per_m("cache_read_input_token_cost")
+
+
 _FILE_WAIT_S = 120
 _GEMINI_KEY = required_api_key(TASK_MODEL.name)
 
@@ -101,7 +113,7 @@ async def _gemini_run() -> dict:
         tools=tools,
         system_prompt=instruction,
         session_service=InMemorySessionService(),
-        model=TASK_MODEL.name,
+        model=_GEMINI_MODEL,
         include_builtins=False,
         name="browser_eval",
         prompt_thread_hint=False,
@@ -113,16 +125,17 @@ async def _gemini_run() -> dict:
         await service.close()
     assert result is not None
     usage = await _usage_from_session(agent)
+    in_rate, out_rate, cache_rate = _gemini_rates()
+    uncached = usage["input_tokens"] - usage["cached_tokens"]
+    cost = (uncached * in_rate + usage["cached_tokens"] * cache_rate + usage["output_tokens"] * out_rate) / 1_000_000
     return {
-        "driver": (
-            f"gemini ({TASK_MODEL.name}, ${TASK_MODEL.input_cost_per_m}/M in, ${TASK_MODEL.output_cost_per_m}/M out)"
-        ),
+        "driver": f"gemini ({_GEMINI_MODEL}, ${in_rate}/M in, ${out_rate}/M out, ${cache_rate}/M cached)",
         "status": "done" if "download started" in usage["tool_outputs"] else result.result[:60],
         "seconds": round(time.perf_counter() - started, 1),
         "model_calls": usage["calls"],
         "input_tokens": usage["input_tokens"],
         "output_tokens": usage["output_tokens"],
-        "cost_usd": result.cost_usd or 0.0,
+        "cost_usd": round(cost, 6),
         "model_ms": usage["model_ms"],
         "steps": usage["steps"],
     }
@@ -130,7 +143,7 @@ async def _gemini_run() -> dict:
 
 async def _usage_from_session(agent: Agent) -> dict:
     session = await agent._session_service.get_session(app_name="synthia", user_id="default", session_id="eval-gemini")
-    calls = input_tokens = output_tokens = 0
+    calls = input_tokens = output_tokens = cached_tokens = 0
     steps: list[str] = []
     tool_outputs = ""
     latencies: list[float] = []
@@ -141,6 +154,7 @@ async def _usage_from_session(agent: Agent) -> dict:
             calls += 1
             input_tokens += usage.prompt_token_count or 0
             output_tokens += usage.candidates_token_count or 0
+            cached_tokens += getattr(usage, "cached_content_token_count", 0) or 0
             if previous_at is not None:
                 latencies.append((event.timestamp - previous_at) * 1000)
         previous_at = event.timestamp
@@ -154,6 +168,7 @@ async def _usage_from_session(agent: Agent) -> dict:
         "calls": calls,
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
+        "cached_tokens": cached_tokens,
         "steps": steps,
         "tool_outputs": tool_outputs,
         "model_ms": round(sum(latencies) / len(latencies)) if latencies else 0,
