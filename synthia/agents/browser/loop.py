@@ -44,6 +44,7 @@ class BrowseResult(BaseModel):
     steps: list[str] = []
     jev_calls: int = 0
     jev_tokens: int = 0
+    jev_mean_ms: int = 0
     cost_usd: float = 0.0
     duration_s: float = 0.0
 
@@ -56,7 +57,8 @@ class BrowseResult(BaseModel):
             lines.append("steps:\n  " + "\n  ".join(self.steps))
         lines.append(f"page text: {self.summary}")
         lines.append(
-            f"({len(self.steps)} steps, {self.jev_calls} jev calls, ${self.cost_usd:.5f}, {self.duration_s:.1f}s)"
+            f"({len(self.steps)} steps, {self.jev_calls} jev calls averaging {self.jev_mean_ms}ms, "
+            f"${self.cost_usd:.5f}, {self.duration_s:.1f}s)"
         )
         return "\n".join(lines)
 
@@ -143,6 +145,7 @@ async def run_goal(
         steps=history,
         jev_calls=usage.calls,
         jev_tokens=usage.input_tokens,
+        jev_mean_ms=round(sum(usage.latencies_ms) / len(usage.latencies_ms)) if usage.latencies_ms else 0,
         cost_usd=usage.cost_usd,
         duration_s=round(time.perf_counter() - started, 2),
     )

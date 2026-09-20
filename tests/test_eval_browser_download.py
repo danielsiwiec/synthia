@@ -80,6 +80,7 @@ async def _jev_run() -> dict:
         "input_tokens": result.jev_tokens,
         "output_tokens": 0,
         "cost_usd": result.cost_usd,
+        "model_ms": result.jev_mean_ms,
         "steps": result.steps,
     }
 
@@ -122,6 +123,7 @@ async def _gemini_run() -> dict:
         "input_tokens": usage["input_tokens"],
         "output_tokens": usage["output_tokens"],
         "cost_usd": result.cost_usd or 0.0,
+        "model_ms": usage["model_ms"],
         "steps": usage["steps"],
     }
 
@@ -131,12 +133,17 @@ async def _usage_from_session(agent: Agent) -> dict:
     calls = input_tokens = output_tokens = 0
     steps: list[str] = []
     tool_outputs = ""
+    latencies: list[float] = []
+    previous_at: float | None = None
     for event in session.events if session else []:
         usage = getattr(event, "usage_metadata", None)
         if usage and (usage.prompt_token_count or usage.candidates_token_count):
             calls += 1
             input_tokens += usage.prompt_token_count or 0
             output_tokens += usage.candidates_token_count or 0
+            if previous_at is not None:
+                latencies.append((event.timestamp - previous_at) * 1000)
+        previous_at = event.timestamp
         for part in (event.content.parts if event.content else []) or []:
             if part.function_call:
                 args = dict(part.function_call.args or {})
@@ -149,6 +156,7 @@ async def _usage_from_session(agent: Agent) -> dict:
         "output_tokens": output_tokens,
         "steps": steps,
         "tool_outputs": tool_outputs,
+        "model_ms": round(sum(latencies) / len(latencies)) if latencies else 0,
     }
 
 
@@ -157,23 +165,25 @@ def _report(rows: list[dict]) -> str:
         "",
         f"objective={os.getenv('EVAL_OBJECTIVE', 'guided')} runs={_RUNS}",
         "| run | driver | status | seconds to download start | file on disk | model calls "
-        "| input tok | output tok | cost USD |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| mean model ms | input tok | output tok | cost USD |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
         lines.append(
             f"| {r['run']} | {r['driver']} | {r['status']} | {r['seconds']} | {r['file_seconds']} | "
-            f"{r['model_calls']} | {r['input_tokens']} | {r['output_tokens']} | {r['cost_usd']:.6f} |"
+            f"{r['model_calls']} | {r['model_ms']} | {r['input_tokens']} | {r['output_tokens']} | {r['cost_usd']:.6f} |"
         )
-    lines.append("\n| driver | success | mean s | mean cost | mean calls |\n|---|---|---|---|---|")
+    lines.append("\n| driver | success | mean s | mean cost | mean calls | mean model ms |\n|---|---|---|---|---|---|")
     for driver in dict.fromkeys(r["driver"] for r in rows):
         group = [r for r in rows if r["driver"] == driver]
         ok = [r for r in group if r["file"]]
+
         def mean(key, rs):
             return (sum(r[key] for r in rs) / len(rs)) if rs else 0
+
         lines.append(
             f"| {driver} | {len(ok)}/{len(group)} | {mean('seconds', ok):.1f} | {mean('cost_usd', group):.5f} "
-            f"| {mean('model_calls', group):.1f} |"
+            f"| {mean('model_calls', group):.1f} | {mean('model_ms', group):.0f} |"
         )
     for r in rows:
         lines.append(f"\nrun {r['run']} {r['driver']} steps:")
