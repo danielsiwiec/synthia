@@ -7,7 +7,7 @@ import pytest
 from google.adk.sessions import InMemorySessionService
 
 from synthia.agents.agent import JEV_MODEL_SPEC, TASK_MODEL, Agent, required_api_key
-from synthia.agents.browser.decider import ClassifierDecider, LayaDecider, LlmDecider
+from synthia.agents.browser.decider import ClassifierDecider, LlmDecider
 from synthia.agents.browser.jev import JevClient, jev_available
 from synthia.agents.browser.loop import run_goal
 from synthia.agents.browser.page import HostBrowser, Tab
@@ -161,30 +161,6 @@ async def _classifier_run() -> dict:
     }
 
 
-async def _laya_run() -> dict:
-    host = HostBrowser(_CDP)
-    tab = Tab(host)
-    decider = LayaDecider()
-    started = time.perf_counter()
-    try:
-        await tab.open(_START_URL)
-        result = await run_goal(tab, decider, _OBJECTIVE, _VALUES, max_steps=30, timeout_s=240)
-    finally:
-        await tab.close()
-        await host.close()
-    return {
-        "driver": f"{result.decider} (local, {os.getenv('LAYA_DEVICE') or 'auto'} device)",
-        "status": result.status,
-        "seconds": round(time.perf_counter() - started, 1),
-        "model_calls": result.jev_calls,
-        "input_tokens": result.jev_tokens,
-        "output_tokens": 0,
-        "cost_usd": 0.0,
-        "model_ms": result.jev_mean_ms,
-        "steps": result.steps,
-    }
-
-
 async def _gemini_run() -> dict:
     service = BrowserService(_CDP)
     tools = [
@@ -298,7 +274,7 @@ def _report(rows: list[dict]) -> str:
 @needs_env
 async def test_economist_download_jev_vs_gemini() -> None:
     rows = []
-    drivers = {"jev": _jev_run, "gemini": _gemini_run, "classifier": _classifier_run, "laya": _laya_run}
+    drivers = {"jev": _jev_run, "gemini": _gemini_run, "classifier": _classifier_run}
     drivers.update({f"harness:{m}": _harness_run(m) for m in _HARNESS_MODELS})
     requested = os.getenv("EVAL_DRIVERS", "jev,gemini").split(",")
     selected = [d for d in requested if d in drivers] + (
