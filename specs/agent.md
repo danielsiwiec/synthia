@@ -212,7 +212,9 @@ timeout. Downloads triggered in that Chrome land in the host download folder mou
   - The observation is pruned in code before it is sent: modal/dialog elements first, then
     in-viewport elements, then the rest ranked by word overlap with the goal, capped at
     `BROWSER_MAX_CANDIDATES`; the text excerpt is capped so state stays well under the
-    model's limit.
+    model's limit. The target questions list candidates by ref number only
+    (`BROWSER_JEV_CRITERIA=refs`, the default); the element descriptions live once in the
+    state. `names` or `full` restore descriptions in the criteria at higher token cost.
   - Jev cannot write text, so typed/selected text comes only from the caller's `values`
     map. If the chosen action needs a value and none fits, the loop stops with
     `needs_input`.

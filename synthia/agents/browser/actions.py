@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -21,6 +22,7 @@ VALUE_ACTIONS = frozenset({"type", "select"})
 TARGET_ACTIONS = frozenset({"click", "type", "select"})
 TYPEABLE_KINDS = frozenset({"textbox", "search", "email", "number", "password", "url", "tel", "date", "combobox"})
 _TARGET_QUESTION = {"click": "click_target", "type": "type_target", "select": "select_target"}
+CRITERIA_STYLES = ("full", "names", "refs")
 _WORD = re.compile(r"[a-z0-9]{3,}")
 _SECRET = re.compile(r"pass|secret|token|key|pin|cvv|ssn", re.I)
 _VALUE_LEN = 120
@@ -166,7 +168,19 @@ def build_state(
     }
 
 
-def build_questions(values: dict[str, str], elements: list[Element]) -> dict[str, Any]:
+def _criterion(element: Element, style: str) -> Any:
+    if style == "refs":
+        return None
+    if style == "names":
+        return element.name or element.kind
+    return element.describe()
+
+
+def build_questions(values: dict[str, str], elements: list[Element], style: str | None = None) -> dict[str, Any]:
+    style = style or os.getenv("BROWSER_JEV_CRITERIA", "refs")
+    if style not in CRITERIA_STYLES:
+        style = "full"
+    hint = " Each option is the element's #ref number as listed in `elements`." if style != "full" else ""
     questions: dict[str, Any] = {
         "action": Choice(
             instructions=(
@@ -205,9 +219,9 @@ def build_questions(values: dict[str, str], elements: list[Element]) -> dict[str
             questions[name] = Choice(
                 instructions=(
                     f"Which element in `elements` should be {verb} next to advance `goal`? "
-                    "Prefer elements in a dialog if one blocks the page."
+                    "Prefer elements in a dialog if one blocks the page." + hint
                 ),
-                criteria={str(e.ref): e.describe() for e in group},
+                criteria={str(e.ref): _criterion(e, style) for e in group},
             )
     if values:
         questions["value"] = Choice(

@@ -102,8 +102,12 @@ def test_questions_include_target_and_value_only_when_available() -> None:
     element = Element(ref=7, kind="textbox", name="Search")
     questions = build_questions({}, [])
     assert set(questions) == {"action", "goal_met", "stuck", "irreversible"}
-    questions = build_questions({"query": "wired"}, [element])
+    questions = build_questions({"query": "wired"}, [element], style="full")
     assert questions["type_target"].criteria == {"7": "textbox 'Search'"}
+    assert build_questions({}, [element])["type_target"].criteria == {"7": None}
+    assert build_questions({}, [element], style="refs")["type_target"].criteria == {"7": None}
+    assert build_questions({}, [element], style="names")["type_target"].criteria == {"7": "Search"}
+    assert "#ref number" in build_questions({}, [element], style="refs")["type_target"].instructions
     assert "click_target" not in questions and "select_target" not in questions
     assert list(questions["value"].criteria) == ["query"]
     button = Element(ref=8, kind="button", name="Go")

@@ -93,7 +93,10 @@ async def _jev_run() -> dict:
     assert result.jev_tokens > 0
     assert result.cost_usd == pytest.approx(result.jev_tokens / 1_000_000 * JEV_MODEL_SPEC.input_cost_per_m, abs=1e-6)
     return {
-        "driver": f"jev ({jev.model}, ${JEV_MODEL_SPEC.input_cost_per_m}/M in, output free)",
+        "driver": (
+            f"jev:{os.getenv('BROWSER_JEV_CRITERIA', 'refs')} ({jev.model}, "
+            f"${JEV_MODEL_SPEC.input_cost_per_m}/M in, output free)"
+        ),
         "status": result.status,
         "seconds": round(time.perf_counter() - started, 1),
         "model_calls": result.jev_calls,
