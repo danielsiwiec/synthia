@@ -1,0 +1,10 @@
+<!doctype html>
+<html>
+<head><title>Busy Fixture</title></head>
+<body>
+<main>
+  <h1>Busy page</h1>
+  <button onclick="const t = Date.now(); while (Date.now() - t < 4000) {}">Block for 4s</button>
+</main>
+</body>
+</html>

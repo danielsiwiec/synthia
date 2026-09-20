@@ -27,16 +27,25 @@ def jev_available() -> bool:
 class JevUsage:
     calls: int = 0
     input_tokens: int = 0
+    output_tokens: int = 0
     cost_usd: float = 0.0
     latencies_ms: list[int] = field(default_factory=list)
 
     def add(self, input_tokens: int, latency_ms: int) -> float:
         cost = round(input_tokens / 1_000_000 * JEV_INPUT_COST_PER_M, 8)
+        self.record(input_tokens, 0, cost, latency_ms)
+        return cost
+
+    def record(self, input_tokens: int, output_tokens: int, cost: float, latency_ms: int) -> None:
         self.calls += 1
         self.input_tokens += input_tokens
+        self.output_tokens += output_tokens
         self.cost_usd = round(self.cost_usd + cost, 8)
         self.latencies_ms.append(latency_ms)
-        return cost
+
+    @property
+    def mean_ms(self) -> int:
+        return round(sum(self.latencies_ms) / len(self.latencies_ms)) if self.latencies_ms else 0
 
 
 class JevClient:

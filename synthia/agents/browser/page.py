@@ -16,6 +16,8 @@ _OBSERVE_JS = (Path(__file__).parent / "observe.js").read_text()
 _NAV_TIMEOUT_MS = 30_000
 _ACTION_TIMEOUT_MS = 8_000
 _SETTLE_MS = 800
+_OBSERVE_TIMEOUT_S = 15.0
+_EVAL_TIMEOUT_S = 30.0
 _SCROLL_FRACTION = 0.8
 _DOWNLOAD_ERROR = re.compile(r"Download is starting", re.I)
 _RESTORE_OBSTRUCTION_JS = """() => {
@@ -105,6 +107,7 @@ class HostBrowser:
         page = await (await self.context()).new_page()
         page.set_default_timeout(_ACTION_TIMEOUT_MS)
         page.set_default_navigation_timeout(_NAV_TIMEOUT_MS)
+        await _bring_to_front(page)
         return page
 
     async def pages(self) -> list[Page]:
@@ -181,6 +184,7 @@ class Tab:
         page = opened[-1]
         self._opened.extend(p for p in opened if p not in self._opened)
         self.adopt(page)
+        await _bring_to_front(page)
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=_NAV_TIMEOUT_MS)
         except PlaywrightError:
@@ -231,20 +235,31 @@ class Tab:
             pass
         await asyncio.sleep(timeout_ms / 1000 / 2)
 
-    async def observe(self) -> Observation:
+    async def observe(self, timeout_s: float = _OBSERVE_TIMEOUT_S) -> Observation:
         page = await self.ensure()
         try:
-            raw = await page.evaluate(_OBSERVE_JS)
+            raw = await asyncio.wait_for(page.evaluate(_OBSERVE_JS), timeout_s)
+        except TimeoutError:
+            logger.warning(f"observation timed out after {timeout_s:.0f}s; page main thread is busy: {page.url[:80]}")
+            return Observation.from_raw(_busy_observation(page.url, timeout_s))
         except PlaywrightError as error:
             if "Execution context was destroyed" not in str(error) and "navigation" not in str(error).lower():
                 raise
             await self.settle(_NAV_TIMEOUT_MS)
-            raw = await page.evaluate(_OBSERVE_JS)
+            try:
+                raw = await asyncio.wait_for(page.evaluate(_OBSERVE_JS), timeout_s)
+            except TimeoutError:
+                return Observation.from_raw(_busy_observation(page.url, timeout_s))
         return Observation.from_raw(raw)
 
-    async def evaluate(self, script: str) -> Any:
+    async def evaluate(self, script: str, timeout_s: float = _EVAL_TIMEOUT_S) -> Any:
         page = await self.ensure()
-        return await page.evaluate(script)
+        try:
+            return await asyncio.wait_for(page.evaluate(script), timeout_s)
+        except TimeoutError as error:
+            raise PlaywrightError(
+                f"evaluate timed out after {timeout_s:.0f}s: the page's main thread is busy"
+            ) from error
 
     def _locator(self, ref: int):
         assert self._page is not None
@@ -305,7 +320,7 @@ class Tab:
 
     async def _url_changed(self, page: Page, url_before: str, grace_s: float = 1.5) -> bool:
         deadline = asyncio.get_event_loop().time() + grace_s
-        while page.url == url_before:
+        while _without_fragment(page.url) == _without_fragment(url_before):
             if asyncio.get_event_loop().time() >= deadline:
                 return False
             await asyncio.sleep(0.1)
@@ -415,6 +430,28 @@ class Tab:
         path.parent.mkdir(parents=True, exist_ok=True)
         await page.screenshot(path=str(path), full_page=full_page)
         return path
+
+
+async def _bring_to_front(page: Page) -> None:
+    try:
+        await page.bring_to_front()
+    except PlaywrightError:
+        pass
+
+
+def _busy_observation(url: str, timeout_s: float) -> dict[str, Any]:
+    return {
+        "url": url,
+        "title": "",
+        "text": f"(the page is busy and did not respond within {timeout_s:.0f}s; it may be preparing a download)",
+        "alerts": ["page busy"],
+        "scroll": {},
+        "elements": [],
+    }
+
+
+def _without_fragment(url: str) -> str:
+    return url.split("#", 1)[0]
 
 
 def _short(error: BaseException) -> str:

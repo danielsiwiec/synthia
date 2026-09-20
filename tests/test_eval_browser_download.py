@@ -7,6 +7,7 @@ import pytest
 from google.adk.sessions import InMemorySessionService
 
 from synthia.agents.agent import JEV_MODEL_SPEC, TASK_MODEL, Agent, required_api_key
+from synthia.agents.browser.decider import LlmDecider
 from synthia.agents.browser.jev import JevClient, jev_available
 from synthia.agents.browser.loop import run_goal
 from synthia.agents.browser.page import HostBrowser, Tab
@@ -33,15 +34,22 @@ _OBJECTIVES = {
 _START_URL, _OBJECTIVE, _VALUES = _OBJECTIVES[os.getenv("EVAL_OBJECTIVE", "guided")]
 _RUNS = int(os.getenv("EVAL_RUNS", "1"))
 _GEMINI_MODEL = os.getenv("EVAL_GEMINI_MODEL", TASK_MODEL.name)
+_HARNESS_MODELS = [m for m in os.getenv("EVAL_HARNESS_MODELS", TASK_MODEL.name).split(",") if m]
+
+
+def _rates(model: str) -> tuple[float, float, float]:
+    import litellm
+
+    cost = litellm.model_cost.get(model) or litellm.model_cost.get(model.split("/", 1)[-1]) or {}
+
+    def per_m(key):
+        return float(cost.get(key) or 0) * 1_000_000
+
+    return per_m("input_cost_per_token"), per_m("output_cost_per_token"), per_m("cache_read_input_token_cost")
 
 
 def _gemini_rates() -> tuple[float, float, float]:
-    import litellm
-
-    cost = litellm.model_cost.get(_GEMINI_MODEL) or litellm.model_cost.get(_GEMINI_MODEL.split("/", 1)[-1]) or {}
-    def per_m(key):
-        return float(cost.get(key) or 0) * 1_000_000
-    return per_m("input_cost_per_token"), per_m("output_cost_per_token"), per_m("cache_read_input_token_cost")
+    return _rates(_GEMINI_MODEL)
 
 
 _FILE_WAIT_S = 120
@@ -95,6 +103,34 @@ async def _jev_run() -> dict:
         "model_ms": result.jev_mean_ms,
         "steps": result.steps,
     }
+
+
+def _harness_run(model: str):
+    async def run() -> dict:
+        in_rate, out_rate, cache_rate = _rates(model)
+        host = HostBrowser(_CDP)
+        tab = Tab(host)
+        started = time.perf_counter()
+        try:
+            await tab.open(_START_URL)
+            decider = LlmDecider(model, in_rate, out_rate, cache_rate)
+            result = await run_goal(tab, decider, _OBJECTIVE, _VALUES, max_steps=30, timeout_s=240)
+        finally:
+            await tab.close()
+            await host.close()
+        return {
+            "driver": f"harness:{model} (${in_rate}/M in, ${out_rate}/M out, ${cache_rate}/M cached)",
+            "status": result.status,
+            "seconds": round(time.perf_counter() - started, 1),
+            "model_calls": result.jev_calls,
+            "input_tokens": result.jev_tokens,
+            "output_tokens": result.output_tokens,
+            "cost_usd": result.cost_usd,
+            "model_ms": result.jev_mean_ms,
+            "steps": result.steps,
+        }
+
+    return run
 
 
 async def _gemini_run() -> dict:
@@ -211,19 +247,24 @@ def _report(rows: list[dict]) -> str:
 async def test_economist_download_jev_vs_gemini() -> None:
     rows = []
     drivers = {"jev": _jev_run, "gemini": _gemini_run}
-    selected = [d for d in os.getenv("EVAL_DRIVERS", "jev,gemini").split(",") if d in drivers]
+    drivers.update({f"harness:{m}": _harness_run(m) for m in _HARNESS_MODELS})
+    requested = os.getenv("EVAL_DRIVERS", "jev,gemini").split(",")
+    selected = [d for d in requested if d in drivers] + (
+        [f"harness:{m}" for m in _HARNESS_MODELS] if "harness" in requested else []
+    )
     for index in range(1, _RUNS + 1):
         for run in (drivers[d] for d in selected):
             before = _snapshot()
             started = time.perf_counter()
             row = await run()
-            file = await _wait_for_file(before) if row["status"] not in ("error",) else None
+            file = await _wait_for_file(before) if row["status"] == "done" else None
             row["run"] = index
             row["file_seconds"] = round(time.perf_counter() - started, 1) if file else "none"
             row["file"] = str(file) if file else None
             if file:
                 file.unlink()
             rows.append(row)
+            print(_report([row]).splitlines()[4], flush=True)
             await asyncio.sleep(2)
     print(_report(rows))
     assert any(row["file"] for row in rows), "no run produced a file"

@@ -1,3 +1,4 @@
+import asyncio
 import functools
 import http.server
 import os
@@ -18,6 +19,7 @@ from synthia.agents.browser.actions import (
     parse_decision,
     prune,
 )
+from synthia.agents.browser.decider import parse_llm_decision
 from synthia.agents.browser.jev import JevClient, jev_available
 from synthia.agents.browser.loop import BrowseResult, _repeating, check, run_goal
 from synthia.agents.browser.page import HostBrowser, Tab, cdp_endpoint
@@ -148,6 +150,35 @@ def test_repeating_needs_unchanged_page_after_non_wait_actions() -> None:
 
 
 @pytest.mark.smoke
+def test_llm_decision_parsing_validates_refs_values_and_text() -> None:
+    elements = [Element(ref=3, kind="textbox", name="Search"), Element(ref=9, kind="button", name="Go")]
+    values = {"query": "wired"}
+    good = parse_llm_decision(
+        '{"action": "type", "target": 3, "value": "query", "text": null, '
+        '"goal_met": 0.1, "stuck": 0, "irreversible": 0}',
+        elements,
+        values,
+    )
+    assert good.action == "type" and good.target == 3 and good.value == "query" and good.text is None
+    free_text = parse_llm_decision(
+        '{"action": "type", "target": 3, "value": null, "text": "The Economist", '
+        '"goal_met": 0, "stuck": 0, "irreversible": 0}',
+        elements,
+        {},
+    )
+    assert free_text.action == "type" and free_text.value is None and free_text.text == "The Economist"
+    bad_ref = parse_llm_decision(
+        '{"action": "click", "target": 42, "goal_met": 0.2, "stuck": 0, "irreversible": 0}', elements, values
+    )
+    assert bad_ref.action == "wait" and bad_ref.target is None
+    no_value = parse_llm_decision('{"action": "select", "target": 9, "value": "nope", "text": ""}', elements, values)
+    assert no_value.action == "wait"
+    done = parse_llm_decision('{"action": "done", "goal_met": 1.7, "stuck": "x", "irreversible": -1}', elements, values)
+    assert done.action == "done" and (done.goal_met, done.stuck, done.irreversible) == (1.0, 0.0, 0.0)
+    assert parse_llm_decision("not json", elements, values).action == "wait"
+
+
+@pytest.mark.smoke
 def test_browse_result_render_lists_steps_and_cost() -> None:
     text = BrowseResult(
         status="done", url="u", title="t", summary="s", steps=["1. click #1 -> clicked"], cost_usd=0.00012
@@ -236,6 +267,10 @@ async def test_click_follows_link_target_when_click_is_swallowed(fixture_url: st
     await tab.open(fixture_url.replace("browser_todo.html", "browser_swallow.html"))
     obs = await tab.observe()
     assert await tab.click(next(e.ref for e in obs.elements if e.name == "Jump on page")) == "clicked"
+    obs = await tab.observe()
+    assert (await tab.observe()).url.endswith("#section")
+    outcome = await tab.click(next(e.ref for e in obs.elements if e.name == "Go to help"))
+    assert outcome == "clicked (link did not navigate; opened its target directly)"
 
 
 @needs_chrome
@@ -247,6 +282,27 @@ async def test_click_clears_an_intercepting_overlay_and_keeps_the_popup(fixture_
     assert time.perf_counter() - started < 5, "obstruction should be cleared before the first click times out"
     assert outcome.startswith("opened new tab ") and outcome.endswith("/browser_help.html")
     assert (await tab.observe()).title == "Help Popup"
+
+
+@needs_chrome
+async def test_observe_times_out_on_a_busy_page_instead_of_hanging(fixture_url: str, tab: Tab) -> None:
+    await tab.open(fixture_url.replace("browser_todo.html", "browser_busy.html"))
+    obs = await tab.observe()
+    ref = next(e.ref for e in obs.elements if e.name == "Block for 4s")
+    page = tab.page
+    assert page is not None
+    asyncio.get_event_loop().create_task(
+        page.locator(f'[data-synthia-ref="{ref}"]').click(timeout=1000, no_wait_after=True)
+    )
+    await asyncio.sleep(0.3)
+    started = time.perf_counter()
+    busy = await tab.observe(timeout_s=1.5)
+    assert time.perf_counter() - started < 3
+    assert busy.alerts == ["page busy"] and busy.elements == []
+    with pytest.raises(Exception, match="timed out"):
+        await tab.evaluate("1 + 1", timeout_s=1)
+    await asyncio.sleep(3)
+    assert (await tab.observe()).title == "Busy Fixture"
 
 
 @needs_chrome

@@ -1,6 +1,7 @@
 import os
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 
 from loguru import logger
 from pydantic import BaseModel
@@ -11,11 +12,10 @@ from synthia.agents.browser.actions import (
     VALUE_ACTIONS,
     Decision,
     Observation,
-    build_questions,
     build_state,
-    parse_decision,
     prune,
 )
+from synthia.agents.browser.decider import Decider, JevDecider
 from synthia.agents.browser.jev import JevClient, JevUsage
 from synthia.agents.browser.page import Tab
 from synthia.telemetry import start_span
@@ -42,8 +42,10 @@ class BrowseResult(BaseModel):
     summary: str = ""
     reason: str = ""
     steps: list[str] = []
+    decider: str = ""
     jev_calls: int = 0
     jev_tokens: int = 0
+    output_tokens: int = 0
     jev_mean_ms: int = 0
     cost_usd: float = 0.0
     duration_s: float = 0.0
@@ -57,7 +59,7 @@ class BrowseResult(BaseModel):
             lines.append("steps:\n  " + "\n  ".join(self.steps))
         lines.append(f"page text: {self.summary}")
         lines.append(
-            f"({len(self.steps)} steps, {self.jev_calls} jev calls averaging {self.jev_mean_ms}ms, "
+            f"({len(self.steps)} steps, {self.jev_calls} {self.decider or 'jev'} calls averaging {self.jev_mean_ms}ms, "
             f"${self.cost_usd:.5f}, {self.duration_s:.1f}s)"
         )
         return "\n".join(lines)
@@ -65,7 +67,7 @@ class BrowseResult(BaseModel):
 
 async def run_goal(
     tab: Tab,
-    jev: JevClient,
+    jev: JevClient | Decider,
     goal: str,
     values: dict[str, str] | None = None,
     max_steps: int = MAX_STEPS,
@@ -74,6 +76,7 @@ async def run_goal(
     on_step: OnStep | None = None,
 ) -> BrowseResult:
     values = {k: str(v) for k, v in (values or {}).items() if str(v)}
+    decider: Decider = JevDecider(jev) if isinstance(jev, JevClient) else jev
     usage = JevUsage()
     started = time.perf_counter()
     history: list[str] = []
@@ -93,13 +96,15 @@ async def run_goal(
             fingerprints.append(observation.fingerprint())
             candidates = prune(observation.elements, goal, MAX_CANDIDATES)
             state = build_state(goal, values, observation, candidates, history)
-            answers = await jev.ask(state, build_questions(values, candidates), usage)
-            decision = parse_decision(answers)
+            decision = await decider.decide(state, values, candidates, usage)
             if decision.action == "done" and decision.goal_met < _DONE_AGREEMENT:
                 decision = decision.without("done")
+            if decision.action in VALUE_ACTIONS and decision.value not in values and decision.text:
+                values = {**values, "typed": decision.text}
+                decision = replace(decision, value="typed")
             logger.info(f"🧭 step {step}: {decision.render()}")
 
-            if decision.goal_met >= _GOAL_MET or decision.action == "done":
+            if decision.action == "done" or (decider.calibrated and decision.goal_met >= _GOAL_MET):
                 status, reason = "done", f"goal met (p={decision.goal_met:.2f})"
                 break
             if decision.action == "blocked":
@@ -143,9 +148,11 @@ async def run_goal(
         summary=observation.text[:_SUMMARY_CHARS],
         reason=reason,
         steps=history,
+        decider=decider.model,
         jev_calls=usage.calls,
         jev_tokens=usage.input_tokens,
-        jev_mean_ms=round(sum(usage.latencies_ms) / len(usage.latencies_ms)) if usage.latencies_ms else 0,
+        output_tokens=usage.output_tokens,
+        jev_mean_ms=usage.mean_ms,
         cost_usd=usage.cost_usd,
         duration_s=round(time.perf_counter() - started, 2),
     )

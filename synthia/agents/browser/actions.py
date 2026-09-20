@@ -231,6 +231,7 @@ class Decision:
     irreversible: float
     action_probabilities: dict[str, float] = field(default_factory=dict)
     targets: dict[str, tuple[int, float]] = field(default_factory=dict)
+    text: str | None = None
 
     def without(self, *actions: str) -> "Decision":
         remaining = {k: v for k, v in self.action_probabilities.items() if k not in actions}
@@ -249,6 +250,7 @@ class Decision:
             self.irreversible,
             remaining,
             self.targets,
+            self.text,
         )
 
     def render(self) -> str:
