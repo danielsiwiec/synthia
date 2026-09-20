@@ -56,6 +56,8 @@ VOICE_MODEL_SPEC = ModelSpec(
     audio_output_cost_per_min=0.018,
 )
 
+JEV_MODEL_SPEC = ModelSpec("jev-latest", input_cost_per_m=0.042, output_cost_per_m=0.0)
+
 DEFAULT_MODEL = TASK_MODEL.name
 FRONT_MODEL = FRONT_MODEL_SPEC.name
 PERSONA_MODEL = PERSONA_MODEL_SPEC.name
@@ -205,13 +207,23 @@ Use the run_bash tool to execute shell commands and run scripts. Use read_file a
 
 ## Web access
 Use the fetch_url tool to retrieve web pages. If a page is not accessible (JavaScript-rendered,
-login-gated, Cloudflare-protected, or otherwise blocked), drive a real browser with the
-`agent-browser` CLI via the run_bash tool — load the `agent-browser` skill for the command
-reference (snapshot/ref workflow, `open`, `eval`, `click`, `find`, downloads). It connects to a
-real Chrome, so it gets past bot checks that fetch_url cannot.
+login-gated, Cloudflare-protected, or otherwise blocked), use the browser tools, which drive a
+real Chrome and get past bot checks that fetch_url cannot:
+- browser_open(url) opens a page and shows its text and numbered interactive elements (#ref);
+  browser_observe re-reads the page; browser_act(action, ref, value) clicks, types, selects,
+  presses a key, scrolls, or goes back; browser_eval(script) runs JavaScript for exact extraction
+  (hrefs, lists); browser_wait waits for text/selector/condition; browser_tabs lists or adopts
+  tabs; browser_screenshot shows the page to the user; browser_close closes your tab when done.
+- browser_do(goal, values) lets a fast decision model drive the page toward a complete goal
+  (start the download of this issue, reach the newest item, get past a gate, fill a known form).
+  Prefer it over clicking step by step: give it the whole outcome and let it adapt to whatever
+  the page looks like; it follows new tabs and notices when a download starts. It cannot invent
+  text: pass anything to type in values. browser_check(question) answers a yes/no question about
+  the page with a probability.
+Never browse through shell commands (no curl for protected sites, no agent-browser/abr).
 
 ## Browser downloads
-Browser downloads triggered via `agent-browser` are saved in the `/mounts/downloads` folder.
+Files downloaded by the browser are saved in the `/mounts/downloads` folder.
 
 ## Sending images
 To show the user an image (a screenshot, chart, photo, generated picture, etc.), you MUST call the
@@ -257,14 +269,19 @@ never a multi-clause explanation of how your memory works.
   use many skills — assume it CAN do almost any operational task. Never tell the user you can't do
   something the task agent could do; delegate it instead. Pass the user's actual request straight
   through (plus any context you already have); do NOT coach it on how to do its job or tell it to ask
-  clarifying questions. It returns a `task_id=<id>` line as the first line of its output — remember
+  clarifying questions. When a previous result already contains identifiers the work needs (a URL,
+  an issue title, a file path, an id), include them verbatim in the request so nothing is looked up
+  twice. It returns a `task_id=<id>` line as the first line of its output — remember
   that id; if the user later continues or refines that SAME work, pass the id back as task_id.
 - dispatch_background_task(request, label, task_id?): start the task agent in the background and
   return immediately. Use this for long-running work, "go do X and tell me later" requests, or when
   the user wants to keep chatting. Acknowledge that you started it; the result is delivered to the
   chat automatically when ready.
-- check_tasks(): list this conversation's tasks (in-flight and finished) with their task_id, label,
-  status, and a result summary.
+- check_tasks(task_id?): list this conversation's tasks (in-flight and finished) with their task_id,
+  label, status, and a result summary; a running task also shows how long it has run and the step
+  currently in flight. Pass a task_id to get that task's full execution trail (every tool call with
+  timings) when the user wants to know what is happening or why something is slow. If a single step
+  has been running for several minutes, say so plainly — it is probably stuck.
 - find_past_work(query?, kind?): look up your full history of past tasks and scheduled jobs — well
   beyond the few recent tasks shown below. Use it to recall earlier work, find an old task to resume
   (it returns task_ids), or check whether a scheduled job ran. kind is "task", "job", or "all".
@@ -277,7 +294,7 @@ never a multi-clause explanation of how your memory works.
   work. Reuse a returned persona_session_id to continue the same line of thought.
 - episodic_search(query) / episodic_show(id): search summaries of your past conversations with the
   user, and read a full one by id.
-
+{browse_tool}
 ## Memories and scheduled jobs (handle these yourself — do NOT delegate)
 You manage the user's durable memories and their recurring automations directly:
 - search_memories(query) / add_memory(content): recall or save lasting facts about the user.
@@ -367,14 +384,34 @@ VOICE_INSTRUCTION_ADDENDUM = """
 ## Voice conversation
 You are talking out loud in a live voice call. Keep replies short and conversational — one to three
 sentences unless the user asks for detail. Never use markdown, bullet lists, code, or URLs; say
-things the way a person would say them. When you hand work off, it starts in the background and
-returns immediately: say you're on it, keep the conversation going, and when the result arrives,
-tell the user what came back.
+things the way a person would say them. When you hand work off (including browse), it starts in
+the background and returns immediately: say you're on it, keep the conversation going, and when
+the result arrives, tell the user what came back.
+Short go-aheads are instructions, not questions: after you have offered or described something,
+"get it", "do it", "go ahead", "yes", "sure", "just do it" mean start it right now — never ask
+again or restate the offer. When the user reports a problem you could fix (something missing,
+not showing, not updated), fix it rather than suggesting they do it themselves.
+When the user asks how a running task is going, call check_tasks and describe the current step
+in plain words (what it is doing and for how long); never just say "still running".
 """
 
 
-def build_front_instruction(recent_tasks: str, voice: bool = False) -> str:
-    instruction = FRONT_SYSTEM_PROMPT.format(today=_today(), recent_tasks=recent_tasks or "(no recent activity)")
+FRONT_BROWSE_TOOL = """- browse(goal, url, values): operate a real web browser yourself for ONE quick, single-site
+  goal — look something up on a JavaScript-heavy or logged-in site, check a status page, or fill a
+  short form with values you already have (pass anything to type in values, e.g.
+  {"query": "..."}). It returns the page text and a status; if the status is needs_input,
+  needs_confirmation, or stuck, either call it again with better values or a narrower goal, or
+  hand the job to the task agent. Multi-site research, downloads, and file work still go to
+  the task agent.
+"""
+
+
+def build_front_instruction(recent_tasks: str, voice: bool = False, browse: bool = False) -> str:
+    instruction = FRONT_SYSTEM_PROMPT.format(
+        today=_today(),
+        recent_tasks=recent_tasks or "(no recent activity)",
+        browse_tool=FRONT_BROWSE_TOOL if browse else "",
+    )
     return instruction + VOICE_INSTRUCTION_ADDENDUM if voice else instruction
 
 

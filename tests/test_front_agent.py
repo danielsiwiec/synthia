@@ -68,6 +68,13 @@ async def test_for_thread_lists_all_statuses_for_thread(repo: TaskRepository) ->
     assert statuses["b"] == "queued"
 
 
+async def test_get_returns_one_task_or_none(repo: TaskRepository) -> None:
+    await repo.start(task_id="g1", thread_id=7, label="lookup", request="find it", background=True)
+    row = await repo.get("g1")
+    assert row is not None and row["label"] == "lookup" and row["status"] == "queued" and row["background"] is True
+    assert await repo.get("missing") is None
+
+
 async def test_resume_keeps_same_row(repo: TaskRepository) -> None:
     await repo.start(task_id="t1", thread_id=1, label="first", request="step one", background=False)
     await repo.finish(task_id="t1", success=True, result="one done")

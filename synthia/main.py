@@ -24,6 +24,7 @@ from openai import AsyncOpenAI
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from synthia.agents.admin.client import create_admin_tools
+from synthia.agents.browser.tools import BrowserService
 from synthia.agents.episodic.client import create_episodic_tools
 from synthia.agents.episodic.sync import EpisodicMemoryService
 from synthia.agents.mcp import build_mcp_toolsets, prewarm_mcp_toolsets
@@ -86,6 +87,7 @@ class Config(BaseSettings):
     ollama_url: str | None = None
     claude_cwd: Path | None = None
     mcp_config_path: Path | None = Path("mcp_servers.json")
+    browser_cdp_http: str | None = None
     vapid_private_key: str | None = None
     vapid_public_key: str | None = None
 
@@ -118,6 +120,11 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
             skilltools = create_skilltools_tools(job_execution_repo)
 
             mcp_toolsets = build_mcp_toolsets(config.mcp_config_path)
+            browser_service = BrowserService(config.browser_cdp_http, cwd=config.claude_cwd)
+            logger.info(
+                f"Browser tools attach to host Chrome at {browser_service.endpoint} "
+                f"(jev={'on' if browser_service.jev else 'off'})"
+            )
             skill_toolset = build_skill_toolset(config.claude_cwd)
 
             tools: list = [
@@ -155,6 +162,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
                 front_tools=[*episodic_tools, *memory_tools, *scheduler_tools, *project_tools],
                 project_repository=project_repository,
                 chat_service=chat_service,
+                browser=browser_service,
             )
 
             scheduler_service.start()
@@ -186,6 +194,7 @@ def create_app(config_overrides: Config | None = None) -> FastAPI:
                 except Exception:
                     pass
             await pubsub.stop()
+            await browser_service.close()
             await db_pool.close()
         except BaseException:
             logger.opt(exception=True).critical("Fatal error during lifespan")

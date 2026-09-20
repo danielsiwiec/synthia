@@ -90,3 +90,14 @@ class TaskRepository:
             limit,
         )
         return [dict(row) for row in rows]
+
+    async def get(self, task_id: str) -> dict[str, Any] | None:
+        row = await self._pool.fetchrow(
+            """
+            SELECT id, thread_id, label, request, result, status, background, created_at, updated_at
+            FROM tasks
+            WHERE id = $1
+            """,
+            task_id,
+        )
+        return dict(row) if row else None

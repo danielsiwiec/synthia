@@ -11,8 +11,10 @@ from google.adk.tools.skill_toolset import SkillToolset
 from loguru import logger
 
 from synthia.agents.agent import (
+    APP_NAME,
     FRONT_MODEL,
     PERSONA_MODEL,
+    USER_ID,
     VOICE_MODEL,
     Agent,
     InitMessage,
@@ -24,10 +26,13 @@ from synthia.agents.agent import (
     record_delegated_cost,
     required_api_key,
 )
+from synthia.agents.browser.loop import BrowseResult
+from synthia.agents.browser.tools import BrowserService, create_browser_tools
 from synthia.agents.personas import get_persona, persona_system_prompt
 from synthia.agents.skills import reload_skills
 from synthia.agents.skilltools import versions
 from synthia.helpers.pubsub import pubsub
+from synthia.service.activity import task_activity
 from synthia.service.chat import MessageRepository
 from synthia.service.job_execution_repository import JobExecutionRepository
 from synthia.service.models import (
@@ -54,6 +59,20 @@ _TASK_AGENT_DESCRIPTION = (
 )
 
 
+def _browse_progress(thread_id: int, session_id: str | None = None) -> Callable:
+    from synthia.service.models import ProgressNotification
+
+    async def on_step(step: int, entry: str) -> None:
+        if step % 3 == 0:
+            await pubsub.publish(
+                ProgressNotification(
+                    session_id=session_id or str(thread_id), thread_id=thread_id, summary=f"Browsing: {entry[:120]}"
+                )
+            )
+
+    return on_step
+
+
 class TaskService:
     def __init__(
         self,
@@ -69,8 +88,10 @@ class TaskService:
         front_tools: list[Any] | None = None,
         project_repository: ProjectRepository | None = None,
         chat_service: Any | None = None,
+        browser: BrowserService | None = None,
     ):
         self._tools = tools
+        self._browser = browser
         self._front_tools = front_tools or []
         self._voice_sessions: dict[int, VoiceSession] = {}
         self._project_repo = project_repository
@@ -124,9 +145,7 @@ class TaskService:
 
         agent, _ = self._session_repository.get(request.thread_id)
         if not agent:
-            image_tool = create_image_tool(request.thread_id, self._cwd)
-            diagram_tool = create_diagram_tool(request.thread_id, self._cwd)
-            task_tools = [*self._tools, image_tool, diagram_tool]
+            task_tools = self._task_tools(request.thread_id)
             if self._front_enabled(request.thread_id):
                 agent = await self._create_front_agent(request.thread_id, task_tools)
             else:
@@ -175,7 +194,7 @@ class TaskService:
                 reload_skills(self._skill_toolset, self._cwd)
             except Exception as error:
                 logger.warning(f"skill reload failed: {error}")
-        task_tools = [*self._tools, create_image_tool(thread_id, self._cwd), create_diagram_tool(thread_id, self._cwd)]
+        task_tools = self._task_tools(thread_id, show_images=False)
         agent = await self._create_front_agent(thread_id, task_tools, voice=True)
         session_id = str(thread_id)
 
@@ -209,6 +228,12 @@ class TaskService:
         await session.close()
         logger.info(f"🎙️ voice session closed for thread {thread_id}")
 
+    def _task_tools(self, thread_id: int, show_images: bool = True) -> list[Any]:
+        tools = [*self._tools, create_image_tool(thread_id, self._cwd), create_diagram_tool(thread_id, self._cwd)]
+        if self._browser is not None:
+            tools.extend(create_browser_tools(self._browser, thread_id, show_images=show_images))
+        return tools
+
     def _front_enabled(self, thread_id: int) -> bool:
         if not _FRONT_ENABLED or self._message_repository is None:
             return False
@@ -234,8 +259,11 @@ class TaskService:
             *self._build_persona_tools(),
             *self._front_tools,
             *self._build_project_view_tools(thread_id),
+            *self._build_browse_tools(thread_id, front_holder, voice=voice),
         ]
-        instruction = build_front_instruction(await self._recent_tasks_block(thread_id), voice=voice)
+        instruction = build_front_instruction(
+            await self._recent_tasks_block(thread_id), voice=voice, browse=self._browse_available()
+        )
         front_agent = await Agent.create(
             tools=front_tools,
             cwd=self._cwd,
@@ -302,11 +330,21 @@ class TaskService:
                 "I'll deliver the result here when it's ready."
             )
 
-        async def check_tasks() -> str:
+        async def check_tasks(task_id: str = "") -> str:
             """List this conversation's tasks (in-flight and finished) with their task_id, label,
-            status, and a short result summary."""
+            status, and a short result summary. A running task also shows live detail: how long it
+            has run and the tool call currently in flight (or the last completed step). Pass a
+            task_id to get that task's full execution trail instead — every tool call with
+            arguments, results and timings — to review what the task agent did or is doing, spot a
+            step that has been stuck for a long time, or explain progress to the user.
+
+            Args:
+                task_id: Optional. A task_id to get the full execution trail of that task.
+            """
             if self._task_repo is None:
                 return "Task history is unavailable."
+            if task_id:
+                return await self._task_trail(task_id)
             records = await self._task_repo.for_thread(thread_id)
             if not records:
                 return "No tasks have been started in this conversation yet."
@@ -315,6 +353,8 @@ class TaskService:
                 line = f"- task_id={record['id']} | {record['label']} | {record['status']}"
                 if record["status"] in ("done", "error") and record["result"]:
                     line += f" | result: {record['result'][:300]}"
+                elif record["status"] in ("running", "queued"):
+                    line += f" | {await self._task_status_line(record['id'])}"
                 lines.append(line)
             return "\n".join(lines)
 
@@ -336,6 +376,100 @@ class TaskService:
         delegate_in_voice.__name__ = "delegate_to_task_agent"
         delegate = delegate_in_voice if voice else delegate_to_task_agent
         return [delegate, dispatch_background_task, check_tasks]
+
+    def _browse_available(self) -> bool:
+        return self._browser is not None and self._browser.jev is not None
+
+    def _build_browse_tools(self, thread_id: int, front_holder: list[Agent], voice: bool = False) -> list[Callable]:
+        if not self._browse_available():
+            return []
+        browser = self._browser
+        assert browser is not None
+
+        async def browse(goal: str, url: str = "", values: dict[str, str] | None = None) -> str:
+            """Operate a real web browser for ONE quick, single-site goal and return the page text
+            plus a status. Use it to look something up on a JavaScript-heavy or logged-in site,
+            check a status page, or fill a short form with values you already have. The browser
+            cannot invent text: pass anything it should type in values, keyed by short names (e.g.
+            {"query": "..."}). Statuses: done, needs_input (a value was missing), needs_confirmation
+            (the next step is irreversible), stuck, max_steps, timeout, error — on those, retry with
+            better values or a narrower goal, or hand the job to the task agent.
+
+            Args:
+                goal: One concrete goal in plain words.
+                url: The page to start from.
+                values: Named strings the browser may type or select.
+            """
+            result = await browser.browse(goal, url, values, progress=_browse_progress(thread_id))
+            record_delegated_cost(result.cost_usd)
+            return result.render()
+
+        async def browse_in_voice(goal: str, url: str = "", values: dict[str, str] | None = None) -> str:
+            """Operate a real web browser for ONE quick, single-site goal. It starts immediately in
+            the background and the result is delivered into this conversation automatically when
+            ready, so keep talking. The browser cannot invent text: pass anything it should type in
+            values, keyed by short names.
+
+            Args:
+                goal: One concrete goal in plain words.
+                url: The page to start from.
+                values: Named strings the browser may type or select.
+            """
+            session_id = f"task-{uuid.uuid4().hex}"
+            label = f"Browse: {goal}"
+            await self._start_task(session_id, thread_id, label, f"{goal}\n{url}".strip(), background=True)
+            bg = asyncio.create_task(
+                self._run_browse_background(goal, url, values, label, session_id, thread_id, front_holder)
+            )
+            self._bg_handles[session_id] = bg
+            self._bg_threads[session_id] = thread_id
+            return (
+                f"Started browsing in the background (task_id={session_id}). "
+                "I'll deliver the result here when it's ready."
+            )
+
+        browse_in_voice.__name__ = "browse"
+        return [browse_in_voice if voice else browse]
+
+    async def _run_browse_background(
+        self,
+        goal: str,
+        url: str,
+        values: dict[str, str] | None,
+        label: str,
+        session_id: str,
+        thread_id: int,
+        front_holder: list[Agent],
+    ) -> None:
+        assert self._browser is not None
+        try:
+            if self._task_repo is not None:
+                await self._task_repo.set_status(session_id, "running")
+            browsed = await self._browser.browse(goal, url, values, progress=_browse_progress(thread_id, session_id))
+        except asyncio.CancelledError:
+            if self._task_repo is not None:
+                await self._task_repo.set_status(session_id, "cancelled")
+            raise
+        except Exception as error:
+            browsed = BrowseResult(status="error", reason=str(error))
+        finally:
+            self._bg_handles.pop(session_id, None)
+            self._bg_threads.pop(session_id, None)
+        result = Result(
+            session_id=session_id,
+            thread_id=thread_id,
+            success=browsed.status != "error",
+            result=browsed.render(),
+            error=browsed.reason if browsed.status == "error" else None,
+            cost_usd=browsed.cost_usd,
+        )
+        await self._finish_task(session_id, result)
+        if result.success:
+            await self._deliver_via_front(thread_id, session_id, label, result, front_holder)
+        else:
+            await self._deliver_background(
+                thread_id, session_id, False, f"🔴 Browsing failed: {browsed.reason}", browsed.cost_usd
+            )
 
     def _build_project_view_tools(self, thread_id: int) -> list[Callable]:
         if self._project_repo is None or self._chat_service is None:
@@ -421,6 +555,23 @@ class TaskService:
             return f"persona_session_id={sid}\n\n{answer or '(the persona returned no perspective)'}"
 
         return [consult_persona]
+
+    async def _task_status_line(self, task_id: str) -> str:
+        try:
+            return (await task_activity(self._session_service, APP_NAME, USER_ID, task_id)).summary()
+        except Exception as error:
+            return f"live detail unavailable: {error}"
+
+    async def _task_trail(self, task_id: str) -> str:
+        record = await self._task_repo.get(task_id) if self._task_repo is not None else None
+        try:
+            activity = await task_activity(self._session_service, APP_NAME, USER_ID, task_id)
+        except Exception as error:
+            return f"Execution trail unavailable for {task_id}: {error}"
+        header = f"task_id={task_id}"
+        if record is not None:
+            header += f" | {record['label']} | {record['status']}"
+        return f"{header}\n{activity.summary()}\n{activity.trail()}"
 
     async def _start_task(
         self, task_id: str, thread_id: int, label_source: str, request: str, background: bool
