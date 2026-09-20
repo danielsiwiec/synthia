@@ -164,7 +164,9 @@ def _report(rows: list[dict]) -> str:
 @needs_env
 async def test_economist_download_jev_vs_gemini() -> None:
     rows = []
-    for run in (_jev_run, _gemini_run):
+    drivers = {"jev": _jev_run, "gemini": _gemini_run}
+    selected = [d for d in os.getenv("EVAL_DRIVERS", "jev,gemini").split(",") if d in drivers]
+    for run in (drivers[d] for d in selected):
         before = _snapshot()
         started = time.perf_counter()
         row = await run()

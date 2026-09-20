@@ -18,6 +18,24 @@ _ACTION_TIMEOUT_MS = 8_000
 _SETTLE_MS = 800
 _SCROLL_FRACTION = 0.8
 _DOWNLOAD_ERROR = re.compile(r"Download is starting", re.I)
+_CLEAR_OBSTRUCTION_JS = """el => {
+  el.scrollIntoView({block: 'center', inline: 'center'});
+  const r = el.getBoundingClientRect();
+  const x = r.left + r.width / 2, y = r.top + r.height / 2;
+  const cleared = [];
+  for (let i = 0; i < 6; i++) {
+    const top = document.elementFromPoint(x, y);
+    if (!top || top === el || el.contains(top) || top.contains(el)) break;
+    let block = top;
+    while (block.parentElement && block.parentElement !== document.body && !block.parentElement.contains(el)) {
+      block = block.parentElement;
+    }
+    block.style.setProperty('pointer-events', 'none', 'important');
+    const cls = typeof block.className === 'string' ? block.className.trim().split(/\\s+/)[0] : '';
+    cleared.push(block.tagName.toLowerCase() + (block.id ? '#' + block.id : '') + (cls ? '.' + cls : ''));
+  }
+  return cleared;
+}"""
 
 
 def cdp_endpoint() -> str:
@@ -48,7 +66,7 @@ class HostBrowser:
                 try:
                     if self._playwright is None:
                         self._playwright = await async_playwright().start()
-                    self._browser = await self._playwright.chromium.connect_over_cdp(self._cdp_http, timeout=10_000)
+                    self._browser = await self._playwright.chromium.connect_over_cdp(self._cdp_http, timeout=20_000)
                     await self._keep_host_downloads(self._browser)
                     logger.info(f"🌐 attached to host Chrome at {self._cdp_http}")
                     return self._browser.contexts[0]
@@ -215,23 +233,61 @@ class Tab:
     async def click(self, ref: int) -> str:
         page = await self.ensure()
         before = await self._siblings()
+        url_before = page.url
         locator = self._locator(ref)
+        href = await self._link_target(locator)
+        cleared = ""
         try:
             await locator.scroll_into_view_if_needed(timeout=_ACTION_TIMEOUT_MS)
             await locator.click(timeout=_ACTION_TIMEOUT_MS)
         except PlaywrightError as error:
             if _DOWNLOAD_ERROR.search(str(error)):
                 return "download started"
+            cleared = await self._clear_obstruction(locator)
             try:
-                await locator.evaluate("el => el.click()")
-            except PlaywrightError as scripted:
-                return f"click failed: {_short(scripted)}"
+                await locator.click(timeout=_ACTION_TIMEOUT_MS)
+            except PlaywrightError as retry:
+                if _DOWNLOAD_ERROR.search(str(retry)):
+                    return "download started"
+                try:
+                    await locator.evaluate("el => el.click()")
+                except PlaywrightError as scripted:
+                    return f"click failed: {_short(scripted)}"
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=_SETTLE_MS * 2)
         except PlaywrightError:
             pass
         await self.settle()
-        return await self._outcome(before, "clicked")
+        outcome = await self._outcome(before, "clicked")
+        if cleared and outcome == "clicked":
+            outcome = f"clicked (after clearing an overlay: {cleared})"
+        if outcome == "clicked" and href and self.page is page and page.url == url_before:
+            followed = await self.open(href)
+            return (
+                "download started"
+                if followed == "download started"
+                else "clicked (link did not navigate; opened its target directly)"
+            )
+        return outcome
+
+    async def _clear_obstruction(self, locator: Any) -> str:
+        try:
+            cleared = await locator.evaluate(_CLEAR_OBSTRUCTION_JS, timeout=_ACTION_TIMEOUT_MS)
+        except PlaywrightError:
+            return ""
+        return ", ".join(str(c) for c in (cleared or []))[:120]
+
+    async def _link_target(self, locator: Any) -> str:
+        try:
+            href = await locator.evaluate("el => (el.closest('a[href]') || {}).href || ''", timeout=_ACTION_TIMEOUT_MS)
+        except PlaywrightError:
+            return ""
+        href = str(href or "")
+        if not href.startswith(("http://", "https://")) or href.split("#", 1)[0] == (
+            self.page.url.split("#", 1)[0] if self.page else ""
+        ):
+            return ""
+        return href
 
     async def type(self, ref: int, value: str, submit: bool = False) -> str:
         await self.ensure()

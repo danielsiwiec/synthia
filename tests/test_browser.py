@@ -222,6 +222,27 @@ async def test_click_follows_new_tab(fixture_url: str, tab: Tab) -> None:
 
 
 @needs_chrome
+async def test_click_follows_link_target_when_click_is_swallowed(fixture_url: str, tab: Tab) -> None:
+    await tab.open(fixture_url.replace("browser_todo.html", "browser_swallow.html"))
+    obs = await tab.observe()
+    outcome = await tab.click(next(e.ref for e in obs.elements if e.name == "Go to help"))
+    assert outcome == "clicked (link did not navigate; opened its target directly)"
+    assert (await tab.observe()).title == "Help Popup"
+    await tab.open(fixture_url.replace("browser_todo.html", "browser_swallow.html"))
+    obs = await tab.observe()
+    assert await tab.click(next(e.ref for e in obs.elements if e.name == "Jump on page")) == "clicked"
+
+
+@needs_chrome
+async def test_click_clears_an_intercepting_overlay_and_keeps_the_popup(fixture_url: str, tab: Tab) -> None:
+    await tab.open(fixture_url.replace("browser_todo.html", "browser_covered.html"))
+    obs = await tab.observe()
+    outcome = await tab.click(next(e.ref for e in obs.elements if e.name == "Open help"))
+    assert outcome.startswith("opened new tab ") and outcome.endswith("/browser_help.html")
+    assert (await tab.observe()).title == "Help Popup"
+
+
+@needs_chrome
 async def test_click_dismisses_dialogs_without_killing_the_driver(fixture_url: str, tab: Tab) -> None:
     await tab.open(fixture_url)
     obs = await tab.observe()
