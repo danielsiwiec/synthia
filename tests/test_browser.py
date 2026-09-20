@@ -28,6 +28,7 @@ from synthia.agents.browser.jev import JevClient, jev_available
 from synthia.agents.browser.loop import BrowseResult, _repeating, check, run_goal
 from synthia.agents.browser.page import HostBrowser, Tab, cdp_endpoint
 from synthia.agents.browser.tools import BrowserService, create_browser_tools
+from tests.test_eval_browser_refinance import plausible_rates, score, shows_zero_points
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _CDP = os.getenv("BROWSER_CDP_HTTP", "http://localhost:9222")
@@ -414,3 +415,16 @@ async def test_jev_loop_stops_for_missing_value(fixture_url: str, tab: Tab) -> N
         assert result.status in ("needs_input", "stuck", "max_steps"), result.render()
     finally:
         await jev.close()
+
+
+@pytest.mark.smoke
+def test_refinance_scoring_requires_rate_and_zero_points() -> None:
+    table = "Rate 6.124% APR 6.322% Points: 0 Mo. payment $3,026"
+    assert plausible_rates(table) == [6.124, 6.322]
+    assert shows_zero_points(table)
+    assert score(table, "https://www.bankrate.com/mortgages/refinance-rates/")["found"]
+    assert score(table, "https://example.com/")["found"] is False
+    assert score("Points: 1.676 Rate 6.124%", "https://www.bankrate.com/x")["found"] is False
+    assert score("Zero points, no rates listed", "https://www.bankrate.com/x")["found"] is False
+    assert plausible_rates("99.9% and 0.01%") == []
+    assert score(table, "https://www.bankrate.com/x")["best_rate"] == 6.124
