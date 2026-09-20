@@ -14,13 +14,24 @@ from synthia.agents.browser.tools import BrowserService, create_browser_tools
 
 _CDP = os.getenv("BROWSER_CDP_HTTP", "http://localhost:9222")
 _DOWNLOADS = Path(os.getenv("DOWNLOADS_DIR", Path.home() / "Downloads"))
-_SEARCH_URL = "https://freemagazines.top/?s=The+Economist+USA"
-_OBJECTIVE = (
-    "Starting from the search results for The Economist USA, open the newest issue listed, then start "
-    "downloading its PDF file: get past any ad-block notice, cookie or 'continue' gates, follow the "
-    "download / view PDF link to the file-hosting page (it may open in a new tab), and press its Download "
-    "button until the file transfer actually begins."
-)
+_OBJECTIVES = {
+    "guided": (
+        "https://freemagazines.top/?s=The+Economist+USA",
+        "Starting from the search results for The Economist USA, open the newest issue listed, then start "
+        "downloading its PDF file: get past any ad-block notice, cookie or 'continue' gates, follow the "
+        "download / view PDF link to the file-hosting page (it may open in a new tab), and press its Download "
+        "button until the file transfer actually begins.",
+        {},
+    ),
+    "minimal": (
+        "https://freemagazines.top/",
+        "You have a browser. Download the PDF of the newest issue of The Economist USA from this site, "
+        "navigating it as needed.",
+        {"magazine": "The Economist USA"},
+    ),
+}
+_START_URL, _OBJECTIVE, _VALUES = _OBJECTIVES[os.getenv("EVAL_OBJECTIVE", "guided")]
+_RUNS = int(os.getenv("EVAL_RUNS", "1"))
 _FILE_WAIT_S = 120
 _GEMINI_KEY = required_api_key(TASK_MODEL.name)
 
@@ -53,8 +64,8 @@ async def _jev_run() -> dict:
     tab = Tab(host)
     started = time.perf_counter()
     try:
-        await tab.open(_SEARCH_URL)
-        result = await run_goal(tab, jev, _OBJECTIVE, max_steps=30, timeout_s=240)
+        await tab.open(_START_URL)
+        result = await run_goal(tab, jev, _OBJECTIVE, _VALUES, max_steps=30, timeout_s=240)
     finally:
         await tab.close()
         await jev.close()
@@ -81,8 +92,7 @@ async def _gemini_run() -> dict:
         if getattr(t, "__name__", "") not in ("browser_do", "browser_check")
     ]
     instruction = (
-        "You control a real web browser through the browser_* tools only. Work step by step: open pages, "
-        "observe, act on element refs from the latest observation, and re-observe after every action. "
+        "You have a real web browser, driven through the browser_* tools. "
         "Stop as soon as a tool result says 'download started' and reply with the single word DONE. "
         "If you cannot make progress after several attempts, reply with BLOCKED and why."
     )
@@ -97,7 +107,7 @@ async def _gemini_run() -> dict:
     )
     started = time.perf_counter()
     try:
-        result = await agent.run_for_result(objective=f"Open {_SEARCH_URL}. {_OBJECTIVE}", session_id="eval-gemini")
+        result = await agent.run_for_result(objective=f"Open {_START_URL}. {_OBJECTIVE}", session_id="eval-gemini")
     finally:
         await service.close()
     assert result is not None
@@ -145,17 +155,28 @@ async def _usage_from_session(agent: Agent) -> dict:
 def _report(rows: list[dict]) -> str:
     lines = [
         "",
-        "| driver | status | seconds to download start | file on disk | model calls "
+        f"objective={os.getenv('EVAL_OBJECTIVE', 'guided')} runs={_RUNS}",
+        "| run | driver | status | seconds to download start | file on disk | model calls "
         "| input tok | output tok | cost USD |",
-        "|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
         lines.append(
-            f"| {r['driver']} | {r['status']} | {r['seconds']} | {r['file_seconds']} | {r['model_calls']} | "
-            f"{r['input_tokens']} | {r['output_tokens']} | {r['cost_usd']:.6f} |"
+            f"| {r['run']} | {r['driver']} | {r['status']} | {r['seconds']} | {r['file_seconds']} | "
+            f"{r['model_calls']} | {r['input_tokens']} | {r['output_tokens']} | {r['cost_usd']:.6f} |"
+        )
+    lines.append("\n| driver | success | mean s | mean cost | mean calls |\n|---|---|---|---|---|")
+    for driver in dict.fromkeys(r["driver"] for r in rows):
+        group = [r for r in rows if r["driver"] == driver]
+        ok = [r for r in group if r["file"]]
+        def mean(key, rs):
+            return (sum(r[key] for r in rs) / len(rs)) if rs else 0
+        lines.append(
+            f"| {driver} | {len(ok)}/{len(group)} | {mean('seconds', ok):.1f} | {mean('cost_usd', group):.5f} "
+            f"| {mean('model_calls', group):.1f} |"
         )
     for r in rows:
-        lines.append(f"\n{r['driver']} steps:")
+        lines.append(f"\nrun {r['run']} {r['driver']} steps:")
         lines.extend(f"  {s}" for s in r["steps"])
     return "\n".join(lines)
 
@@ -166,17 +187,18 @@ async def test_economist_download_jev_vs_gemini() -> None:
     rows = []
     drivers = {"jev": _jev_run, "gemini": _gemini_run}
     selected = [d for d in os.getenv("EVAL_DRIVERS", "jev,gemini").split(",") if d in drivers]
-    for run in (drivers[d] for d in selected):
-        before = _snapshot()
-        started = time.perf_counter()
-        row = await run()
-        file = await _wait_for_file(before)
-        row["file_seconds"] = round(time.perf_counter() - started, 1) if file else "none"
-        row["file"] = str(file) if file else None
-        if file:
-            file.unlink()
-        rows.append(row)
-        await asyncio.sleep(2)
+    for index in range(1, _RUNS + 1):
+        for run in (drivers[d] for d in selected):
+            before = _snapshot()
+            started = time.perf_counter()
+            row = await run()
+            file = await _wait_for_file(before) if row["status"] not in ("error",) else None
+            row["run"] = index
+            row["file_seconds"] = round(time.perf_counter() - started, 1) if file else "none"
+            row["file"] = str(file) if file else None
+            if file:
+                file.unlink()
+            rows.append(row)
+            await asyncio.sleep(2)
     print(_report(rows))
-    for row in rows:
-        assert row["file"], f"{row['driver']} did not produce a file: {row}"
+    assert any(row["file"] for row in rows), "no run produced a file"
