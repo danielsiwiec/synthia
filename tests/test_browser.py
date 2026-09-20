@@ -28,7 +28,7 @@ from synthia.agents.browser.jev import JevClient, jev_available
 from synthia.agents.browser.loop import BrowseResult, _repeating, check, run_goal
 from synthia.agents.browser.page import HostBrowser, Tab, cdp_endpoint
 from synthia.agents.browser.tools import BrowserService, create_browser_tools
-from tests.test_eval_browser_refinance import plausible_rates, score, shows_zero_points
+from tests.bankrate_api import Offer, best_zero_point, lender_in, parse_offers, rate_in
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _CDP = os.getenv("BROWSER_CDP_HTTP", "http://localhost:9222")
@@ -418,13 +418,33 @@ async def test_jev_loop_stops_for_missing_value(fixture_url: str, tab: Tab) -> N
 
 
 @pytest.mark.smoke
-def test_refinance_scoring_requires_rate_and_zero_points() -> None:
-    table = "Rate 6.124% APR 6.322% Points: 0 Mo. payment $3,026"
-    assert plausible_rates(table) == [6.124, 6.322]
-    assert shows_zero_points(table)
-    assert score(table, "https://www.bankrate.com/mortgages/refinance-rates/")["found"]
-    assert score(table, "https://example.com/")["found"] is False
-    assert score("Points: 1.676 Rate 6.124%", "https://www.bankrate.com/x")["found"] is False
-    assert score("Zero points, no rates listed", "https://www.bankrate.com/x")["found"] is False
-    assert plausible_rates("99.9% and 0.01%") == []
-    assert score(table, "https://www.bankrate.com/x")["best_rate"] == 6.124
+def test_bankrate_offers_parse_and_match() -> None:
+    payload = {
+        "data": {
+            "institutions": {"7604": {"name": "Optimum First Mortgage"}, "99": {"name": "loanDepot"}},
+            "products": [
+                {
+                    "institutionId": "99",
+                    "name": "30 year fixed refinance",
+                    "offering": {"rate": 6.75, "apr": 6.776, "points": 0},
+                },
+                {
+                    "institutionId": "7604",
+                    "name": "30 year fixed refinance",
+                    "offering": {"rate": 6.624, "apr": 6.645, "points": 0},
+                },
+                {"institutionId": "7604", "name": "content", "offering": {}},
+            ],
+        }
+    }
+    offers = parse_offers(payload)
+    assert [o.rate for o in offers] == [6.624, 6.75]
+    best = best_zero_point(offers)
+    assert best is not None
+    assert best == Offer("Optimum First Mortgage", 6.624, 6.645, 0.0, "30 year fixed refinance")
+    assert best.matches("Optimum First Mortgage 6.624% APR 6.645%")
+    assert not best.matches("Sage Home Loans 6.624%")
+    assert not best.matches("Optimum First Mortgage 6.875%")
+    assert rate_in(6.624, "rate is 6.624 %") and not rate_in(6.624, "6.6240001")
+    assert lender_in("loanDepot ", "offer from loandepot today")
+    assert best_zero_point([Offer("x", 6.0, 6.1, 1.5, "t")]) is None

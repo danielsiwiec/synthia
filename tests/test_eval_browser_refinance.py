@@ -1,6 +1,5 @@
 import asyncio
 import os
-import re
 import time
 
 import pytest
@@ -12,6 +11,7 @@ from synthia.agents.browser.jev import JevClient, jev_available
 from synthia.agents.browser.loop import run_goal
 from synthia.agents.browser.page import HostBrowser, Tab
 from synthia.agents.browser.tools import BrowserService, create_browser_tools
+from tests.bankrate_api import Offer, best_zero_point, fetch_offers, lender_in, rate_in
 
 _CDP = os.getenv("BROWSER_CDP_HTTP", "http://localhost:9222")
 _START_URL = "https://www.bankrate.com/mortgages/refinance-rates/"
@@ -26,7 +26,7 @@ _OBJECTIVE = (
     "with an 800 credit score, in zip code 96150. Dismiss any cookie or subscription gate, enter those details in "
     "the rate search form and apply them, then filter the results to zero-point offers only (the points filter, "
     "sometimes shown as 'Points' or 'All points options'). The goal is met when the results table lists refinance "
-    "offers whose points are 0 and you can read the lowest rate and APR among them."
+    "offers whose points are 0 and you can read the lender name and rate of the lowest-rate offer among them."
 )
 _RUNS = int(os.getenv("EVAL_RUNS", "1"))
 _MAX_STEPS = int(os.getenv("EVAL_MAX_STEPS", "40"))
@@ -34,9 +34,7 @@ _TIMEOUT_S = float(os.getenv("EVAL_TIMEOUT_S", "300"))
 _GEMINI_MODEL = os.getenv("EVAL_GEMINI_MODEL", "gemini/gemini-3.1-flash-lite")
 _HARNESS_MODELS = [m for m in os.getenv("EVAL_HARNESS_MODELS", "gpt-5.6-luna").split(",") if m]
 
-_RATE_MIN, _RATE_MAX = 2.0, 15.0
-_RATE = re.compile(r"(\d{1,2}\.\d{2,3})\s*%")
-_ZERO_POINTS = re.compile(r"points?\D{0,20}\b0(?:\.0{1,3})?\b|\bzero[- ]points?\b", re.I)
+_LOAN, _PROPERTY, _FICO, _ZIP = 600000, 950000, 800, "96150"
 _GEMINI_KEY = required_api_key(TASK_MODEL.name)
 
 needs_env = pytest.mark.skipif(
@@ -56,28 +54,26 @@ def _rates(model: str) -> tuple[float, float, float]:
     return per_m("input_cost_per_token"), per_m("output_cost_per_token"), per_m("cache_read_input_token_cost")
 
 
-def plausible_rates(text: str) -> list[float]:
-    found = [float(m) for m in _RATE.findall(text or "")]
-    return sorted({r for r in found if _RATE_MIN <= r <= _RATE_MAX})
+def truth() -> Offer:
+    offers = fetch_offers(_LOAN, _PROPERTY, _FICO, _ZIP)
+    best = best_zero_point(offers)
+    assert best is not None, "bankrate returned no zero-point offers"
+    return best
 
 
-def shows_zero_points(text: str) -> bool:
-    return bool(_ZERO_POINTS.search(text or ""))
-
-
-def score(text: str, url: str) -> dict:
-    rates = plausible_rates(text)
+def score(text: str, url: str, expected: Offer) -> dict:
     on_bankrate = "bankrate.com" in (url or "")
-    zero = shows_zero_points(text)
+    has_rate = rate_in(expected.rate, text)
+    has_lender = lender_in(expected.lender, text)
     return {
-        "best_rate": rates[0] if rates else None,
-        "rates_seen": len(rates),
-        "zero_points": zero,
-        "found": bool(rates) and zero and on_bankrate,
+        "expected": f"{expected.lender} @ {expected.rate}%",
+        "rate_ok": has_rate,
+        "lender_ok": has_lender,
+        "found": bool(on_bankrate and has_rate and has_lender),
     }
 
 
-async def _loop_run(label: str, decider, close=None) -> dict:
+async def _loop_run(label: str, decider, expected: Offer, close=None) -> dict:
     host = HostBrowser(_CDP)
     tab = Tab(host)
     started = time.perf_counter()
@@ -99,27 +95,27 @@ async def _loop_run(label: str, decider, close=None) -> dict:
         "cost_usd": result.cost_usd,
         "model_ms": result.jev_mean_ms,
         "steps": result.steps,
-        **score(result.summary, result.url),
+        **score(result.summary, result.url, expected),
     }
 
 
-async def _jev_run() -> dict:
+async def _jev_run(expected: Offer) -> dict:
     jev = JevClient()
     return await _loop_run(
-        f"jev ({jev.model}, ${JEV_MODEL_SPEC.input_cost_per_m}/M in, output free)", jev, close=jev.close
+        f"jev ({jev.model}, ${JEV_MODEL_SPEC.input_cost_per_m}/M in, output free)", jev, expected, close=jev.close
     )
 
 
 def _harness_run(model: str):
-    async def run() -> dict:
+    async def run(expected: Offer) -> dict:
         in_rate, out_rate, cache_rate = _rates(model)
         decider = LlmDecider(model, in_rate, out_rate, cache_rate)
-        return await _loop_run(f"harness:{model} (${in_rate}/M in, ${out_rate}/M out)", decider)
+        return await _loop_run(f"harness:{model} (${in_rate}/M in, ${out_rate}/M out)", decider, expected)
 
     return run
 
 
-async def _gemini_run() -> dict:
+async def _gemini_run(expected: Offer) -> dict:
     service = BrowserService(_CDP)
     tools = [
         t
@@ -128,7 +124,7 @@ async def _gemini_run() -> dict:
     ]
     instruction = (
         "You have a real web browser, driven through the browser_* tools. "
-        "When you have the answer, reply with the lowest zero-point rate and its APR. "
+        "When you have the answer, reply with the lender name and rate of the lowest zero-point offer. "
         "If you cannot make progress after several attempts, reply with BLOCKED and why."
     )
     agent = await Agent.create(
@@ -161,7 +157,7 @@ async def _gemini_run() -> dict:
         "cost_usd": round(cost, 6),
         "model_ms": usage["model_ms"],
         "steps": usage["steps"],
-        **score(seen, _START_URL),
+        **score(seen, _START_URL, expected),
     }
 
 
@@ -204,15 +200,15 @@ def _report(rows: list[dict]) -> str:
         "",
         f"runs={_RUNS} loan={_VALUES['loan amount']} value={_VALUES['property value']} "
         f"fico={_VALUES['credit score']} zip={_VALUES['zip code']}",
-        "| run | driver | status | found | best rate | rates seen | zero pts | seconds | model calls "
+        "| run | driver | status | found | rate ok | lender ok | expected | seconds | model calls "
         "| mean model ms | input tok | output tok | cost USD |",
         "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
         lines.append(
             f"| {r['run']} | {r['driver']} | {r['status']} | {'yes' if r['found'] else 'no'} | "
-            f"{r['best_rate'] if r['best_rate'] is not None else '-'} | {r['rates_seen']} | "
-            f"{'yes' if r['zero_points'] else 'no'} | {r['seconds']} | {r['model_calls']} | {r['model_ms']} | "
+            f"{'yes' if r['rate_ok'] else 'no'} | {'yes' if r['lender_ok'] else 'no'} | {r['expected']} | "
+            f"{r['seconds']} | {r['model_calls']} | {r['model_ms']} | "
             f"{r['input_tokens']} | {r['output_tokens']} | {r['cost_usd']:.6f} |"
         )
     lines.append("\n| driver | found | mean s | mean cost | mean calls | mean model ms |\n|---|---|---|---|---|---|")
@@ -237,6 +233,8 @@ def _report(rows: list[dict]) -> str:
 @needs_env
 async def test_zero_point_refinance_rate() -> None:
     rows = []
+    expected = truth()
+    print(f"\nground truth: {expected.lender} @ {expected.rate}% (APR {expected.apr}, {expected.points} points)")
     drivers = {"jev": _jev_run, "gemini": _gemini_run}
     drivers.update({f"harness:{m}": _harness_run(m) for m in _HARNESS_MODELS})
     requested = os.getenv("EVAL_DRIVERS", "jev,gemini,harness").split(",")
@@ -245,10 +243,10 @@ async def test_zero_point_refinance_rate() -> None:
     )
     for index in range(1, _RUNS + 1):
         for run in (drivers[d] for d in selected):
-            row = await run()
+            row = await run(expected)
             row["run"] = index
             rows.append(row)
             print(_report([row]).splitlines()[4], flush=True)
             await asyncio.sleep(2)
     print(_report(rows))
-    assert any(row["found"] for row in rows), "no run reached zero-point refinance rates"
+    assert any(row["found"] for row in rows), f"no run reported {expected.lender} at {expected.rate}%"
