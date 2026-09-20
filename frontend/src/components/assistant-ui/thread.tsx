@@ -33,6 +33,8 @@ import {
   SuggestionPrimitive,
   ThreadPrimitive,
   useAuiState,
+  useVoiceControls,
+  useVoiceState,
 } from "@assistant-ui/react";
 import {
   ArrowDownIcon,
@@ -40,7 +42,10 @@ import {
   BrainIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  MicIcon,
+  MicOffIcon,
   PencilIcon,
+  PhoneOffIcon,
   SquareIcon,
 } from "lucide-react";
 import type { FC } from "react";
@@ -190,14 +195,73 @@ const Composer: FC = () => {
   );
 };
 
+const VoiceControls: FC = () => {
+  const voice = useVoiceState();
+  const { connect, disconnect, mute, unmute } = useVoiceControls();
+  if (!voice) {
+    return (
+      <TooltipIconButton
+        tooltip="Start voice conversation"
+        side="bottom"
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="aui-composer-voice size-8 rounded-full"
+        aria-label="Start voice conversation"
+        onClick={connect}
+      >
+        <MicIcon className="size-4" />
+      </TooltipIconButton>
+    );
+  }
+  const label =
+    voice.status.type === "starting" ? "Connecting…" : voice.mode === "speaking" ? "Speaking" : "Listening";
+  return (
+    <div
+      data-slot="aui_voice-bar"
+      className="bg-accent/60 flex items-center gap-1 rounded-full py-0.5 pr-0.5 pl-3"
+      aria-live="polite"
+    >
+      <span className="text-muted-foreground text-xs" data-testid="voice-status">
+        {label}
+      </span>
+      <TooltipIconButton
+        tooltip={voice.isMuted ? "Unmute microphone" : "Mute microphone"}
+        side="bottom"
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="size-7 rounded-full"
+        aria-label={voice.isMuted ? "Unmute microphone" : "Mute microphone"}
+        onClick={voice.isMuted ? unmute : mute}
+      >
+        {voice.isMuted ? <MicOffIcon className="size-4" /> : <MicIcon className="size-4" />}
+      </TooltipIconButton>
+      <TooltipIconButton
+        tooltip="End voice conversation"
+        side="bottom"
+        type="button"
+        variant="destructive"
+        size="icon"
+        className="size-7 rounded-full"
+        aria-label="End voice conversation"
+        onClick={disconnect}
+      >
+        <PhoneOffIcon className="size-4" />
+      </TooltipIconButton>
+    </div>
+  );
+};
+
 const ComposerAction: FC = () => {
   return (
     <div className="aui-composer-action-wrapper relative flex items-center justify-between">
       <div className="flex items-center gap-1">
         <ComposerAddAttachment />
         <PersonaSelector />
+        <VoiceControls />
       </div>
-      <AuiIf condition={(s) => !s.thread.isRunning}>
+      <AuiIf condition={(s) => !s.thread.isRunning && !s.thread.voice}>
         <ComposerPrimitive.Send asChild>
           <TooltipIconButton
             tooltip="Send message"

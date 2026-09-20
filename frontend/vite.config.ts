@@ -19,7 +19,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/chat/threads": { target: BACKEND, changeOrigin: true },
+      "/chat/threads": { target: BACKEND, changeOrigin: true, ws: true },
       "/push": { target: BACKEND, changeOrigin: true },
       "/sw.js": { target: BACKEND, changeOrigin: true },
     },

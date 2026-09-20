@@ -2,10 +2,11 @@ import asyncio
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, WebSocket
 from fastapi.responses import FileResponse, StreamingResponse
 from loguru import logger
 from pydantic import BaseModel
+from starlette.websockets import WebSocketState
 
 from synthia.agents.personas import persona_directive
 from synthia.agents.projects.context import build_project_context
@@ -310,3 +311,51 @@ async def thread_events(request: Request, thread_id: int):
             logger.debug(f"SSE client disconnected from thread {thread_id}")
 
     return StreamingResponse(_event_stream(), media_type="text/event-stream")
+
+
+@router.websocket("/chat/threads/{thread_id}/voice")
+async def voice_session(websocket: WebSocket, thread_id: int):
+    task_service = websocket.app.state.task_service
+    chat_service: ChatService = websocket.app.state.chat_service
+    if not task_service.voice_available():
+        await websocket.close(code=1008, reason="voice mode unavailable")
+        return
+    await websocket.accept()
+    if not chat_service.repository.is_chat_thread(thread_id):
+        await chat_service.repository.save_thread(thread_id, "Voice chat")
+    session = await task_service.open_voice_session(thread_id)
+
+    async def _to_client() -> None:
+        async for item in session.outbound():
+            if isinstance(item, bytes):
+                await websocket.send_bytes(item)
+            else:
+                await websocket.send_json(item)
+
+    async def _from_client() -> None:
+        while True:
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                return
+            data = message.get("bytes")
+            if data:
+                session.send_audio(data)
+                continue
+            text = message.get("text")
+            if text and json.loads(text).get("type") == "end":
+                return
+
+    pumps = [asyncio.create_task(_to_client()), asyncio.create_task(_from_client())]
+    try:
+        await asyncio.wait(pumps, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        await task_service.close_voice_session(thread_id, session)
+        for pump in pumps:
+            pump.cancel()
+        await asyncio.gather(*pumps, return_exceptions=True)
+        if websocket.client_state == WebSocketState.CONNECTED:
+            try:
+                await websocket.close()
+            except Exception:
+                pass
+        logger.debug(f"voice client disconnected from thread {thread_id}")

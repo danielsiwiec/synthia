@@ -1,10 +1,21 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   AssistantRuntimeProvider,
+  createVoiceSession,
   useExternalStoreRuntime,
   type AppendMessage,
   type CompleteAttachment,
+  type RealtimeVoiceAdapter,
   type ThreadMessageLike,
+  type VoiceSessionControls,
+  type VoiceSessionHelpers,
 } from "@assistant-ui/react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
@@ -23,6 +34,7 @@ import { attachmentAdapter } from "@/runtime/attachmentAdapter";
 import { PersonaContext } from "@/runtime/personaContext";
 import { connectThreadEvents, type SseConnection } from "@/lib/sse";
 import { initPush } from "@/lib/push";
+import { openVoiceConnection, type VoiceRole } from "@/lib/voice";
 
 const POLL_INTERVAL = 5000;
 
@@ -45,12 +57,16 @@ async function _toDisplayUrl(url: string): Promise<string> {
   }
 }
 
-async function _resolveImageUrls(messages: SynthiaMessage[]): Promise<SynthiaMessage[]> {
+async function _resolveImageUrls(
+  messages: SynthiaMessage[],
+): Promise<SynthiaMessage[]> {
   return Promise.all(
     messages.map(async (m) => {
       if (!m.attachments?.length) return m;
       const attachments = await Promise.all(
-        m.attachments.map(async (a) => (a.type === "image" ? { ...a, url: await _toDisplayUrl(a.url) } : a)),
+        m.attachments.map(async (a) =>
+          a.type === "image" ? { ...a, url: await _toDisplayUrl(a.url) } : a,
+        ),
       );
       return { ...m, attachments };
     }),
@@ -74,8 +90,19 @@ function _splitAttachments(attachments: readonly CompleteAttachment[]): {
     const dataUrl = _dataUrlOf(att);
     if (!dataUrl) continue;
     const contentType = att.contentType ?? "";
-    const type = att.type === "image" ? "image" : att.type === "document" ? "document" : "file";
-    display.push({ id: att.id, type, name: att.name, content_type: contentType, url: dataUrl });
+    const type =
+      att.type === "image"
+        ? "image"
+        : att.type === "document"
+          ? "document"
+          : "file";
+    display.push({
+      id: att.id,
+      type,
+      name: att.name,
+      content_type: contentType,
+      url: dataUrl,
+    });
     const comma = dataUrl.indexOf(",");
     outgoing.push({
       name: att.name,
@@ -108,20 +135,33 @@ function _attachmentParts(attachments: DisplayAttachment[]) {
 
 function _convertMessage(m: SynthiaMessage): ThreadMessageLike {
   if (m.role === "user") {
-    const content = m.content ? [{ type: "text" as const, text: m.content }] : [];
+    const content = m.content
+      ? [{ type: "text" as const, text: m.content }]
+      : [];
     return {
       role: "user",
       id: m.id,
       content,
-      ...(m.attachments?.length ? { attachments: _attachmentParts(m.attachments) } : {}),
+      ...(m.attachments?.length
+        ? { attachments: _attachmentParts(m.attachments) }
+        : {}),
     };
   }
   if (m.message_type === "thought") {
-    return { role: "assistant", id: m.id, content: [{ type: "reasoning", text: m.content }] };
+    return {
+      role: "assistant",
+      id: m.id,
+      content: [{ type: "reasoning", text: m.content }],
+    };
   }
   if (m.attachments?.length) {
-    const caption = m.content ? [{ type: "text" as const, text: m.content }] : [];
-    const images = m.attachments.map((a) => ({ type: "image" as const, image: a.url }));
+    const caption = m.content
+      ? [{ type: "text" as const, text: m.content }]
+      : [];
+    const images = m.attachments.map((a) => ({
+      type: "image" as const,
+      image: a.url,
+    }));
     return { role: "assistant", id: m.id, content: [...caption, ...images] };
   }
   const persona = m.metadata?.persona ?? null;
@@ -131,8 +171,46 @@ function _convertMessage(m: SynthiaMessage): ThreadMessageLike {
     role: "assistant",
     id: m.id,
     content: [{ type: "text", text: m.content }],
-    ...(hasPersona ? { metadata: { custom: { persona, consultedPersonas } } } : {}),
+    ...(hasPersona
+      ? { metadata: { custom: { persona, consultedPersonas } } }
+      : {}),
   };
+}
+
+type _OpenVoiceIds = Record<VoiceRole, string | null>;
+
+function _applyVoiceTranscript(
+  prev: SynthiaMessage[],
+  threadId: string,
+  role: VoiceRole,
+  text: string,
+  final: boolean,
+  open: _OpenVoiceIds,
+): SynthiaMessage[] {
+  const openId = open[role];
+  if (openId) {
+    const idx = prev.findIndex((m) => m.id === openId);
+    if (idx >= 0) {
+      const next = [...prev];
+      next[idx] = { ...next[idx]!, content: text };
+      if (final) open[role] = null;
+      return next;
+    }
+  }
+  const id = `v${role[0]}-${Date.now()}-${prev.length}`;
+  open[role] = final ? null : id;
+  return [
+    ...prev,
+    {
+      id,
+      thread_id: threadId,
+      role,
+      message_type: role === "user" ? "user" : "result",
+      content: text,
+      metadata: { voice: true },
+      created_at: null,
+    },
+  ];
 }
 
 function _inferRunning(messages: SynthiaMessage[]): boolean {
@@ -143,7 +221,8 @@ function _inferRunning(messages: SynthiaMessage[]): boolean {
   let lastResult = -1;
   messages.forEach((m, i) => {
     if (m.role === "user") lastUser = i;
-    else if (m.role === "assistant" && m.message_type === "result") lastResult = i;
+    else if (m.role === "assistant" && m.message_type === "result")
+      lastResult = i;
   });
   if (lastUser === -1) return false;
   return lastResult < lastUser;
@@ -175,6 +254,11 @@ export function SynthiaProvider({
   const threadIdRef = useRef<string | null>(null);
   const messagesRef = useRef<SynthiaMessage[]>([]);
   const connRef = useRef<SseConnection | null>(null);
+  const voiceCloseRef = useRef<(() => void) | null>(null);
+  const openVoiceIdsRef = useRef<_OpenVoiceIds>({
+    user: null,
+    assistant: null,
+  });
   const selectedProjectIdRef = useRef<string | null>(selectedProjectId);
   const selectedPersonaRef = useRef<string | null>(null);
   const onThreadSelectRef = useRef(onThreadSelect);
@@ -243,8 +327,15 @@ export function SynthiaProvider({
         onResultDelta: (delta) => {
           setMessages((prev) => {
             const last = prev[prev.length - 1];
-            if (last?.role === "assistant" && last.message_type === "result" && last.id.startsWith("s-")) {
-              return [...prev.slice(0, -1), { ...last, content: (last.content ?? "") + delta }];
+            if (
+              last?.role === "assistant" &&
+              last.message_type === "result" &&
+              last.id.startsWith("s-")
+            ) {
+              return [
+                ...prev.slice(0, -1),
+                { ...last, content: (last.content ?? "") + delta },
+              ];
             }
             return [
               ...prev,
@@ -264,14 +355,26 @@ export function SynthiaProvider({
         onResult: (result, meta) => {
           const metadata =
             meta && (meta.persona || meta.consultedPersonas?.length)
-              ? { persona: meta.persona ?? null, consulted_personas: meta.consultedPersonas ?? [] }
+              ? {
+                  persona: meta.persona ?? null,
+                  consulted_personas: meta.consultedPersonas ?? [],
+                }
               : null;
           setMessages((prev) => {
             const last = prev[prev.length - 1];
-            if (last?.role === "assistant" && last.message_type === "result" && last.id.startsWith("s-")) {
+            if (
+              last?.role === "assistant" &&
+              last.message_type === "result" &&
+              last.id.startsWith("s-")
+            ) {
               return [
                 ...prev.slice(0, -1),
-                { ...last, id: `r-${Date.now()}-${prev.length}`, content: result, metadata },
+                {
+                  ...last,
+                  id: `r-${Date.now()}-${prev.length}`,
+                  content: result,
+                  metadata,
+                },
               ];
             }
             return [
@@ -292,7 +395,9 @@ export function SynthiaProvider({
           onAgentResultRef.current?.();
         },
         onTitle: (title) => {
-          setThreads((prev) => prev.map((t) => (t.id === threadId ? { ...t, title } : t)));
+          setThreads((prev) =>
+            prev.map((t) => (t.id === threadId ? { ...t, title } : t)),
+          );
           void refreshThreads();
         },
         onProjectSelected: (projectId) => {
@@ -331,8 +436,14 @@ export function SynthiaProvider({
     [_disconnect, refreshThreads],
   );
 
+  const _endVoice = useCallback(() => {
+    voiceCloseRef.current?.();
+    voiceCloseRef.current = null;
+  }, []);
+
   const newThread = useCallback(
     (keepProject = false) => {
+      _endVoice();
       if (!keepProject) onThreadSelectRef.current?.();
       const id = String(Date.now());
       threadIdRef.current = id;
@@ -341,7 +452,7 @@ export function SynthiaProvider({
       setIsRunning(false);
       _connect(id);
     },
-    [_connect],
+    [_connect, _endVoice],
   );
 
   const _syncCurrentThread = useCallback(async () => {
@@ -362,19 +473,23 @@ export function SynthiaProvider({
 
   const switchThread = useCallback(
     async (id: string, keepProject = false) => {
+      if (threadIdRef.current === id && voiceCloseRef.current) return;
+      if (threadIdRef.current !== id) _endVoice();
       if (!keepProject) onThreadSelectRef.current?.();
       threadIdRef.current = id;
       setCurrentThreadId(id);
       await _syncCurrentThread();
     },
-    [_syncCurrentThread],
+    [_syncCurrentThread, _endVoice],
   );
 
   const renameThread = useCallback(
     async (id: string, title: string) => {
       const next = title.trim();
       if (!next) return;
-      setThreads((prev) => prev.map((t) => (t.id === id ? { ...t, title: next } : t)));
+      setThreads((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, title: next } : t)),
+      );
       await apiRenameThread(id, next);
       await refreshThreads();
     },
@@ -385,6 +500,7 @@ export function SynthiaProvider({
     async (id: string) => {
       await apiDeleteThread(id);
       if (threadIdRef.current === id) {
+        _endVoice();
         threadIdRef.current = null;
         setCurrentThreadId(null);
         setMessages([]);
@@ -393,14 +509,16 @@ export function SynthiaProvider({
       }
       await refreshThreads();
     },
-    [_disconnect, refreshThreads],
+    [_disconnect, _endVoice, refreshThreads],
   );
 
   const onNew = useCallback(
     async (message: AppendMessage) => {
       const part = message.content.find((p) => p.type === "text");
       const text = part && part.type === "text" ? part.text.trim() : "";
-      const { display, outgoing } = _splitAttachments(message.attachments ?? []);
+      const { display, outgoing } = _splitAttachments(
+        message.attachments ?? [],
+      );
       if (!text && outgoing.length === 0) return;
 
       let tid = threadIdRef.current;
@@ -439,6 +557,80 @@ export function SynthiaProvider({
     [_connect, refreshThreads],
   );
 
+  const _startVoice = useCallback(
+    async (helpers: VoiceSessionHelpers): Promise<VoiceSessionControls> => {
+      _endVoice();
+      let tid = threadIdRef.current;
+      const created = !tid;
+      if (!tid) {
+        tid = String(Date.now());
+        threadIdRef.current = tid;
+        _connect(tid);
+      }
+      const threadId = tid;
+      openVoiceIdsRef.current = { user: null, assistant: null };
+      const conn = await openVoiceConnection(threadId, {
+        onReady: () => helpers.setStatus({ type: "running" }),
+        onTranscript: (role, text, final) => {
+          if (threadIdRef.current !== threadId) return;
+          setMessages((prev) =>
+            _applyVoiceTranscript(
+              prev,
+              threadId,
+              role,
+              text,
+              final,
+              openVoiceIdsRef.current,
+            ),
+          );
+        },
+        onMode: (mode) => helpers.emitMode(mode),
+        onVolume: (volume) => helpers.emitVolume(volume),
+        onError: (message) => {
+          console.error(`voice: ${message}`);
+          helpers.end("error", new Error(message));
+        },
+        onClosed: (ready) => {
+          if (voiceCloseRef.current === conn.close)
+            voiceCloseRef.current = null;
+          if (!helpers.isDisposed()) {
+            helpers.end(
+              ready ? "finished" : "error",
+              ready ? undefined : new Error("voice mode unavailable"),
+            );
+          }
+          void refreshThreads();
+          if (threadIdRef.current === threadId) {
+            if (created) setCurrentThreadId(threadId);
+            void _syncCurrentThread();
+          }
+        },
+      });
+      voiceCloseRef.current = conn.close;
+      return {
+        disconnect: () => conn.close(),
+        mute: () => conn.mute(),
+        unmute: () => conn.unmute(),
+      };
+    },
+    [_connect, _endVoice, _syncCurrentThread, refreshThreads],
+  );
+
+  const voiceAdapter = useMemo<RealtimeVoiceAdapter>(
+    () => ({
+      connect: ({ abortSignal }) =>
+        createVoiceSession({ abortSignal }, async (helpers) => {
+          try {
+            return await _startVoice(helpers);
+          } catch (error) {
+            console.error("voice: failed to start", error);
+            throw error;
+          }
+        }),
+    }),
+    [_startVoice],
+  );
+
   const onCancel = useCallback(async () => {
     const tid = threadIdRef.current;
     if (tid) await stopTask(tid);
@@ -467,9 +659,14 @@ export function SynthiaProvider({
     onCancel,
     adapters: {
       attachments: attachmentAdapter,
+      voice: voiceAdapter,
       threadList: {
         threadId: currentThreadId ?? undefined,
-        threads: threads.map((t) => ({ status: "regular", id: t.id, title: t.title })),
+        threads: threads.map((t) => ({
+          status: "regular",
+          id: t.id,
+          title: t.title,
+        })),
         onSwitchToNewThread: () => newThread(),
         onSwitchToThread: switchThread,
         onRename: renameThread,
@@ -511,7 +708,9 @@ export function SynthiaProvider({
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <PersonaContext.Provider value={{ persona: selectedPersona, setPersona: setSelectedPersona }}>
+      <PersonaContext.Provider
+        value={{ persona: selectedPersona, setPersona: setSelectedPersona }}
+      >
         <TooltipProvider>{children}</TooltipProvider>
       </PersonaContext.Provider>
     </AssistantRuntimeProvider>

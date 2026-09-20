@@ -224,6 +224,10 @@ class ChatService:
             return
 
         if isinstance(message, InitMessage):
+            if message.voice:
+                if self._repository.is_chat_thread(thread_id) and message.prompt:
+                    await self._repository.save_message(thread_id, "user", "user", message.prompt, {"voice": True})
+                return
             await self._event_bus.push(
                 thread_id, {"type": "init", "session_id": message.session_id, "prompt": message.prompt}
             )
@@ -240,6 +244,17 @@ class ChatService:
             return
 
         if isinstance(message, Result):
+            if message.voice:
+                if self._repository.is_chat_thread(thread_id):
+                    await self._repository.save_message(
+                        thread_id,
+                        "assistant",
+                        "result",
+                        message.result,
+                        {"cost_usd": message.cost_usd, "success": message.success, "voice": True},
+                    )
+                    await self._maybe_generate_title(thread_id, message.result)
+                return
             persona_meta: dict[str, Any] = {}
             if message.persona:
                 persona_meta["persona"] = message.persona

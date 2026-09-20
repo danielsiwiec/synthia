@@ -13,7 +13,9 @@ from loguru import logger
 from synthia.agents.agent import (
     FRONT_MODEL,
     PERSONA_MODEL,
+    VOICE_MODEL,
     Agent,
+    InitMessage,
     Result,
     build_front_instruction,
     create_diagram_tool,
@@ -38,6 +40,7 @@ from synthia.service.models import (
 from synthia.service.project_repository import ProjectRepository
 from synthia.service.session_repository import SessionRepository
 from synthia.service.task_repository import TaskRepository
+from synthia.service.voice import VoiceSession
 from synthia.telemetry import traced
 
 _MAX_CONCURRENT_TASKS = int(os.getenv("FRONT_MAX_CONCURRENT_TASKS", "3"))
@@ -69,6 +72,7 @@ class TaskService:
     ):
         self._tools = tools
         self._front_tools = front_tools or []
+        self._voice_sessions: dict[int, VoiceSession] = {}
         self._project_repo = project_repository
         self._chat_service = chat_service
         self._session_service = session_service
@@ -158,6 +162,53 @@ class TaskService:
         self._session_repository.save(request.thread_id, result_message.session_id, agent)
         return result_message
 
+    def voice_available(self) -> bool:
+        required_key = required_api_key(VOICE_MODEL)
+        return bool(required_key and os.getenv(required_key))
+
+    async def open_voice_session(self, thread_id: int) -> VoiceSession:
+        previous = self._voice_sessions.pop(thread_id, None)
+        if previous is not None:
+            await previous.close()
+        if self._skill_toolset is not None:
+            try:
+                reload_skills(self._skill_toolset, self._cwd)
+            except Exception as error:
+                logger.warning(f"skill reload failed: {error}")
+        task_tools = [*self._tools, create_image_tool(thread_id, self._cwd), create_diagram_tool(thread_id, self._cwd)]
+        agent = await self._create_front_agent(thread_id, task_tools, voice=True)
+        session_id = str(thread_id)
+
+        async def _on_turn(user_text: str, assistant_text: str, cost: float) -> None:
+            if user_text:
+                await pubsub.publish(
+                    InitMessage(session_id=session_id, thread_id=thread_id, prompt=user_text, voice=True)
+                )
+            if assistant_text:
+                await pubsub.publish(
+                    Result(
+                        session_id=session_id,
+                        thread_id=thread_id,
+                        success=True,
+                        result=assistant_text,
+                        cost_usd=cost,
+                        voice=True,
+                    )
+                )
+
+        session = VoiceSession(agent, session_id, _on_turn)
+        await session.start()
+        self._voice_sessions[thread_id] = session
+        self._session_repository.ensure(thread_id, session_id)
+        logger.info(f"🎙️ voice session opened for thread {thread_id}")
+        return session
+
+    async def close_voice_session(self, thread_id: int, session: VoiceSession) -> None:
+        if self._voice_sessions.get(thread_id) is session:
+            self._voice_sessions.pop(thread_id, None)
+        await session.close()
+        logger.info(f"🎙️ voice session closed for thread {thread_id}")
+
     def _front_enabled(self, thread_id: int) -> bool:
         if not _FRONT_ENABLED or self._message_repository is None:
             return False
@@ -168,7 +219,7 @@ class TaskService:
             return False
         return True
 
-    async def _create_front_agent(self, thread_id: int, task_tools: list[Any]) -> Agent:
+    async def _create_front_agent(self, thread_id: int, task_tools: list[Any], voice: bool = False) -> Agent:
         task_agent = await Agent.create(
             tools=task_tools,
             cwd=self._cwd,
@@ -178,27 +229,30 @@ class TaskService:
         )
         front_holder: list[Agent] = []
         front_tools = [
-            *self._build_delegation_tools(thread_id, task_agent, front_holder),
+            *self._build_delegation_tools(thread_id, task_agent, front_holder, voice=voice),
             self._build_find_past_work_tool(),
             *self._build_persona_tools(),
             *self._front_tools,
             *self._build_project_view_tools(thread_id),
         ]
-        instruction = build_front_instruction(await self._recent_tasks_block(thread_id))
+        instruction = build_front_instruction(await self._recent_tasks_block(thread_id), voice=voice)
         front_agent = await Agent.create(
             tools=front_tools,
             cwd=self._cwd,
             session_service=self._session_service,
-            model=FRONT_MODEL,
+            model=VOICE_MODEL if voice else FRONT_MODEL,
             system_prompt=instruction,
             include_builtins=False,
             name="synthia",
             prompt_thread_hint=False,
         )
-        front_holder.append(front_agent)
+        if not voice:
+            front_holder.append(front_agent)
         return front_agent
 
-    def _build_delegation_tools(self, thread_id: int, task_agent: Agent, front_holder: list[Agent]) -> list[Callable]:
+    def _build_delegation_tools(
+        self, thread_id: int, task_agent: Agent, front_holder: list[Agent], voice: bool = False
+    ) -> list[Callable]:
         async def delegate_to_task_agent(request: str, task_id: str = "") -> str:
             """Run the capable task agent now, wait for its result, and return it for you to relay to
             the user. The task agent is powerful and runs silently: it can control a computer, run
@@ -264,7 +318,24 @@ class TaskService:
                 lines.append(line)
             return "\n".join(lines)
 
-        return [delegate_to_task_agent, dispatch_background_task, check_tasks]
+        async def delegate_in_voice(request: str, task_id: str = "") -> str:
+            """Hand work to the capable task agent. It starts immediately in the background and its
+            result is delivered into this conversation automatically when ready, so you can keep
+            talking. The task agent is powerful: it can control a computer, run shell commands and
+            scripts, read/write files, drive a real web browser, manage downloads, and use many skills
+            — assume it can do almost any operational task.
+
+            Args:
+                request: A complete, self-contained instruction for the task agent, including all
+                    context it needs.
+                task_id: Optional. Pass an existing task_id ONLY to continue that SAME task with its
+                    prior context. Omit it to start a fresh, unrelated task.
+            """
+            return await dispatch_background_task(request, task_id=task_id)
+
+        delegate_in_voice.__name__ = "delegate_to_task_agent"
+        delegate = delegate_in_voice if voice else delegate_to_task_agent
+        return [delegate, dispatch_background_task, check_tasks]
 
     def _build_project_view_tools(self, thread_id: int) -> list[Callable]:
         if self._project_repo is None or self._chat_service is None:
@@ -405,6 +476,14 @@ class TaskService:
     async def _deliver_via_front(
         self, thread_id: int, session_id: str, label: str, result: Result, front_holder: list[Agent]
     ) -> None:
+        voice = self._voice_sessions.get(thread_id)
+        if voice is not None and not voice.closed:
+            voice.send_text(
+                f'[The background task you started (label: "{label}", task_id={session_id}) just finished. '
+                f"Tell me what came back, briefly and in your own words. Do not start a new task.]\n\n"
+                f"Result:\n{result.result}"
+            )
+            return
         front = front_holder[0] if front_holder else None
         if front is None or not front._live:
             await self._deliver_background(

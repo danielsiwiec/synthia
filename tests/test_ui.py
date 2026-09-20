@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from playwright.sync_api import Page, expect
@@ -45,6 +45,19 @@ def _reset_stores():
     _threads_store.clear()
     _messages_store.clear()
     _sse_queues.clear()
+
+
+def _voice_message(thread_id: str, index: int, role: str, message_type: str, content: str) -> dict:
+    return {
+        "id": str(index),
+        "thread_id": thread_id,
+        "role": role,
+        "message_type": message_type,
+        "content": content,
+        "metadata": {"voice": True},
+        "created_at": "2026-01-01T00:00:00",
+        "attachments": None,
+    }
 
 
 def _stub_app() -> FastAPI:
@@ -87,6 +100,57 @@ def _stub_app() -> FastAPI:
     @app.get("/chat/threads/{thread_id}/messages")
     async def get_messages(thread_id: str):
         return _messages_store.get(thread_id, [])
+
+    @app.websocket("/chat/threads/{thread_id}/voice")
+    async def voice(websocket: WebSocket, thread_id: str):
+        await websocket.accept()
+        _threads_store.setdefault(
+            thread_id,
+            {
+                "id": thread_id,
+                "title": "Voice chat",
+                "created_at": "2026-01-01T00:00:00",
+                "updated_at": "2026-01-01T00:00:00",
+            },
+        )
+        await websocket.send_json({"type": "ready"})
+        heard_audio = False
+        try:
+            while True:
+                message = await websocket.receive()
+                if message["type"] == "websocket.disconnect":
+                    return
+                if message.get("bytes") and not heard_audio:
+                    heard_audio = True
+                    await websocket.send_json(
+                        {"type": "transcript", "role": "user", "text": "hello there", "final": True}
+                    )
+                    await websocket.send_json(
+                        {"type": "transcript", "role": "assistant", "text": "Hi! I", "final": False}
+                    )
+                    await websocket.send_json(
+                        {
+                            "type": "transcript",
+                            "role": "assistant",
+                            "text": "Hi! I heard you loud and clear.",
+                            "final": True,
+                        }
+                    )
+                    await websocket.send_bytes(bytes(4800))
+                    await websocket.send_json({"type": "turn_complete", "spoke": True})
+                    msgs = _messages_store.setdefault(thread_id, [])
+                    msgs.append(_voice_message(thread_id, len(msgs) + 1, "user", "user", "hello there"))
+                    msgs.append(
+                        _voice_message(
+                            thread_id, len(msgs) + 1, "assistant", "result", "Hi! I heard you loud and clear."
+                        )
+                    )
+                text = message.get("text")
+                if text and json.loads(text).get("type") == "end":
+                    await websocket.close()
+                    return
+        except WebSocketDisconnect:
+            return
 
     @app.post("/chat/threads/{thread_id}/messages")
     async def send_message(thread_id: str, body: _SendMessageRequest):
@@ -274,6 +338,18 @@ class ChatPage:
     def text(self, value: str):
         return self._page.get_by_text(value)
 
+    @property
+    def voice_button(self):
+        return self._page.get_by_role("button", name="Start voice conversation")
+
+    @property
+    def voice_status(self):
+        return self._page.get_by_test_id("voice-status")
+
+    @property
+    def end_voice_button(self):
+        return self._page.get_by_role("button", name="End voice conversation")
+
 
 _server_thread: threading.Thread | None = None
 _server: uvicorn.Server | None = None
@@ -312,6 +388,18 @@ def _clean_state():
     _reset_stores()
     yield
     _reset_stores()
+
+
+@pytest.fixture(scope="session")
+def browser_type_launch_args(browser_type_launch_args):
+    return {
+        **browser_type_launch_args,
+        "args": [
+            *browser_type_launch_args.get("args", []),
+            "--use-fake-device-for-media-stream",
+            "--use-fake-ui-for-media-stream",
+        ],
+    }
 
 
 @pytest.fixture
@@ -577,3 +665,20 @@ def test_attachment_persists_after_thread_switch(chat: ChatPage):
     chat.open_thread("with photo")
     expect(chat.text("Echo: with photo")).to_be_visible(timeout=5000)
     expect(chat.message_attachment_tiles().first).to_be_visible()
+
+
+def test_voice_conversation_shows_transcript_and_ends(chat: ChatPage):
+    expect(chat.voice_button).to_be_visible()
+    chat.voice_button.dispatch_event("click")
+    expect(chat.voice_status).to_have_text("Listening", timeout=10000)
+    expect(chat.send_button).to_have_count(0)
+    expect(chat.user_messages().first).to_contain_text("hello there", timeout=10000)
+    expect(chat.text("Hi! I heard you loud and clear.")).to_be_visible(timeout=10000)
+    chat._page.get_by_role("button", name="Mute microphone").dispatch_event("click")
+    expect(chat._page.get_by_role("button", name="Unmute microphone")).to_be_visible()
+    chat.end_voice_button.dispatch_event("click")
+    expect(chat.voice_status).to_have_count(0, timeout=5000)
+    expect(chat.voice_button).to_be_visible()
+    expect(chat.send_button).to_be_visible()
+    expect(chat.text("Hi! I heard you loud and clear.")).to_be_visible()
+    expect(chat.thread_items()).to_have_count(1, timeout=5000)

@@ -35,6 +35,12 @@ class SessionRepository:
     def get(self, thread_id: int) -> tuple[Agent | None, str | None]:
         return self._agents.pop(thread_id, None), self._sessions.get(thread_id)
 
+    def ensure(self, thread_id: int, session_id: str) -> None:
+        if self._sessions.get(thread_id) == session_id:
+            return
+        self._sessions[thread_id] = session_id
+        asyncio.create_task(self._persist(thread_id, session_id))
+
     def save(self, thread_id: int, session_id: str, agent: Agent | None = None) -> None:
         self._sessions[thread_id] = session_id
         if agent and agent._live:

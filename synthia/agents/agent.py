@@ -4,7 +4,7 @@ import mimetypes
 import os
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
@@ -13,6 +13,7 @@ from typing import Any, Self
 from zoneinfo import ZoneInfo
 
 from google.adk.agents import LlmAgent
+from google.adk.agents.live_request_queue import LiveRequestQueue
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.runners import Runner
@@ -36,6 +37,8 @@ class ModelSpec:
     name: str
     input_cost_per_m: float
     output_cost_per_m: float
+    audio_input_cost_per_min: float = 0.0
+    audio_output_cost_per_min: float = 0.0
 
 
 # ─── Model configuration: single source of truth ─────────────────────────────
@@ -45,12 +48,20 @@ class ModelSpec:
 TASK_MODEL = ModelSpec("gemini/gemini-3.1-flash-lite", input_cost_per_m=0.25, output_cost_per_m=1.50)
 FRONT_MODEL_SPEC = ModelSpec("gemini/gemini-3.1-flash-lite", input_cost_per_m=0.25, output_cost_per_m=1.50)
 PERSONA_MODEL_SPEC = FRONT_MODEL_SPEC
+VOICE_MODEL_SPEC = ModelSpec(
+    "gemini-3.8-live",
+    input_cost_per_m=0.75,
+    output_cost_per_m=4.50,
+    audio_input_cost_per_min=0.005,
+    audio_output_cost_per_min=0.018,
+)
 
 DEFAULT_MODEL = TASK_MODEL.name
 FRONT_MODEL = FRONT_MODEL_SPEC.name
 PERSONA_MODEL = PERSONA_MODEL_SPEC.name
+VOICE_MODEL = VOICE_MODEL_SPEC.name
 
-_MODEL_SPECS = {spec.name: spec for spec in (TASK_MODEL, FRONT_MODEL_SPEC, PERSONA_MODEL_SPEC)}
+_MODEL_SPECS = {spec.name: spec for spec in (TASK_MODEL, FRONT_MODEL_SPEC, PERSONA_MODEL_SPEC, VOICE_MODEL_SPEC)}
 _FALLBACK_PRICING = (3.0, 15.0)
 
 _PROVIDER_API_KEYS = {
@@ -60,8 +71,20 @@ _PROVIDER_API_KEYS = {
 }
 
 
+def _provider(model_name: str) -> str:
+    if "/" in model_name:
+        return model_name.split("/", 1)[0]
+    return "gemini" if model_name.startswith("gemini") else model_name
+
+
 def required_api_key(model_name: str) -> str | None:
-    return _PROVIDER_API_KEYS.get(model_name.split("/", 1)[0])
+    return _PROVIDER_API_KEYS.get(_provider(model_name))
+
+
+def _adk_model(model_name: str) -> Any:
+    if "/" not in model_name:
+        return model_name
+    return LiteLlm(model=model_name, **_model_kwargs(model_name))
 
 
 _THINKING_BUDGET = int(os.getenv("LLM_THINKING_BUDGET", "2048"))
@@ -340,8 +363,19 @@ Each entry starts with the task_id you can pass to delegate_to_task_agent to res
 """
 
 
-def build_front_instruction(recent_tasks: str) -> str:
-    return FRONT_SYSTEM_PROMPT.format(today=_today(), recent_tasks=recent_tasks or "(no recent activity)")
+VOICE_INSTRUCTION_ADDENDUM = """
+## Voice conversation
+You are talking out loud in a live voice call. Keep replies short and conversational — one to three
+sentences unless the user asks for detail. Never use markdown, bullet lists, code, or URLs; say
+things the way a person would say them. When you hand work off, it starts in the background and
+returns immediately: say you're on it, keep the conversation going, and when the result arrives,
+tell the user what came back.
+"""
+
+
+def build_front_instruction(recent_tasks: str, voice: bool = False) -> str:
+    instruction = FRONT_SYSTEM_PROMPT.format(today=_today(), recent_tasks=recent_tasks or "(no recent activity)")
+    return instruction + VOICE_INSTRUCTION_ADDENDUM if voice else instruction
 
 
 class ToolCall(BaseModel):
@@ -373,6 +407,7 @@ class Result(BaseModel):
     duration_s: float | None = None
     persona: str | None = None
     consulted_personas: list[str] = []
+    voice: bool = False
 
     def render(self, short: bool = False) -> str:
         return f"{'✅' if self.success else '🔴'} {self.result if self.success else self.error}"
@@ -391,6 +426,7 @@ class InitMessage(BaseModel):
     session_id: str
     thread_id: int | None = None
     prompt: str
+    voice: bool = False
 
     def render(self, short: bool = False) -> str:
         return f"⚙️ {self.prompt}"
@@ -568,7 +604,7 @@ class Agent:
         llm_agent = LlmAgent(
             name=name,
             description=description or "",
-            model=LiteLlm(model=model_name, **_model_kwargs(model_name)),
+            model=_adk_model(model_name),
             instruction=system_prompt
             if system_prompt is not None
             else (lambda _: SYSTEM_PROMPT.format(today=_today())),
@@ -607,6 +643,15 @@ class Agent:
             text = getattr(part, "text", None)
             if text:
                 await pubsub.publish(ResultDelta(session_id=session_id, thread_id=thread_id, delta=text))
+
+    async def run_live(
+        self, session_id: str, live_request_queue: LiveRequestQueue, run_config: RunConfig
+    ) -> AsyncIterator[Any]:
+        await self._ensure_session(session_id)
+        async for event in self._runner.run_live(
+            user_id=USER_ID, session_id=session_id, live_request_queue=live_request_queue, run_config=run_config
+        ):
+            yield event
 
     @traced("adk_run")
     async def run_for_result(

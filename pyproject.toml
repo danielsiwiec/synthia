@@ -45,10 +45,13 @@ dependencies = [
   "pydantic>=2.12.5",
   "pywebpush>=2.3.0",
   "ollama>=0.6.2",
-  "google-adk>=2.2.0",
   "openai>=2.36.0",
   "litellm>=1.86.2",
-  "mcp>=1.27.1"
+  "mcp>=1.27.1",
+  "google-adk>=2.9.2",
+  "torch>=2.11.0",
+  "typesafe-sdk>=0.7.0",
+  "playwright>=1.59.0"
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -93,3 +96,11 @@ known-first-party = ["synthia"]
 "__init__.py" = ["F401"]
 "synthia/main.py" = ["E402"]
 "tests/conftest.py" = ["E402"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{index = "pytorch-cpu", marker = "sys_platform == 'linux'"}]
