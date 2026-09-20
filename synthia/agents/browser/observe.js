@@ -71,7 +71,7 @@
   const seen = new Set();
   const elements = [];
   let ref = 0;
-  for (const el of document.querySelectorAll(SELECTOR)) {
+  for (const el of document.body ? document.querySelectorAll(SELECTOR) : []) {
     if (seen.has(el) || !visible(el)) continue;
     seen.add(el);
     const r = el.getBoundingClientRect();
@@ -89,10 +89,11 @@
   }
   const alerts = Array.from(document.querySelectorAll("[role=alert], [role=status], [role=dialog], dialog[open], [aria-modal=true]"))
     .filter(visible).map((el) => clean(el.innerText).slice(0, 300)).filter(Boolean).slice(0, 5);
-  const main = document.querySelector("main, article, [role=main]") || document.body;
+  const main = document.querySelector("main, article, [role=main]") || document.body || document.documentElement;
   const BLOCK = /^(P|DIV|SECTION|ARTICLE|HEADER|FOOTER|NAV|UL|OL|TABLE|TR|FORM|LI|H[1-6]|DD|DT|BLOCKQUOTE|PRE|LABEL|BUTTON|TD|TH)$/;
   const lines = [];
   const walk = (node, depth) => {
+    if (!node) return;
     if (node.nodeType === Node.TEXT_NODE) {
       const t = clean(node.textContent);
       if (t) lines.push(t);

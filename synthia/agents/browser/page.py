@@ -18,6 +18,13 @@ _ACTION_TIMEOUT_MS = 8_000
 _SETTLE_MS = 800
 _SCROLL_FRACTION = 0.8
 _DOWNLOAD_ERROR = re.compile(r"Download is starting", re.I)
+_RESTORE_OBSTRUCTION_JS = """() => {
+  for (const el of document.querySelectorAll('[data-synthia-cleared]')) {
+    const previous = el.getAttribute('data-synthia-cleared');
+    if (previous) el.style.setProperty('pointer-events', previous); else el.style.removeProperty('pointer-events');
+    el.removeAttribute('data-synthia-cleared');
+  }
+}"""
 _CLEAR_OBSTRUCTION_JS = """el => {
   el.scrollIntoView({block: 'center', inline: 'center'});
   const r = el.getBoundingClientRect();
@@ -30,6 +37,7 @@ _CLEAR_OBSTRUCTION_JS = """el => {
     while (block.parentElement && block.parentElement !== document.body && !block.parentElement.contains(el)) {
       block = block.parentElement;
     }
+    block.setAttribute('data-synthia-cleared', block.style.getPropertyValue('pointer-events') || '');
     block.style.setProperty('pointer-events', 'none', 'important');
     const cls = typeof block.className === 'string' ? block.className.trim().split(/\\s+/)[0] : '';
     cleared.push(block.tagName.toLowerCase() + (block.id ? '#' + block.id : '') + (cls ? '.' + cls : ''));
@@ -219,7 +227,13 @@ class Tab:
 
     async def observe(self) -> Observation:
         page = await self.ensure()
-        raw = await page.evaluate(_OBSERVE_JS)
+        try:
+            raw = await page.evaluate(_OBSERVE_JS)
+        except PlaywrightError as error:
+            if "Execution context was destroyed" not in str(error) and "navigation" not in str(error).lower():
+                raise
+            await self.settle(_NAV_TIMEOUT_MS)
+            raw = await page.evaluate(_OBSERVE_JS)
         return Observation.from_raw(raw)
 
     async def evaluate(self, script: str) -> Any:
@@ -253,6 +267,8 @@ class Tab:
                     await locator.evaluate("el => el.click()")
                 except PlaywrightError as scripted:
                     return f"click failed: {_short(scripted)}"
+            finally:
+                await self._restore_obstruction(page)
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=_SETTLE_MS * 2)
         except PlaywrightError:
@@ -261,7 +277,7 @@ class Tab:
         outcome = await self._outcome(before, "clicked")
         if cleared and outcome == "clicked":
             outcome = f"clicked (after clearing an overlay: {cleared})"
-        if outcome == "clicked" and href and self.page is page and page.url == url_before:
+        if outcome == "clicked" and href and self.page is page and not await self._url_changed(page, url_before):
             followed = await self.open(href)
             return (
                 "download started"
@@ -276,6 +292,20 @@ class Tab:
         except PlaywrightError:
             return ""
         return ", ".join(str(c) for c in (cleared or []))[:120]
+
+    async def _url_changed(self, page: Page, url_before: str, grace_s: float = 1.5) -> bool:
+        deadline = asyncio.get_event_loop().time() + grace_s
+        while page.url == url_before:
+            if asyncio.get_event_loop().time() >= deadline:
+                return False
+            await asyncio.sleep(0.1)
+        return True
+
+    async def _restore_obstruction(self, page: Page) -> None:
+        try:
+            await page.evaluate(_RESTORE_OBSTRUCTION_JS)
+        except PlaywrightError:
+            pass
 
     async def _link_target(self, locator: Any) -> str:
         try:
