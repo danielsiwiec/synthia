@@ -21,7 +21,7 @@ ACTIONS: dict[str, str] = {
 VALUE_ACTIONS = frozenset({"type", "select"})
 TARGET_ACTIONS = frozenset({"click", "type", "select"})
 TYPEABLE_KINDS = frozenset({"textbox", "search", "email", "number", "password", "url", "tel", "date", "combobox"})
-_TARGET_QUESTION = {"click": "click_target", "type": "type_target", "select": "select_target"}
+TARGET_QUESTION = {"click": "click_target", "type": "type_target", "select": "select_target"}
 CRITERIA_STYLES = ("full", "names", "refs")
 _WORD = re.compile(r"[a-z0-9]{3,}")
 _SECRET = re.compile(r"pass|secret|token|key|pin|cvv|ssn", re.I)
@@ -280,7 +280,7 @@ def parse_decision(answers: dict[str, Any]) -> Decision:
     action = answers["action"]
     value = answers.get("value")
     targets: dict[str, tuple[int, float]] = {}
-    for name, question in _TARGET_QUESTION.items():
+    for name, question in TARGET_QUESTION.items():
         answer = answers.get(question)
         if answer is not None:
             targets[name] = (int(answer.choice), float(getattr(answer, "confidence", 0.0) or 0.0))

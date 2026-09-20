@@ -19,7 +19,7 @@ from synthia.agents.browser.actions import (
     parse_decision,
     prune,
 )
-from synthia.agents.browser.decider import parse_llm_decision
+from synthia.agents.browser.decider import classifier_dimensions, parse_classifier_decision, parse_llm_decision
 from synthia.agents.browser.jev import JevClient, jev_available
 from synthia.agents.browser.loop import BrowseResult, _repeating, check, run_goal
 from synthia.agents.browser.page import HostBrowser, Tab, cdp_endpoint
@@ -180,6 +180,31 @@ def test_llm_decision_parsing_validates_refs_values_and_text() -> None:
     done = parse_llm_decision('{"action": "done", "goal_met": 1.7, "stuck": "x", "irreversible": -1}', elements, values)
     assert done.action == "done" and (done.goal_met, done.stuck, done.irreversible) == (1.0, 0.0, 0.0)
     assert parse_llm_decision("not json", elements, values).action == "wait"
+
+
+@pytest.mark.smoke
+def test_classifier_dimensions_and_parsing() -> None:
+    elements = [Element(ref=3, kind="textbox", name="Search"), Element(ref=9, kind="button", name="Go")]
+    dims = classifier_dimensions({"query": "wired"}, elements)
+    assert dims["click_target"]["labels"] == ["9", "none"] and dims["type_target"]["labels"] == ["3", "none"]
+    assert dims["value"]["labels"] == ["query", "none"] and dims["goal_met"]["labels"] == ["yes", "no"]
+    assert "select_target" not in dims and len(dims) == 7
+    result = {
+        "dimensions": {
+            "action": {"label": "type", "confidence": 0.9, "scores": {"type": 0.9, "click": 0.1}},
+            "type_target": {"label": "3", "confidence": 0.8, "scores": {"3": 0.8, "none": 0.2}},
+            "click_target": {"label": "9", "confidence": 0.7, "scores": {}},
+            "value": {"label": "query", "confidence": 0.95, "scores": {}},
+            "goal_met": {"label": "no", "confidence": 0.9, "scores": {"yes": 0.1, "no": 0.9}},
+            "stuck": {"label": "no", "confidence": 0.97, "scores": {}},
+            "irreversible": {"label": "yes", "confidence": 0.6, "scores": {"yes": 0.6, "no": 0.4}},
+        }
+    }
+    decision = parse_classifier_decision(result, elements, {"query": "wired"})
+    assert decision.action == "type" and decision.target == 3 and decision.value == "query"
+    assert (decision.goal_met, decision.stuck, decision.irreversible) == pytest.approx((0.1, 0.03, 0.6))
+    assert decision.without("type").action == "click" and decision.without("type").target == 9
+    assert parse_classifier_decision({}, elements, {}).action == "wait"
 
 
 @pytest.mark.smoke
