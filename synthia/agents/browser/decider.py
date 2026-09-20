@@ -29,10 +29,10 @@ _CLASSIFIER_KEY_ENV = "CLASSIFIER_API_KEY"
 _CLASSIFIER_TIMEOUT_S = 20
 _NONE = "none"
 _LAYA_MODEL = os.getenv("LAYA_MODEL", "convaiinnovations/laya")
-_LAYA_MAX_LEN = int(os.getenv("LAYA_MAX_LEN", "2048"))
-_LAYA_HEAD_MAX_LEN = int(os.getenv("LAYA_HEAD_MAX_LEN", "384"))
-_LAYA_MAX_CANDIDATES = int(os.getenv("LAYA_MAX_CANDIDATES", "30"))
-_LAYA_MAX_TEXT_CHARS = int(os.getenv("LAYA_MAX_TEXT_CHARS", "600"))
+_LAYA_MAX_LEN = int(os.getenv("LAYA_MAX_LEN", "1024"))
+_LAYA_HEAD_MAX_LEN = int(os.getenv("LAYA_HEAD_MAX_LEN", "256"))
+_LAYA_MAX_CANDIDATES = int(os.getenv("LAYA_MAX_CANDIDATES", "15"))
+_LAYA_MAX_TEXT_CHARS = int(os.getenv("LAYA_MAX_TEXT_CHARS", "300"))
 _laya_agents: dict[str, Any] = {}
 
 
@@ -398,7 +398,7 @@ class LayaDecider:
 
     @property
     def calibrated(self) -> bool:
-        return True
+        return False
 
     async def decide(
         self, state: dict[str, Any], values: dict[str, str], elements: list[Element], usage: JevUsage
