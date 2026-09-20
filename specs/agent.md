@@ -42,9 +42,14 @@ Synthia separates a cheap, user-facing **front agent** from a powerful **task ag
     capped to the most recent entries, so the caller can review what the task agent did or
     is doing.
 - **Other front-only tools:** `find_past_work`, `consult_persona`, `episodic_search`,
-  `episodic_show`, `send_image`, `render_diagram`, the memory tools, the scheduler tools,
-  and the thread-level project tools (`create_project`, `select_project`,
-  `add_project_section`, `attach_project_media`).
+  `episodic_show`, the memory tools, the scheduler tools, and the thread-level project tools
+  (`create_project`, `select_project`, `add_project_section`, `attach_project_media`).
+- **Images:** the front agent has no image tools and cannot render a picture itself. When the
+  user asks to see something (a cover, a screenshot, a chart, a photo), the front agent shall
+  delegate to the task agent, which shows it inline in the chat via `send_image` /
+  `render_diagram` (see "Tool inventory"); it shall never tell the user it cannot display
+  images. This applies in voice mode too: the image appears in the chat view of the thread the
+  call is on, and the model says so rather than reading out a path or URL.
 - **`browse(goal, url="", values={})`** (only while the browser agent is available): runs the
   Jev-driven browser loop (see "Browser agent") on a single site for a single goal and
   returns its structured result. In text mode it is synchronous with the front budget; in
@@ -99,6 +104,11 @@ and the same session (`session_id` = `thread_id`), so text and voice turns share
 - **Behavior:** the system shall present a delegated task's result back through the front
   agent, lightly cleaned, in full. The front agent shall reuse an existing `task_id` for
   continued work on the same task rather than creating a new one.
+- **Images:** the task agent is the only agent that can show the user an image. It shall do so
+  through `send_image` (any browser-renderable image file on disk) or `render_diagram`
+  (Mermaid source), never by replying with a filesystem path or telling the user to open a file.
+  Both publish an `image` event on the owning chat thread (`api.md`), which persists the image
+  as an `image` message (`state.md`) and streams it to the thread's SSE subscribers.
 
 ### Personas ("hats")
 Six single-lens reasoning personas — white (facts), red (emotion), black (risks), yellow
@@ -146,6 +156,8 @@ the full timeout, so prompts and skills shall not mention `abr`.
   via the internal pub/sub.
 - **Projects** (task-agent subset): `list_projects`, `update_project`, `delete_project`
   (the thread-level project tools live on the front agent).
+- **Images** (2, per thread): `send_image(path, caption="")` and
+  `render_diagram(diagram, caption="")` (see "Task agent", Images).
 - **Skill version tools** (7): `skill_version_status`, `skill_baseline`, `skill_set_canary`,
   `skill_promote`, `skill_rollback`, `skill_list_executions`, `skill_record_outcome`.
 - **Admin** (1): `notify`.
@@ -229,7 +241,8 @@ timeout. Downloads triggered in that Chrome land in the host download folder mou
 - **Cost:** Jev usage (input tokens × the model's rate) is recorded as delegated cost of the
   running agent turn (see "Cost tracking") and as a per-call cost metric.
 - **Screenshots:** `browser_screenshot` saves a PNG and shows it to the user through the
-  same path as `send_image` (`api.md` `image` event); in voice mode it is not shown.
+  same path as `send_image` (`api.md` `image` event); in voice mode the screenshot is saved
+  but not shown, so the task agent uses `send_image` when the user asked to see the page.
 
 ## Skill versioning & self-heal
 
