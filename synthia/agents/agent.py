@@ -45,8 +45,8 @@ class ModelSpec:
 # The front and task agent models (and their pricing) are defined ONLY here.
 # Both the deployed app and the test suite import these constants, so this block
 # is the one place to change a model. The two agents may use different models.
-TASK_MODEL = ModelSpec("gemini/gemini-3.1-flash-lite", input_cost_per_m=0.25, output_cost_per_m=1.50)
-FRONT_MODEL_SPEC = ModelSpec("gemini/gemini-3.1-flash-lite", input_cost_per_m=0.25, output_cost_per_m=1.50)
+TASK_MODEL = ModelSpec("gemini/gemini-3.5-flash-lite", input_cost_per_m=0.30, output_cost_per_m=2.50)
+FRONT_MODEL_SPEC = ModelSpec("gemini/gemini-3.5-flash-lite", input_cost_per_m=0.30, output_cost_per_m=2.50)
 PERSONA_MODEL_SPEC = FRONT_MODEL_SPEC
 VOICE_MODEL_SPEC = ModelSpec(
     "gemini-3.8-live",
