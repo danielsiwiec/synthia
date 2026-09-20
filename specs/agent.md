@@ -156,7 +156,8 @@ the full timeout, so prompts and skills shall not mention `abr`.
   via the internal pub/sub.
 - **Projects** (task-agent subset): `list_projects`, `update_project`, `delete_project`
   (the thread-level project tools live on the front agent).
-- **Images** (2, per thread): `send_image(path, caption="")` and
+- **Images** (2, per thread): `send_image(path, caption="")` (a local file or an http(s) image
+  URL, which the system fetches with a browser user agent; formats are sent as-is) and
   `render_diagram(diagram, caption="")` (see "Task agent", Images).
 - **Skill version tools** (7): `skill_version_status`, `skill_baseline`, `skill_set_canary`,
   `skill_promote`, `skill_rollback`, `skill_list_executions`, `skill_record_outcome`.

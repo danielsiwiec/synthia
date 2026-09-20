@@ -130,6 +130,7 @@ class Tab:
         self._downloads: list[str] = []
         self._dialogs: list[str] = []
         self._watched: set[int] = set()
+        self._opened: list[Page] = []
 
     @property
     def page(self) -> Page | None:
@@ -139,6 +140,7 @@ class Tab:
         page = self.page
         if page is None:
             page = await self._host.new_page()
+            self._opened.append(page)
             self.adopt(page)
         return page
 
@@ -177,6 +179,7 @@ class Tab:
         if not opened:
             return None
         page = opened[-1]
+        self._opened.extend(p for p in opened if p not in self._opened)
         self.adopt(page)
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=_NAV_TIMEOUT_MS)
@@ -198,9 +201,12 @@ class Tab:
         return outcome
 
     async def close(self) -> None:
-        page = self.page
+        pages = [p for p in (*self._opened, self.page) if p is not None]
         self._page = None
-        if page is not None:
+        self._opened.clear()
+        for page in dict.fromkeys(pages):
+            if page.is_closed():
+                continue
             try:
                 await page.close()
             except Exception:
@@ -250,14 +256,17 @@ class Tab:
         url_before = page.url
         locator = self._locator(ref)
         href = await self._link_target(locator)
-        cleared = ""
         try:
             await locator.scroll_into_view_if_needed(timeout=_ACTION_TIMEOUT_MS)
+        except PlaywrightError:
+            pass
+        cleared = await self._clear_obstruction(locator)
+        try:
             await locator.click(timeout=_ACTION_TIMEOUT_MS)
         except PlaywrightError as error:
             if _DOWNLOAD_ERROR.search(str(error)):
                 return "download started"
-            cleared = await self._clear_obstruction(locator)
+            cleared = ", ".join(c for c in (cleared, await self._clear_obstruction(locator)) if c)
             try:
                 await locator.click(timeout=_ACTION_TIMEOUT_MS)
             except PlaywrightError as retry:
@@ -267,7 +276,8 @@ class Tab:
                     await locator.evaluate("el => el.click()")
                 except PlaywrightError as scripted:
                     return f"click failed: {_short(scripted)}"
-            finally:
+        finally:
+            if cleared:
                 await self._restore_obstruction(page)
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=_SETTLE_MS * 2)

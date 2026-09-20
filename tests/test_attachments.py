@@ -1,5 +1,10 @@
 import base64
+import functools
+import http.server
+import threading
 from pathlib import Path
+
+import pytest
 
 from synthia.agents.agent import _build_parts, create_image_tool
 from synthia.service.chat import (
@@ -10,6 +15,7 @@ from synthia.service.chat import (
     _unique_path,
 )
 from synthia.service.models import TaskImage
+from tests.helpers import write_band_png
 
 
 def test_safe_filename_strips_paths():
@@ -84,6 +90,29 @@ async def test_send_image_tool_accepts_image(tmp_path):
     (tmp_path / "a.png").write_bytes(b"\x89PNG")
     tool = create_image_tool(1, tmp_path)
     assert "Sent image 'a.png'" in await tool("a.png")
+
+
+@pytest.fixture
+def image_server(tmp_path_factory):
+    root = tmp_path_factory.mktemp("served")
+    write_band_png(root / "cover.png", (200, 30, 30), (30, 30, 200))
+    (root / "page.html").write_text("<html><body>not an image</body></html>")
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(root))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}"
+    finally:
+        server.shutdown()
+
+
+async def test_send_image_tool_fetches_image_urls(tmp_path, image_server):
+    tool = create_image_tool(1, tmp_path)
+    assert "Sent image 'cover_" in await tool(f"{image_server}/cover.png", "a cover")
+    saved = list(tmp_path.glob("cover_*.png"))
+    assert len(saved) == 1 and saved[0].read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    assert "could not fetch an image" in await tool(f"{image_server}/page.html")
+    assert "could not fetch an image" in await tool(f"{image_server}/missing.png")
 
 
 def test_build_parts_includes_heic_image(tmp_path):

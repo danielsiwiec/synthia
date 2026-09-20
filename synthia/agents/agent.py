@@ -10,8 +10,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Self
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
+import httpx
 from google.adk.agents import LlmAgent
 from google.adk.agents.live_request_queue import LiveRequestQueue
 from google.adk.agents.run_config import RunConfig, StreamingMode
@@ -227,10 +229,11 @@ Files downloaded by the browser are saved in the `/mounts/downloads` folder.
 
 ## Sending images
 To show the user an image (a screenshot, chart, photo, generated picture, etc.), you MUST call the
-send_image tool with the path to the image file. NEVER reply with a filesystem path or tell the user
-to open a file — the user has no access to Synthia's file system and cannot see anything on disk. The
-send_image tool persists the image and displays it inline in the chat; it is the only way an image
-reaches the user.
+send_image tool with the path to the image file or its URL. NEVER reply with a filesystem path or tell
+the user to open a file — the user has no access to Synthia's file system and cannot see anything on
+disk. The send_image tool persists the image and displays it inline in the chat; it is the only way an
+image reaches the user. It accepts PNG, JPEG, GIF, WebP and SVG as they are: never convert, resize, or
+re-encode an image before sending it, and for an image on a web page pass its src URL directly.
 
 ## Diagrams
 To draw a diagram (flowchart, sequence, class, state, ER, gantt, mindmap, etc.), call the
@@ -493,6 +496,35 @@ Message = ToolCall | Result | InitMessage | Thought
 _SKILL_INVOCATION_TOOLS = {"load_skill", "run_skill_script", "load_skill_resource"}
 
 
+_IMAGE_FETCH_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/153.0.0.0 Safari/537.36"
+    )
+}
+_IMAGE_FETCH_TIMEOUT = 30
+
+
+async def _fetch_image(url: str, base: Path) -> Path | None:
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=True, timeout=_IMAGE_FETCH_TIMEOUT, headers=_IMAGE_FETCH_HEADERS
+        ) as http:
+            response = await http.get(url)
+    except Exception as error:
+        logger.warning(f"image fetch failed for {url}: {error}")
+        return None
+    content_type = response.headers.get("content-type", "").split(";")[0].strip()
+    if response.status_code != 200 or not content_type.startswith("image/"):
+        return None
+    suffix = Path(urlparse(url).path).suffix or (mimetypes.guess_extension(content_type) or ".img")
+    name = Path(urlparse(url).path).stem or "image"
+    target = base / f"{name}_{uuid.uuid4().hex[:8]}{suffix}"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(response.content)
+    return target
+
+
 def create_image_tool(thread_id: int, cwd: str | Path | None = None) -> Callable:
     base = Path(cwd) if cwd else Path.cwd()
 
@@ -500,17 +532,24 @@ def create_image_tool(thread_id: int, cwd: str | Path | None = None) -> Callable
         """Display an image to the user in the current chat thread. This is the ONLY way to show an
         image to the user — they cannot access the file system, so never reply with a file path.
 
-        Accepts any image the browser renders inline: PNG, JPEG, GIF, WebP, and SVG. For freeform
-        vector drawings (a figure, icon, simple scene) write an .svg file and send it directly —
-        do NOT rasterize it to PNG via a browser screenshot.
+        Accepts a local file or an http(s) URL (e.g. an image src read from a web page), in any
+        format the browser renders inline: PNG, JPEG, GIF, WebP, and SVG. Send images in the format
+        you have — never convert them. For freeform vector drawings (a figure, icon, simple scene)
+        write an .svg file and send it directly — do NOT rasterize it to PNG via a browser screenshot.
 
         Args:
-            path: Path to the image file, absolute or relative to the working directory.
+            path: Path to the image file (absolute or relative to the working directory) or an image URL.
             caption: Optional caption shown beneath the image.
         """
-        resolved = Path(path)
-        if not resolved.is_absolute():
-            resolved = base / resolved
+        if path.startswith(("http://", "https://")):
+            fetched = await _fetch_image(path, base)
+            if fetched is None:
+                return f"Error: could not fetch an image from {path}"
+            resolved = fetched
+        else:
+            resolved = Path(path)
+            if not resolved.is_absolute():
+                resolved = base / resolved
         if not resolved.is_file():
             return f"Error: no file found at {resolved}"
         content_type = mimetypes.guess_type(str(resolved))[0] or ""

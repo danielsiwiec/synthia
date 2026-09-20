@@ -2,6 +2,7 @@ import functools
 import http.server
 import os
 import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -215,10 +216,14 @@ async def test_click_follows_new_tab(fixture_url: str, tab: Tab) -> None:
     obs = await tab.observe()
     await tab.click(next(e.ref for e in obs.elements if e.name == "Continue"))
     obs = await tab.observe()
+    pages_before = len(await tab._host.pages())
     outcome = await tab.click(next(e.ref for e in obs.elements if e.name == "Open help"))
     assert outcome.startswith("opened new tab ") and outcome.endswith("/browser_help.html")
     assert (await tab.observe()).title == "Help Popup"
     assert await tab.sleep(0.2) == "waited"
+    assert len(await tab._host.pages()) == pages_before + 1
+    await tab.close()
+    assert len(await tab._host.pages()) == pages_before - 1
 
 
 @needs_chrome
@@ -237,7 +242,9 @@ async def test_click_follows_link_target_when_click_is_swallowed(fixture_url: st
 async def test_click_clears_an_intercepting_overlay_and_keeps_the_popup(fixture_url: str, tab: Tab) -> None:
     await tab.open(fixture_url.replace("browser_todo.html", "browser_covered.html"))
     obs = await tab.observe()
+    started = time.perf_counter()
     outcome = await tab.click(next(e.ref for e in obs.elements if e.name == "Open help"))
+    assert time.perf_counter() - started < 5, "obstruction should be cleared before the first click times out"
     assert outcome.startswith("opened new tab ") and outcome.endswith("/browser_help.html")
     assert (await tab.observe()).title == "Help Popup"
 
