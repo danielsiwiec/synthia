@@ -1326,6 +1326,23 @@ wheels = [
 ]
 
 [[package]]
+name = "laya"
+version = "0.3.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "huggingface-hub" },
+    { name = "numpy" },
+    { name = "safetensors" },
+    { name = "torch", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
+    { name = "torch", version = "2.14.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'linux'" },
+    { name = "transformers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/64/a0/2e9f82f537ae409a176d19406ba1ae64c4e51f171359e60acb8ba0bd6440/laya-0.3.4.tar.gz", hash = "sha256:e0da594d77d2c491aedd3381757052b251a953fc27f03733dcb1c8e761246f3e", size = 49792 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/09/b4/0f22ac636d2545e6f4a7fcaf3a65bc2715ff1db3a667bc5b930e4f40c057/laya-0.3.4-py3-none-any.whl", hash = "sha256:8bf1c5cc5cbf6abebf63a6346b4babedd5692f88a75aa9e0cc01ed4145a9a14b", size = 34180 },
+]
+
+[[package]]
 name = "litellm"
 version = "1.86.2"
 source = { registry = "https://pypi.org/simple" }
@@ -3108,6 +3125,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "laya" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -3157,6 +3175,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "laya", specifier = ">=0.3.4" },
     { name = "pre-commit", specifier = ">=4.6.0" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },

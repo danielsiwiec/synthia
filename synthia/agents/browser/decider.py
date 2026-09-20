@@ -1,6 +1,8 @@
+import asyncio
 import json
 import os
 import time
+from types import SimpleNamespace
 from typing import Any, Protocol
 
 import httpx
@@ -26,6 +28,12 @@ _CLASSIFIER_URL = os.getenv("CLASSIFIER_DEV_URL", "https://classifier.dev/v1/cla
 _CLASSIFIER_KEY_ENV = "CLASSIFIER_API_KEY"
 _CLASSIFIER_TIMEOUT_S = 20
 _NONE = "none"
+_LAYA_MODEL = os.getenv("LAYA_MODEL", "convaiinnovations/laya")
+_LAYA_MAX_LEN = int(os.getenv("LAYA_MAX_LEN", "2048"))
+_LAYA_HEAD_MAX_LEN = int(os.getenv("LAYA_HEAD_MAX_LEN", "384"))
+_LAYA_MAX_CANDIDATES = int(os.getenv("LAYA_MAX_CANDIDATES", "30"))
+_LAYA_MAX_TEXT_CHARS = int(os.getenv("LAYA_MAX_TEXT_CHARS", "600"))
+_laya_agents: dict[str, Any] = {}
 
 
 class Decider(Protocol):
@@ -332,3 +340,78 @@ class ClassifierDecider:
 
     async def close(self) -> None:
         await self._client.aclose()
+
+
+def _laya_device() -> str:
+    device = os.getenv("LAYA_DEVICE")
+    if device:
+        return device
+    try:
+        import torch
+
+        if torch.backends.mps.is_available():
+            return "mps"
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception:
+        pass
+    return "cpu"
+
+
+def _laya_agent(model: str) -> Any:
+    if model not in _laya_agents:
+        import laya
+
+        agent = laya.load(model, device=_laya_device())
+        agent.cfg["max_len"] = max(int(agent.cfg.get("max_len", 512)), _LAYA_MAX_LEN)
+        agent.cfg["head_max_len"] = max(int(agent.cfg.get("head_max_len", 192)), _LAYA_HEAD_MAX_LEN)
+        _laya_agents[model] = agent
+        logger.info(f"🧠 laya loaded: {model} on {_laya_device()} (max_len={agent.cfg['max_len']})")
+    return _laya_agents[model]
+
+
+def questions_as_dicts(questions: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    for name, question in questions.items():
+        entry: dict[str, Any] = {"type": question.type, "instructions": question.instructions}
+        criteria = getattr(question, "criteria", None)
+        if criteria is not None:
+            entry["criteria"] = dict(criteria) if isinstance(criteria, dict) else list(criteria)
+        out[name] = entry
+    return out
+
+
+def answers_as_objects(answers: dict[str, Any]) -> dict[str, Any]:
+    return {name: SimpleNamespace(**answer) for name, answer in answers.items() if isinstance(answer, dict)}
+
+
+class LayaDecider:
+    max_candidates = _LAYA_MAX_CANDIDATES
+    max_text_chars = _LAYA_MAX_TEXT_CHARS
+
+    def __init__(self, model: str = _LAYA_MODEL):
+        self._model = model
+
+    @property
+    def model(self) -> str:
+        return f"laya:{self._model}"
+
+    @property
+    def calibrated(self) -> bool:
+        return True
+
+    async def decide(
+        self, state: dict[str, Any], values: dict[str, str], elements: list[Element], usage: JevUsage
+    ) -> Decision:
+        agent = await asyncio.to_thread(_laya_agent, self._model)
+        questions = questions_as_dicts(build_questions(values, elements, style="refs"))
+        started = time.perf_counter()
+        with start_span("laya_decide") as span:
+            result = await asyncio.to_thread(agent.predict, state, questions)
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            tokens = int((result.get("usage") or {}).get("input_tokens") or 0)
+            usage.record(tokens, 0, 0.0, latency_ms)
+            span.set_attribute("gen_ai.request.model", self.model)
+            span.set_attribute("gen_ai.usage.input_tokens", tokens)
+        logger.debug(f"🧭 {self.model} {len(questions)} questions, {tokens} tokens, {latency_ms}ms")
+        return parse_decision(answers_as_objects(result.get("answers") or {}))

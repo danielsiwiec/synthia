@@ -149,9 +149,15 @@ def prune(elements: list[Element], goal: str, limit: int) -> list[Element]:
 
 
 def build_state(
-    goal: str, values: dict[str, str], observation: Observation, elements: list[Element], history: list[str]
+    goal: str,
+    values: dict[str, str],
+    observation: Observation,
+    elements: list[Element],
+    history: list[str],
+    text_chars: int | None = None,
 ) -> dict[str, Any]:
-    page_text = observation.text.lower()
+    text = observation.text[:text_chars] if text_chars else observation.text
+    page_text = text.lower()
     return {
         "goal": goal,
         "available_values": {name: _masked(name, value) for name, value in sorted(values.items())},
@@ -161,7 +167,7 @@ def build_state(
             "title": observation.title,
             "alerts": observation.alerts,
             "scroll": observation.scroll,
-            "text": observation.text,
+            "text": text,
         },
         "elements": [e.line() for e in elements],
         "recent_actions": history[-5:],

@@ -94,8 +94,10 @@ async def run_goal(
                 break
             observation = await tab.observe()
             fingerprints.append(observation.fingerprint())
-            candidates = prune(observation.elements, goal, MAX_CANDIDATES)
-            state = build_state(goal, values, observation, candidates, history)
+            candidates = prune(observation.elements, goal, getattr(decider, "max_candidates", MAX_CANDIDATES))
+            state = build_state(
+                goal, values, observation, candidates, history, text_chars=getattr(decider, "max_text_chars", None)
+            )
             decision = await decider.decide(state, values, candidates, usage)
             if decision.action == "done" and decision.goal_met < _DONE_AGREEMENT:
                 decision = decision.without("done")

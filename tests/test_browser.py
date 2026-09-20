@@ -19,7 +19,13 @@ from synthia.agents.browser.actions import (
     parse_decision,
     prune,
 )
-from synthia.agents.browser.decider import classifier_dimensions, parse_classifier_decision, parse_llm_decision
+from synthia.agents.browser.decider import (
+    answers_as_objects,
+    classifier_dimensions,
+    parse_classifier_decision,
+    parse_llm_decision,
+    questions_as_dicts,
+)
 from synthia.agents.browser.jev import JevClient, jev_available
 from synthia.agents.browser.loop import BrowseResult, _repeating, check, run_goal
 from synthia.agents.browser.page import HostBrowser, Tab, cdp_endpoint
@@ -205,6 +211,39 @@ def test_classifier_dimensions_and_parsing() -> None:
     assert (decision.goal_met, decision.stuck, decision.irreversible) == pytest.approx((0.1, 0.03, 0.6))
     assert decision.without("type").action == "click" and decision.without("type").target == 9
     assert parse_classifier_decision({}, elements, {}).action == "wait"
+
+
+@pytest.mark.smoke
+def test_laya_question_and_answer_adapters() -> None:
+    element = Element(ref=7, kind="textbox", name="Search")
+    dicts = questions_as_dicts(build_questions({"query": "wired"}, [element], style="refs"))
+    assert dicts["type_target"] == {
+        "type": "choice",
+        "instructions": dicts["type_target"]["instructions"],
+        "criteria": {"7": None},
+    }
+    assert dicts["goal_met"]["type"] == "noul" and "criteria" not in dicts["goal_met"]
+    answers = answers_as_objects(
+        {
+            "action": {
+                "type": "choice",
+                "choice": "type",
+                "probabilities": {"type": 0.7, "click": 0.3},
+                "confidence": 0.4,
+            },
+            "type_target": {"type": "choice", "choice": "7", "probabilities": {"7": 1.0}, "confidence": 1.0},
+            "value": {"type": "choice", "choice": "query", "probabilities": {"query": 1.0}, "confidence": 1.0},
+            "goal_met": {"type": "noul", "noul": 0.2, "confidence": 0.8},
+            "stuck": {"type": "noul", "noul": 0.1},
+            "irreversible": {"type": "noul", "noul": 0.0},
+        }
+    )
+    decision = parse_decision(answers)
+    assert decision.action == "type" and decision.target == 7 and decision.value == "query" and decision.goal_met == 0.2
+    assert (
+        build_state("g", {}, Observation.from_raw(_raw([], text="x" * 50)), [], [], text_chars=10)["page"]["text"]
+        == "x" * 10
+    )
 
 
 @pytest.mark.smoke
