@@ -58,6 +58,7 @@ dependencies = [
 packages = ["synthia"]
 
 [tool.pytest.ini_options]
+addopts = "--dist loadgroup"
 asyncio_mode = "auto"
 markers = [
   "smoke: marks tests as smoke tests (quick tests for basic functionality)",

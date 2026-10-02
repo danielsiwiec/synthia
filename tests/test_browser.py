@@ -42,7 +42,13 @@ def _chrome_reachable() -> bool:
 
 
 _HAS_CHROME = _chrome_reachable()
-needs_chrome = pytest.mark.skipif(not _HAS_CHROME, reason=f"no Chrome CDP endpoint at {_CDP}")
+
+
+def needs_chrome(test):
+    test = pytest.mark.skipif(not _HAS_CHROME, reason=f"no Chrome CDP endpoint at {_CDP}")(test)
+    return pytest.mark.xdist_group("host_chrome")(test)
+
+
 needs_jev = pytest.mark.skipif(not jev_available(), reason="requires TYPESAFE_API_KEY")
 
 
