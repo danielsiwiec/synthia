@@ -25,6 +25,15 @@ Synthia separates a cheap, user-facing **front agent** from a powerful **task ag
 - **Role:** talks to the user on a chat thread, answers directly when it can, and decides
   what to delegate. It hides internal mechanics from the user (no mention of sessions,
   delegation, context, etc.).
+- **Delegation requests:** when delegating, the front agent shall pass the user's request plus
+  stable identifiers already known from earlier results (URLs, titles, file paths, ids), but
+  shall not assert current state derived from earlier results (what exists, what is installed,
+  which issue or version is latest). Earlier results are snapshots; the task agent checks live
+  state itself. The front agent shall delegate a request once per user message and relay the
+  result as returned, rather than re-running the same task because the result looks thin.
+- **Research:** when the user asks for research or information from outside Synthia's own
+  history, the front agent shall delegate it immediately rather than gathering it with its
+  recall tools (memory, episodic, past work), which only cover the user's past.
 - **Tools:** no builtins. It manages memory, scheduling, and projects directly, and routes
   heavy work to the task agent via three delegation tools:
   - `delegate_to_task_agent(request, task_id="")` — **synchronous**: runs the task agent
@@ -117,8 +126,11 @@ front agent consults via `consult_persona`; consulted personas are recorded on t
 
 ## Model
 
-A single model id is configured for both agents (currently `gemini/gemini-3.5-flash-lite`,
-priced $0.30/M input, $2.50/M output). The conversation **titler** uses
+A single model id is configured for both agents (currently OpenAI's GPT-6 Luna as
+`openai/responses/gpt-6-luna`, priced $0.10/M input, $0.50/M output, $0.01/M cached input;
+needs `OPENAI_API_KEY`). The model shall be reached through the Responses API (the
+`responses/` route): GPT-6 Luna rejects function tools on Chat Completions unless reasoning
+is disabled. The conversation **titler** uses
 `anthropic/claude-haiku-4-5`; the **progress analyzer** uses an OpenAI mini model.
 
 The **voice model** (voice mode only) is `gemini-3.8-live`, priced by audio duration at the
@@ -305,7 +317,7 @@ triggers onto the same bus. Voice turns publish `InitMessage` / `Result` flagged
 
 ## Open questions
 
-1. **Configured model vs. Anthropic code paths.** The model id is a Gemini one, but
+1. **Configured model vs. Anthropic code paths.** The model id is an OpenAI one, but
    thinking/caching/output-token knobs only take effect for Claude. Confirm the intended
    production model and either align the config or document that the Anthropic paths are
    dormant by design.

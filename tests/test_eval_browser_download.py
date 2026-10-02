@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from google.adk.sessions import InMemorySessionService
 
-from synthia.agents.agent import JEV_MODEL_SPEC, TASK_MODEL, Agent, required_api_key
+from synthia.agents.agent import JEV_MODEL_SPEC, Agent, required_api_key
 from synthia.agents.browser.decider import LlmDecider
 from synthia.agents.browser.jev import JevClient, jev_available
 from synthia.agents.browser.loop import run_goal
@@ -53,7 +53,7 @@ def _gemini_rates() -> tuple[float, float, float]:
 
 
 _FILE_WAIT_S = 120
-_GEMINI_KEY = required_api_key(TASK_MODEL.name)
+_GEMINI_KEY = required_api_key(_GEMINI_MODEL)
 
 needs_env = pytest.mark.skipif(
     not (jev_available() and _GEMINI_KEY and os.getenv(_GEMINI_KEY)),

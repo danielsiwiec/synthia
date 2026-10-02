@@ -743,6 +743,37 @@ async def test_eval_project_update_from_research_done_by_front() -> None:
     _assert("project_update_from_research", await run_eval(scenario), min_rate=0.75, max_seconds=80)
 
 
+async def test_eval_delegation_omits_stale_state_from_past_results() -> None:
+    stale = {
+        "id": "task-economist-earlier",
+        "label": "Economist check",
+        "request": "Check for a new issue of The Economist USA and download it to Kavita.",
+        "result": "Downloaded The Economist USA - 2026-09-26.pdf (September 26, 2026 issue) to "
+        "/mounts/media/magazines/The Economist USA/, rescanned Kavita and updated the series cover.",
+    }
+
+    async def scenario():
+        world = StubWorld(seed_tasks=[stale])
+        agent = await world.front_agent()
+        try:
+            await _run(
+                world,
+                agent,
+                "Use the magazines skill to check for a new issue of The Economist USA only. If a newer issue "
+                "is available, download it to Kavita.",
+            )
+            requests = " ".join(d.get("request") or "" for d in world.delegations())
+            asserted = any(s in requests for s in ("09-26", "September 26", "Sept 26", "Sep 26"))
+            ok = bool(world.delegations()) and not asserted
+            return ok, f"asserted_stale={asserted} | " + " ### ".join(
+                d.get("request") or "" for d in world.delegations()
+            )
+        finally:
+            await agent.disconnect()
+
+    _assert("delegation_omits_stale_state", await run_eval(scenario), min_rate=0.75, max_seconds=50)
+
+
 async def test_eval_consult_persona_for_critical_take() -> None:
     async def scenario():
         world = StubWorld()

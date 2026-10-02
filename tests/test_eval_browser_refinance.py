@@ -5,7 +5,7 @@ import time
 import pytest
 from google.adk.sessions import InMemorySessionService
 
-from synthia.agents.agent import JEV_MODEL_SPEC, TASK_MODEL, Agent, required_api_key
+from synthia.agents.agent import JEV_MODEL_SPEC, Agent, required_api_key
 from synthia.agents.browser.decider import LlmDecider
 from synthia.agents.browser.jev import JevClient, jev_available
 from synthia.agents.browser.loop import run_goal
@@ -35,7 +35,7 @@ _GEMINI_MODEL = os.getenv("EVAL_GEMINI_MODEL", "gemini/gemini-3.1-flash-lite")
 _HARNESS_MODELS = [m for m in os.getenv("EVAL_HARNESS_MODELS", "gpt-5.6-luna").split(",") if m]
 
 _LOAN, _PROPERTY, _FICO, _ZIP = 600000, 950000, 800, "96150"
-_GEMINI_KEY = required_api_key(TASK_MODEL.name)
+_GEMINI_KEY = required_api_key(_GEMINI_MODEL)
 
 needs_env = pytest.mark.skipif(
     not (jev_available() and _GEMINI_KEY and os.getenv(_GEMINI_KEY)),
