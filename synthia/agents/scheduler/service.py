@@ -91,8 +91,7 @@ class SchedulerService:
     async def trigger_job(self, name: str) -> bool:
         job = self._scheduler.get_job(name)
         if job and job.args:
-            task, job_name = job.args
-            await pubsub.publish(TaskTrigger(task=task, name=job_name))
+            await _publish_task_trigger(*job.args)
             logger.info(f"Triggered job '{name}' for immediate execution")
             return True
         logger.warning(f"Job '{name}' not found")

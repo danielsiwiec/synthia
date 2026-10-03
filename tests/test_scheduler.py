@@ -67,3 +67,17 @@ async def test_scheduler_one_shot_job_runs_once_and_removes_itself(
         "one-shot job removed",
         timeout=5,
     )
+
+
+async def test_trigger_job_runs_an_existing_job_now(clean_pubsub: PubSub, scheduler_service: SchedulerService) -> None:
+    task_triggers: list[TaskTrigger] = []
+    pubsub.subscribe(TaskTrigger, task_triggers.append)
+    await pubsub.start()
+
+    start_date = datetime.now() + timedelta(days=1)
+    scheduler_service.add_job(name="later_job", start_date=start_date, seconds=86400, task="later task", silent=True)
+
+    assert await scheduler_service.trigger_job("later_job")
+    await await_until(lambda: len(task_triggers) >= 1, "TaskTrigger", timeout=5)
+
+    assert task_triggers == [TaskTrigger(task="later task", name="later_job", silent=True)]
