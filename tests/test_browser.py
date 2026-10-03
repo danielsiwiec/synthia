@@ -267,6 +267,20 @@ async def tab():
 
 
 @needs_chrome
+async def test_tab_recovers_after_the_playwright_driver_dies(fixture_url: str, tab: Tab) -> None:
+    assert await tab.open(fixture_url) == "opened"
+    host = tab._host
+    generation = host.generation
+    assert host._playwright is not None
+    driver = host._playwright._impl_obj._connection._transport._proc
+    driver.kill()
+    await driver.wait()
+    assert await tab.open(fixture_url) == "opened"
+    assert host.generation == generation + 1
+    assert any(e.name == "Continue" for e in (await tab.observe()).elements)
+
+
+@needs_chrome
 async def test_tab_observes_acts_and_evaluates(fixture_url: str, tab: Tab, tmp_path: Path) -> None:
     assert await tab.open(fixture_url) == "opened"
     obs = await tab.observe()

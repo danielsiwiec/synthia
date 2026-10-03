@@ -18,6 +18,7 @@ _ACTION_TIMEOUT_MS = 8_000
 _SETTLE_MS = 800
 _OBSERVE_TIMEOUT_S = 15.0
 _EVAL_TIMEOUT_S = 30.0
+_LIVENESS_TIMEOUT_S = 5.0
 _SCROLL_FRACTION = 0.8
 _DOWNLOAD_ERROR = re.compile(r"Download is starting", re.I)
 _RESTORE_OBSTRUCTION_JS = """() => {
@@ -62,15 +63,23 @@ class HostBrowser:
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
         self._lock = asyncio.Lock()
+        self._generation = 0
 
     @property
     def endpoint(self) -> str:
         return self._cdp_http
 
+    @property
+    def generation(self) -> int:
+        return self._generation
+
     async def context(self) -> BrowserContext:
         async with self._lock:
             if self._browser is not None and self._browser.is_connected():
-                return self._browser.contexts[0]
+                if await self._alive(self._browser):
+                    return self._browser.contexts[0]
+                logger.warning("host Chrome attachment is dead, re-attaching")
+                await self._reset()
             last: Exception | None = None
             for attempt in range(2):
                 try:
@@ -78,6 +87,7 @@ class HostBrowser:
                         self._playwright = await async_playwright().start()
                     self._browser = await self._playwright.chromium.connect_over_cdp(self._cdp_http, timeout=20_000)
                     await self._keep_host_downloads(self._browser)
+                    self._generation += 1
                     logger.info(f"🌐 attached to host Chrome at {self._cdp_http}")
                     return self._browser.contexts[0]
                 except Exception as error:
@@ -86,6 +96,15 @@ class HostBrowser:
                         logger.warning(f"browser attach failed, restarting driver: {_short(error)}")
                         await self._reset()
             raise BrowserUnavailable(f"host Chrome unreachable at {self._cdp_http}: {last}") from last
+
+    async def _alive(self, browser: Browser) -> bool:
+        try:
+            session = await asyncio.wait_for(browser.new_browser_cdp_session(), _LIVENESS_TIMEOUT_S)
+            await asyncio.wait_for(session.detach(), _LIVENESS_TIMEOUT_S)
+            return True
+        except Exception as error:
+            logger.warning(f"host Chrome liveness check failed: {_short(error)}")
+            return False
 
     async def _keep_host_downloads(self, browser: Browser) -> None:
         session = await browser.new_browser_cdp_session()
@@ -130,6 +149,7 @@ class Tab:
     def __init__(self, host: HostBrowser):
         self._host = host
         self._page: Page | None = None
+        self._generation = host.generation
         self._downloads: list[str] = []
         self._dialogs: list[str] = []
         self._watched: set[int] = set()
@@ -137,9 +157,17 @@ class Tab:
 
     @property
     def page(self) -> Page | None:
-        return self._page if self._page is not None and not self._page.is_closed() else None
+        if self._page is None or self._generation != self._host.generation:
+            return None
+        return None if self._page.is_closed() else self._page
 
     async def ensure(self) -> Page:
+        await self._host.context()
+        if self._generation != self._host.generation:
+            self._page = None
+            self._opened = []
+            self._watched = set()
+            self._generation = self._host.generation
         page = self.page
         if page is None:
             page = await self._host.new_page()
@@ -149,6 +177,7 @@ class Tab:
 
     def adopt(self, page: Page) -> None:
         self._page = page
+        self._generation = self._host.generation
         page.set_default_timeout(_ACTION_TIMEOUT_MS)
         page.set_default_navigation_timeout(_NAV_TIMEOUT_MS)
         if id(page) not in self._watched:

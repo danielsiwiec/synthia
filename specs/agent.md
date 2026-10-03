@@ -196,6 +196,11 @@ in-process: no shell command, no daemon, so a browser call cannot hang the `run_
 timeout. Downloads triggered in that Chrome land in the host download folder mounted at
 `/mounts/downloads`.
 
+- **Connection recovery:** the attachment is long-lived and can die silently (the Playwright
+  driver exits while the browser object still reports connected). Before each browser
+  operation the system shall verify the attachment with a cheap CDP round trip; if that
+  fails, it shall discard the attachment, re-attach, and drop every thread's tab from the
+  old attachment so the next call opens a fresh one, instead of failing every later call.
 - **Session model:** each thread owns at most one tab, opened lazily by the first browser
   tool call and reused by later calls; `browser_close` closes only that tab, never the
   browser. `browser_tabs` lists the browser's tabs and can adopt one as the thread's tab.
