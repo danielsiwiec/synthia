@@ -28,11 +28,12 @@ from synthia.agents.agent import (
 )
 from synthia.agents.browser.loop import BrowseResult
 from synthia.agents.browser.tools import BrowserService, create_browser_tools
+from synthia.agents.judge import Verdict, judge_run
 from synthia.agents.personas import get_persona, persona_system_prompt
 from synthia.agents.skills import reload_skills
 from synthia.agents.skilltools import versions
 from synthia.helpers.pubsub import pubsub
-from synthia.service.activity import task_activity
+from synthia.service.activity import Clips, task_activity
 from synthia.service.chat import MessageRepository
 from synthia.service.job_execution_repository import JobExecutionRepository
 from synthia.service.models import (
@@ -51,6 +52,8 @@ from synthia.telemetry import traced
 _MAX_CONCURRENT_TASKS = int(os.getenv("FRONT_MAX_CONCURRENT_TASKS", "3"))
 _RECENT_TASKS_LIMIT = int(os.getenv("FRONT_RECENT_TASKS", "10"))
 _FRONT_ENABLED = os.getenv("FRONT_AGENT_ENABLED", "1") != "0"
+_JUDGE_CLIPS = Clips(args=600, result=8000, text=4000, quiet_tools=("browser_", "load_skill"), quiet_result=600)
+_JUDGE_TRAIL_STEPS = 300
 
 _TASK_AGENT_DESCRIPTION = (
     "A powerful agent that can control a computer: run shell commands and scripts, read and write "
@@ -115,9 +118,35 @@ class TaskService:
     async def _handle_scheduled_task(self, trigger: TaskTrigger) -> None:
         thread_id = random.randint(0, 2**63 - 1)
         result = await self._run_task(TaskRequest(task=trigger.task, thread_id=thread_id))
+        verdict = await self._assess(trigger.task, result)
+        await self._announce(trigger, verdict)
         if result:
-            await self._record_and_self_heal(trigger, result)
-        if not trigger.silent:
+            await self._record_and_self_heal(trigger, result, verdict)
+
+    async def _assess(self, task: str, result: Result | None) -> Verdict:
+        if result is None or not result.success:
+            reason = (result.error if result else None) or "the run produced no result"
+            return Verdict(success=False, infrastructure=False, reason=reason)
+        try:
+            activity = await task_activity(self._session_service, APP_NAME, USER_ID, result.session_id, _JUDGE_CLIPS)
+            trail = activity.trail(limit=_JUDGE_TRAIL_STEPS)
+        except Exception as error:
+            trail = f"execution trail unavailable: {error}"
+        verdict = await judge_run(task, result.result, trail)
+        if verdict is None:
+            return Verdict(success=True, infrastructure=False, reason="")
+        logger.info(f"⚖️ outcome judge: success={verdict.success} infra={verdict.infrastructure} {verdict.reason}")
+        return verdict
+
+    async def _announce(self, trigger: TaskTrigger, verdict: Verdict) -> None:
+        if not verdict.success:
+            cause = "infrastructure problem" if verdict.infrastructure else "job not done"
+            await pubsub.publish(
+                AdminNotification(
+                    content=f"🔴 Job '{trigger.name}' failed ({cause}): {verdict.reason}", title="Job failed"
+                )
+            )
+        elif not trigger.silent:
             await pubsub.publish(AdminNotification(content=f"✅ *Task '{trigger.name}' completed*", silent=True))
 
     async def _handle_pubsub_task(self, request: TaskRequest) -> None:
@@ -689,7 +718,7 @@ class TaskService:
             return None
         return skill_dir
 
-    async def _record_and_self_heal(self, trigger: TaskTrigger, result: Result) -> None:
+    async def _record_and_self_heal(self, trigger: TaskTrigger, result: Result, verdict: Verdict) -> None:
         skill_versions: dict[str, str] = {}
         for skill in result.skill_names:
             skill_dir = self._skill_dir(skill)
@@ -699,8 +728,10 @@ class TaskService:
             active = ledger.get("active")
             if active:
                 skill_versions[skill] = active
+                if verdict.infrastructure:
+                    continue
                 try:
-                    versions.record_outcome(skill_dir, active, result.success)
+                    versions.record_outcome(skill_dir, active, verdict.success)
                 except ValueError:
                     pass
 
@@ -709,17 +740,17 @@ class TaskService:
                 job_name=trigger.name,
                 skill_names=result.skill_names,
                 thread_id=result.thread_id,
-                success=result.success,
-                error=result.error,
+                success=verdict.success,
+                error=None if verdict.success else verdict.reason,
                 cost_usd=result.cost_usd,
                 duration_s=result.duration_s,
                 tool_call_count=len(result.tool_call_names),
                 skill_versions=skill_versions,
             )
 
-        if result.success:
+        if verdict.success:
             await self._maybe_promote(skill_versions)
-        else:
+        elif not verdict.infrastructure:
             await self._maybe_rollback_and_rerun(trigger, skill_versions)
 
     async def _maybe_promote(self, skill_versions: dict[str, str]) -> None:
@@ -763,14 +794,16 @@ class TaskService:
 
         rerun_thread = random.randint(0, 2**63 - 1)
         rerun = await self._run_task(TaskRequest(task=trigger.task, thread_id=rerun_thread))
+        rerun_verdict = await self._assess(trigger.task, rerun)
+        await self._announce(trigger, rerun_verdict)
         if rerun and self._job_execution_repo is not None:
             stable_versions = {s: st for s, _, st in rolled_back}
             await self._job_execution_repo.record(
                 job_name=f"{trigger.name} (self-heal rerun)",
                 skill_names=rerun.skill_names,
                 thread_id=rerun.thread_id,
-                success=rerun.success,
-                error=rerun.error,
+                success=rerun_verdict.success,
+                error=None if rerun_verdict.success else rerun_verdict.reason,
                 cost_usd=rerun.cost_usd,
                 duration_s=rerun.duration_s,
                 tool_call_count=len(rerun.tool_call_names),
@@ -778,9 +811,9 @@ class TaskService:
             )
             for skill, st in stable_versions.items():
                 skill_dir = self._skill_dir(skill)
-                if skill_dir is not None:
+                if skill_dir is not None and not rerun_verdict.infrastructure:
                     try:
-                        versions.record_outcome(skill_dir, st, rerun.success)
+                        versions.record_outcome(skill_dir, st, rerun_verdict.success)
                     except ValueError:
                         pass
 

@@ -99,8 +99,8 @@ Telemetry ledger for skill and scheduled-job runs; drives skill optimization and
 - `job_name` TEXT NULL
 - `skill_names` TEXT[] NOT NULL DEFAULT '{}'
 - `thread_id` BIGINT NULL
-- `success` BOOLEAN NOT NULL
-- `error` TEXT NULL
+- `success` BOOLEAN NOT NULL — for scheduled jobs, the judged outcome (`agent.md`, "Scheduled-run outcome")
+- `error` TEXT NULL — the crash error, or the judge's failure reason
 - `cost_usd`, `duration_s` NUMERIC NULL
 - `tool_call_count` INTEGER NOT NULL DEFAULT 0
 - `skill_versions` JSONB NOT NULL DEFAULT '{}' (skill name → version tag)

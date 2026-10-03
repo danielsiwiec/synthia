@@ -36,7 +36,7 @@ class PushService:
         await self._send_to_all("Synthia connected 👋")
 
     async def _handle_admin_notification(self, notification: AdminNotification):
-        await self._send_to_all(notification.content, title="Job Complete")
+        await self._send_to_all(notification.content, title=notification.title or "Job Complete")
 
     async def _send_to_all(self, message: str, title: str | None = None):
         rows = await self._pool.fetch("SELECT endpoint, keys_p256dh, keys_auth FROM push_subscriptions")

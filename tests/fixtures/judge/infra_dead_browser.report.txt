@@ -1,0 +1,21 @@
+📊 **Magazine check complete**
+
+✅ **Up to date (6):**
+- BBC History Magazine — December 2025
+- Men’s Journal — Summer 2026
+- National Geographic History — September/October 2026
+- National Geographic USA — October 2026
+- Popular Science — no newer issue found
+- Wired USA — September/October 2026
+
+🆕 **New issues available (5):**
+- Mountain Bike Action USA — November 2026 (you have: October 2026)
+- New Scientist US — September 12, 2026 (you have: August 22, 2026)
+- Tabletop Gaming — Issue 119, October 2026 (you have: August 2026)
+- The Atlantic — October 2026 (you have: September 2026)
+- Time Magazine USA — October 12, 2026 (you have: September 28, 2026)
+
+❌ **Could not check (1):**
+- The Economist USA — the magazine check page returned a 503 error.
+
+📥 **Downloads:** None completed. The browser service failed to open or operate pages, so I couldn’t retrieve the new issues or add them to Kavita.

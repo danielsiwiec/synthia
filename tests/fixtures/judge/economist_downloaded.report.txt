@@ -1,0 +1,9 @@
+**The Economist USA — September 26, 2026**
+
+- **Newer than the latest local issue?** Yes. The folder’s newest issue was September 19, 2026; September 26 was available online.
+- Downloaded and verified the **9.8 MB** PDF.
+- Saved it as `The Economist USA - 2026-09-26.pdf` in the correct Kavita magazine folder.
+- Set file ownership to **501:20** and verified the resulting file.
+- Triggered the Kavita **magazines** library rescan.
+- Updated the **The Economist USA** series cover to the September 26 issue.
+- Sent the completion notification.

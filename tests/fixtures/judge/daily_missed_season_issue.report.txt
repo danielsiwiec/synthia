@@ -1,0 +1,21 @@
+## 📊 Magazine Check Complete
+
+✅ **Up to date (10):** BBC History Magazine, Men’s Journal, National Geographic History, National Geographic USA, Popular Science, Tabletop Gaming, The Atlantic, The Economist USA, Time Magazine USA, and Wired USA.
+
+🆕 **New issues found (2):**
+- Mountain Bike Action USA — November 2026
+- New Scientist US — September 12, 2026
+
+## 📥 Download Complete
+
+✅ **Downloaded to the magazine library (4):**
+- The Economist USA — 2026-10-03
+- The Atlantic — 2026-10-01
+- Time Magazine USA — 2026-10-12
+- Tabletop Gaming — 2026-10-01
+
+❌ **Could not download (2):**
+- Mountain Bike Action USA — the November issue remained restricted after trying the subscriber email. The next issue listed was not newer than the local copy.
+- New Scientist US — the issue page reported **“File Removed.”**
+
+Kavita’s cover update succeeded for The Economist, The Atlantic, and Time. Tabletop Gaming was downloaded and rescans were triggered, but Kavita did not index the new chapter during two wait attempts, so its cover could not be updated.

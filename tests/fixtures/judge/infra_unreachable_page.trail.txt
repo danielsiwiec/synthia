@@ -1,0 +1,3 @@
+execution trail (2 entries, showing last 2; t=0 at task start):
+t+0s 🔧 browser_open(http://127.0.0.1:1/) [3s] → Error: Error: Page.goto: net::ERR_UNSAFE_PORT at http://127.0.0.1:1/ Call log: - navigating to "http://127.0.0.1:1/", waiting until "domcontentloaded"
+t+5s 💬 I couldn’t open the page: the browser blocked `http://127.0.0.1:1/` because port 1 is considered unsafe. I couldn’t read a heading.

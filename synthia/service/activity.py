@@ -66,12 +66,29 @@ class Activity:
         return "\n".join(lines)
 
 
-async def task_activity(session_service: BaseSessionService, app_name: str, user_id: str, session_id: str) -> Activity:
+@dataclass(frozen=True)
+class Clips:
+    args: int = _ARGS_CHARS
+    result: int = _RESULT_CHARS
+    text: int = _TEXT_CHARS
+    quiet_tools: tuple[str, ...] = ()
+    quiet_result: int = _RESULT_CHARS
+
+    def result_for(self, tool: str) -> int:
+        return self.quiet_result if tool.startswith(self.quiet_tools) else self.result
+
+
+_DEFAULT_CLIPS = Clips()
+
+
+async def task_activity(
+    session_service: BaseSessionService, app_name: str, user_id: str, session_id: str, clips: Clips = _DEFAULT_CLIPS
+) -> Activity:
     session = await session_service.get_session(app_name=app_name, user_id=user_id, session_id=session_id)
-    return parse_events(list(getattr(session, "events", None) or []))
+    return parse_events(list(getattr(session, "events", None) or []), clips)
 
 
-def parse_events(events: list[Any]) -> Activity:
+def parse_events(events: list[Any], clips: Clips = _DEFAULT_CLIPS) -> Activity:
     steps: list[Step] = []
     pending: dict[str, int] = {}
     started_at: float | None = None
@@ -87,33 +104,34 @@ def parse_events(events: list[Any]) -> Activity:
             if call is not None:
                 key = call.id or call.name
                 pending[key] = len(steps)
-                steps.append(Step(at=at, kind="tool", name=call.name, detail=_args(dict(call.args or {}))))
+                steps.append(Step(at=at, kind="tool", name=call.name, detail=_args(dict(call.args or {}), clips.args)))
                 continue
             response = getattr(part, "function_response", None)
             if response is not None:
                 index = pending.pop(response.id or response.name, None)
-                result = _result(response.response)
                 if index is None:
+                    result = _result(response.response, clips.result_for(response.name or ""))
                     steps.append(Step(at=at, kind="tool", name=response.name, detail="", done_at=at, result=result))
                 else:
                     open_step = steps[index]
+                    result = _result(response.response, clips.result_for(open_step.name))
                     steps[index] = Step(open_step.at, "tool", open_step.name, open_step.detail, at, result)
                 continue
             text = getattr(part, "text", None)
             if text and not getattr(part, "thought", False) and author != "user":
-                steps.append(Step(at=at, kind="text", name="", detail=_clip(text, _TEXT_CHARS)))
+                steps.append(Step(at=at, kind="text", name="", detail=_clip(text, clips.text)))
     return Activity(started_at=started_at, steps=steps)
 
 
-def _args(args: dict[str, Any]) -> str:
+def _args(args: dict[str, Any], limit: int) -> str:
     if not args:
         return ""
     if len(args) == 1:
-        return _clip(str(next(iter(args.values()))), _ARGS_CHARS)
-    return _clip(", ".join(f"{k}={v}" for k, v in args.items()), _ARGS_CHARS)
+        return _clip(str(next(iter(args.values()))), limit)
+    return _clip(", ".join(f"{k}={v}" for k, v in args.items()), limit)
 
 
-def _result(response: Any) -> str:
+def _result(response: Any, limit: int) -> str:
     if isinstance(response, dict):
         if len(response) == 1:
             response = next(iter(response.values()))
@@ -122,7 +140,7 @@ def _result(response: Any) -> str:
                 response = json.dumps(response, default=str)
             except Exception:
                 response = str(response)
-    return _clip(str(response), _RESULT_CHARS)
+    return _clip(str(response), limit)
 
 
 def _clip(text: str, limit: int) -> str:

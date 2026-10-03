@@ -272,6 +272,36 @@ and promote (`skill_promote`) or roll back (`skill_rollback`). Run outcomes are 
 the `job_executions` ledger (see `state.md`) with the skill version tags used. Automatic
 promotion/rollback applies to scheduled jobs, not interactive tasks.
 
+### Scheduled-run outcome
+A scheduled run finishing without an exception does not mean it did its job (a run whose
+every browser call failed, or that found new issues and never downloaded them, still ends
+with a tidy report). So:
+- When a scheduled job's run finishes, the system shall assess it with an **outcome judge**:
+  one call to the front-agent model given the job's instruction, the agent's final report,
+  and the run's full execution trail — every step, with tool arguments and results up to
+  several thousand characters each (not the short excerpts `check_tasks` shows), so the
+  judge can read data such as a check script's per-item verdicts. Page dumps from browser
+  tools and loaded skill text are kept short, and if the trail is still too long the judge
+  keeps its start and end (where a job's check data and final steps sit), never only the end.
+  For a job over several items (e.g. each magazine), the judge shall list every item before
+  deciding — its local copy, what was found online, the status the tool reported, whether
+  that status is plausible (an online issue newer than the local copy reported as current is
+  not), and what the run did with it. The judge returns
+  success or failure, a one-sentence reason, and whether a failure was caused by
+  **infrastructure** (a tool, browser, service or site being unavailable or erroring) or by
+  **the task** (stopped early, skipped required work, or claimed results the trail does not
+  support). Work that was impossible for an external reason the agent correctly reported
+  (e.g. an issue not yet published or not covered by a subscription) is not a failure.
+- If the run crashed or produced no result, it is a task failure without consulting the
+  judge. If the judge call fails, the run's own completion status stands.
+- The ledger row records the judged outcome (`success`) and the reason (`error`).
+- If the judged outcome is a failure, the system shall send a push notification titled
+  "Job failed" naming the job and the reason, even for jobs scheduled as silent. A success
+  is announced as before ("Job complete", unless the job is silent).
+- Only task failures count against the active skill versions and can trigger a canary
+  rollback; infrastructure failures are notified and recorded but leave skill versions
+  untouched.
+
 ## Runtime knobs
 
 Environment variables (defaults in parentheses):
